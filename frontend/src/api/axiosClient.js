@@ -64,4 +64,32 @@ export const processReservationAction = async (reservationId, actionPayload) => 
   return res.data;
 };
 
+// --- TENANT KYC & DIGITAL LEASE API HELPERS ---
+export const fetchKYCProfile = async () => {
+  const res = await axiosClient.get('/accounts/kyc/');
+  return res.data;
+};
+
+export const updateKYCProfile = async (formData) => {
+  const res = await axiosClient.put('/accounts/kyc/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+};
+
+export const acceptDigitalLease = async () => {
+  const res = await axiosClient.post('/accounts/kyc/accept-lease/');
+  return res.data;
+};
+
+export const fetchAdminKYCList = async () => {
+  const res = await axiosClient.get('/accounts/kyc/admin-list/');
+  return res.data;
+};
+
+export const auditKYC = async (id, action, notes) => {
+  const res = await axiosClient.post(`/accounts/kyc/${id}/audit/`, { action, admin_notes: notes });
+  return res.data;
+};
+
 export default axiosClient;

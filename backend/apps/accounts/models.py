@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.utils import timezone
 from datetime import timedelta
+from django.conf import settings
 
 
 class UserManager(BaseUserManager):
@@ -86,3 +87,31 @@ class EmailOTP(models.Model):
 
     def __str__(self):
         return f"{self.email} - {self.otp_code} ({self.purpose})"
+
+
+class KYCProfile(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING', 'Pending Verification'),
+        ('VERIFIED', 'Verified'),
+        ('REJECTED', 'Rejected'),
+    )
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='kyc_profile')
+    full_name_legal = models.CharField(max_length=150)
+    citizenship_number = models.CharField(max_length=50, blank=True)
+    citizenship_front = models.ImageField(upload_to='kyc_docs/', null=True, blank=True)
+    citizenship_back = models.ImageField(upload_to='kyc_docs/', null=True, blank=True)
+    emergency_contact_name = models.CharField(max_length=100, blank=True)
+    emergency_contact_phone = models.CharField(max_length=20, blank=True)
+    
+    # Digital Lease Acceptance
+    has_accepted_lease = models.BooleanField(default=False)
+    lease_accepted_at = models.DateTimeField(null=True, blank=True)
+    
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
+    admin_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"KYC [{self.status}] - {self.user.email}"

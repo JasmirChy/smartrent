@@ -9,6 +9,10 @@ from .views import (
     RequestPasswordChangeOTPView,
     ConfirmPasswordChangeOTPView,
     AdminTenantListView,
+    KYCProfileView,
+    AdminKYCListView,
+    AdminKYCAuditView,
+    AcceptDigitalLeaseView,
 )
 
 urlpatterns = [
@@ -21,4 +25,8 @@ urlpatterns = [
     path('password/request-otp/', RequestPasswordChangeOTPView.as_view(), name='password_request_otp'),
     path('password/confirm-otp/', ConfirmPasswordChangeOTPView.as_view(), name='password_confirm_otp'),
     path('users/', AdminTenantListView.as_view(), name='admin_users_list'),
+    path('kyc/', KYCProfileView.as_view(), name='kyc_profile'),
+    path('kyc/admin-list/', AdminKYCListView.as_view(), name='admin_kyc_list'),
+    path('kyc/<int:pk>/audit/', AdminKYCAuditView.as_view(), name='admin_kyc_audit'),
+    path('kyc/accept-lease/', AcceptDigitalLeaseView.as_view(), name='accept_digital_lease'),
 ]

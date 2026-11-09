@@ -6,8 +6,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils import timezone
 
-from .models import User, EmailOTP
+from .models import User, EmailOTP, KYCProfile
 from .serializers import (
     UserProfileSerializer,
     SignupSerializer,
@@ -15,11 +16,11 @@ from .serializers import (
     LoginSerializer,
     RequestPasswordOTPSerializer,
     ConfirmPasswordOTPSerializer,
+    KYCProfileSerializer,
 )
 
 
 def generate_and_send_otp(email, purpose='PASSWORD_RESET'):
-    """Generates a 6-digit OTP solely for Password Change / Reset and emails it."""
     EmailOTP.objects.filter(email=email, purpose=purpose, is_used=False).update(is_used=True)
     otp_code = f"{random.randint(100000, 999999)}"
     EmailOTP.objects.create(email=email, otp_code=otp_code, purpose=purpose)
@@ -50,7 +51,6 @@ def get_tokens_for_user(user):
 
 
 class SignupView(APIView):
-    """Creates account and logs the user in immediately without asking for OTP."""
     permission_classes = [permissions.AllowAny]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -71,7 +71,6 @@ class SignupView(APIView):
 
 
 class LoginView(APIView):
-    """Logs the user in directly with email and password—never asks for OTP."""
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -176,7 +175,6 @@ class MeProfileView(APIView):
 
 
 class RequestPasswordChangeOTPView(APIView):
-    """Sends a 6-digit OTP to the user's email to authorize changing/resetting their password."""
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -199,7 +197,6 @@ class RequestPasswordChangeOTPView(APIView):
 
 
 class ConfirmPasswordChangeOTPView(APIView):
-    """Validates the email OTP and updates the user's password."""
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -248,3 +245,81 @@ class AdminTenantListView(generics.ListAPIView):
         if self.request.user.role != 'ADMIN' and not self.request.user.is_superuser:
             return User.objects.filter(id=self.request.user.id)
         return User.objects.all().order_by('-created_at')
+
+
+class KYCProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = KYCProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_object(self):
+        profile, created = KYCProfile.objects.get_or_create(
+            user=self.request.user,
+            defaults={'full_name_legal': getattr(self.request.user, 'full_name', '') or self.request.user.email}
+        )
+        return profile
+
+
+class AdminKYCListView(generics.ListAPIView):
+    serializer_class = KYCProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if getattr(user, 'role', '') == 'ADMIN' or user.is_staff or user.is_superuser:
+            return KYCProfile.objects.select_related('user').all()
+        return KYCProfile.objects.filter(user=user)
+
+
+class AdminKYCAuditView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            profile = KYCProfile.objects.select_related('user').get(pk=pk)
+        except KYCProfile.DoesNotExist:
+            return Response({"detail": "KYC profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if not (getattr(user, 'role', '') == 'ADMIN' or user.is_staff or user.is_superuser):
+            return Response({"detail": "Admin privileges required."}, status=status.HTTP_403_FORBIDDEN)
+
+        action = (request.data.get('action') or '').upper()
+        notes = request.data.get('admin_notes', '')
+
+        if action == 'VERIFY':
+            profile.status = 'VERIFIED'
+            profile.admin_notes = notes
+            profile.save(update_fields=['status', 'admin_notes', 'updated_at'])
+            return Response({
+                "message": f"KYC verified for {profile.user.email}!",
+                "profile": KYCProfileSerializer(profile, context={'request': request}).data
+            })
+
+        if action == 'REJECT':
+            profile.status = 'REJECTED'
+            profile.admin_notes = notes
+            profile.save(update_fields=['status', 'admin_notes', 'updated_at'])
+            return Response({
+                "message": f"KYC rejected for {profile.user.email}.",
+                "profile": KYCProfileSerializer(profile, context={'request': request}).data
+            })
+
+        return Response({"detail": "Invalid action. Use VERIFY or REJECT."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AcceptDigitalLeaseView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        profile, created = KYCProfile.objects.get_or_create(
+            user=request.user,
+            defaults={'full_name_legal': getattr(request.user, 'full_name', '') or request.user.email}
+        )
+        profile.has_accepted_lease = True
+        profile.lease_accepted_at = timezone.now()
+        profile.save(update_fields=['has_accepted_lease', 'lease_accepted_at', 'updated_at'])
+        return Response({
+            "message": "Digital lease agreement accepted successfully!",
+            "profile": KYCProfileSerializer(profile, context={'request': request}).data
+        })

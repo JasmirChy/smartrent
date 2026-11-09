@@ -1,11 +1,12 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import User
+from .models import User, KYCProfile
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
     assigned_room = serializers.SerializerMethodField()
     profile_picture_url = serializers.SerializerMethodField()
+    kyc_status = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -19,9 +20,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'profile_picture_url',
             'is_email_verified',
             'assigned_room',
+            'kyc_status',
             'created_at',
         ]
-        read_only_fields = ['id', 'email', 'role', 'is_email_verified', 'created_at']
+        read_only_fields = ['id', 'email', 'role', 'is_email_verified', 'kyc_status', 'created_at']
 
     def get_profile_picture_url(self, obj):
         if obj.profile_picture:
@@ -30,6 +32,12 @@ class UserProfileSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.profile_picture.url)
             return obj.profile_picture.url
         return None
+
+    def get_kyc_status(self, obj):
+        try:
+            return obj.kyc_profile.status
+        except KYCProfile.DoesNotExist:
+            return 'UNSUBMITTED'
 
     def get_assigned_room(self, obj):
         active_tenancy = obj.tenancies.filter(is_active=True).select_related('room').first()
@@ -62,7 +70,6 @@ class SignupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
-        # Directly active & verified on signup (OTP is ONLY for password reset/change)
         user = User.objects.create_user(
             password=password,
             is_email_verified=True,
@@ -106,3 +113,36 @@ class ConfirmPasswordOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp_code = serializers.CharField(max_length=6, min_length=6)
     new_password = serializers.CharField(write_only=True, min_length=6)
+
+
+class KYCProfileSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    citizenship_front_url = serializers.SerializerMethodField()
+    citizenship_back_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = KYCProfile
+        fields = [
+            'id', 'user', 'user_email', 'full_name_legal', 'citizenship_number',
+            'citizenship_front', 'citizenship_front_url', 'citizenship_back', 'citizenship_back_url',
+            'emergency_contact_name', 'emergency_contact_phone', 'has_accepted_lease',
+            'lease_accepted_at', 'status', 'status_display', 'admin_notes', 'created_at'
+        ]
+        read_only_fields = ['id', 'user', 'status', 'admin_notes', 'lease_accepted_at', 'created_at']
+
+    def get_citizenship_front_url(self, obj):
+        if obj.citizenship_front:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.citizenship_front.url)
+            return obj.citizenship_front.url
+        return None
+
+    def get_citizenship_back_url(self, obj):
+        if obj.citizenship_back:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.citizenship_back.url)
+            return obj.citizenship_back.url
+        return None
