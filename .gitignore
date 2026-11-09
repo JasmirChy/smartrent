@@ -9,11 +9,13 @@ env/
 backend/media/
 backend/staticfiles/
 *.sqlite3
-
+db.sqlite3
 # Environment Variables
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 
 # Node & React (Vite)
 node_modules/
@@ -28,3 +30,8 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Node & React
+node_modules/
+dist/
+.vite/

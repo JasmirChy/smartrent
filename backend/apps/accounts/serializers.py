@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import User, EmailOTP
+from .models import User
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -62,9 +62,10 @@ class SignupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
+        # Directly active & verified on signup (OTP is ONLY for password reset/change)
         user = User.objects.create_user(
             password=password,
-            is_email_verified=False,
+            is_email_verified=True,
             **validated_data
         )
         return user
@@ -75,7 +76,7 @@ class VerifyOTPSerializer(serializers.Serializer):
     otp_code = serializers.CharField(max_length=6, min_length=6)
     purpose = serializers.ChoiceField(
         choices=['SIGNUP', 'PASSWORD_RESET'],
-        default='SIGNUP'
+        default='PASSWORD_RESET'
     )
 
 

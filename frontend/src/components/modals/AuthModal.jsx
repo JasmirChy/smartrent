@@ -18,6 +18,8 @@ export default function AuthModal() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [profilePic, setProfilePic] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+
+  // Password Reset / Change OTP States
   const [otpCode, setOtpCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [resetStep, setResetStep] = useState(1); // 1: Request OTP, 2: Enter OTP & New Password
@@ -41,6 +43,7 @@ export default function AuthModal() {
     }
   };
 
+  // Direct Login (No OTP)
   const handleLogin = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -49,21 +52,17 @@ export default function AuthModal() {
       const res = await axiosClient.post('/accounts/login/', { email, password });
       saveSession(res.data.tokens, res.data.user);
     } catch (err) {
-      if (err.response?.data?.requires_otp) {
-        setSuccessMsg(err.response.data.error);
-        setAuthModalMode('OTP');
-      } else {
-        setError(
-          err.response?.data?.non_field_errors?.[0] ||
-            err.response?.data?.error ||
-            'Invalid email or password.'
-        );
-      }
+      setError(
+        err.response?.data?.non_field_errors?.[0] ||
+          err.response?.data?.error ||
+          'Invalid email or password.'
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Direct Signup (No OTP - logs user in immediately)
   const handleSignup = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -81,8 +80,7 @@ export default function AuthModal() {
       const res = await axiosClient.post('/accounts/signup/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setSuccessMsg(res.data.message);
-      setAuthModalMode('OTP');
+      saveSession(res.data.tokens, res.data.user);
     } catch (err) {
       const data = err.response?.data;
       const firstErr =
@@ -97,24 +95,7 @@ export default function AuthModal() {
     }
   };
 
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError('');
-    try {
-      const res = await axiosClient.post('/accounts/verify-otp/', {
-        email,
-        otp_code: otpCode,
-        purpose: 'SIGNUP',
-      });
-      saveSession(res.data.tokens, res.data.user);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Invalid or expired OTP code.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
+  // Step 1 of Password Change/Reset: Request Email OTP
   const handleRequestResetOtp = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -130,6 +111,7 @@ export default function AuthModal() {
     }
   };
 
+  // Step 2 of Password Change/Reset: Verify OTP & Save New Password
   const handleConfirmResetOtp = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -142,6 +124,8 @@ export default function AuthModal() {
       });
       setSuccessMsg(res.data.message);
       setResetStep(1);
+      setOtpCode('');
+      setNewPassword('');
       setTimeout(() => setAuthModalMode('LOGIN'), 1200);
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid OTP or password.');
@@ -150,22 +134,12 @@ export default function AuthModal() {
     }
   };
 
-  const handleResendOtp = async () => {
-    setError('');
-    try {
-      const res = await axiosClient.post('/accounts/resend-otp/', {
-        email,
-        purpose: authModalMode === 'RESET_PASSWORD' ? 'PASSWORD_RESET' : 'SIGNUP',
-      });
-      setSuccessMsg(res.data.message);
-    } catch (err) {
-      setError('Failed to resend OTP.');
-    }
-  };
+  const inputClass =
+    'w-full pl-10 pr-4 py-2.5 text-sm rounded-xl !bg-white !text-slate-900 placeholder:text-slate-400 border border-slate-300 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 outline-none shadow-2xs transition';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-100 my-8">
+      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-200 my-8 text-slate-900">
         <button
           onClick={() => setAuthModalOpen(false)}
           className="absolute right-4 top-4 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
@@ -178,17 +152,15 @@ export default function AuthModal() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-semibold mb-2">
             SmartRent Portal
           </div>
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-2xl font-extrabold text-slate-900">
             {authModalMode === 'LOGIN' && 'Welcome Back'}
             {authModalMode === 'SIGNUP' && 'Create Tenant Account'}
-            {authModalMode === 'OTP' && 'Verify Email OTP'}
-            {authModalMode === 'RESET_PASSWORD' && 'Change Password via OTP'}
+            {authModalMode === 'RESET_PASSWORD' && 'Reset / Change Password'}
           </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            {authModalMode === 'LOGIN' && 'Sign in to view your room telemetry, bills, and chat.'}
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            {authModalMode === 'LOGIN' && 'Sign in directly with your email and password.'}
             {authModalMode === 'SIGNUP' && 'Register with your email, phone number & profile photo.'}
-            {authModalMode === 'OTP' && `Enter the 6-digit verification code sent to ${email}`}
-            {authModalMode === 'RESET_PASSWORD' && 'Secure email OTP validation to update your password.'}
+            {authModalMode === 'RESET_PASSWORD' && 'We will send a 6-digit OTP to your email to change your password.'}
           </p>
         </div>
 
@@ -206,11 +178,13 @@ export default function AuthModal() {
           </div>
         )}
 
-        {/* LOGIN FORM */}
+        {/* LOGIN FORM (NO OTP) */}
         {authModalMode === 'LOGIN' && (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">EMAIL ADDRESS</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                Email Address
+              </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -219,14 +193,16 @@ export default function AuthModal() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 outline-none"
+                  className={inputClass}
                 />
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700">PASSWORD</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Password
+                </label>
                 <button
                   type="button"
                   onClick={() => {
@@ -246,7 +222,7 @@ export default function AuthModal() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 outline-none"
+                  className={inputClass}
                 />
               </div>
             </div>
@@ -254,7 +230,7 @@ export default function AuthModal() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 transition disabled:opacity-60"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               Sign In to SmartRent
@@ -265,7 +241,7 @@ export default function AuthModal() {
               <button
                 type="button"
                 onClick={() => setAuthModalMode('SIGNUP')}
-                className="font-semibold text-indigo-600 hover:underline"
+                className="font-bold text-indigo-600 hover:underline"
               >
                 Create an account
               </button>
@@ -273,13 +249,12 @@ export default function AuthModal() {
           </form>
         )}
 
-        {/* SIGNUP FORM */}
+        {/* SIGNUP FORM (NO OTP) */}
         {authModalMode === 'SIGNUP' && (
           <form onSubmit={handleSignup} className="space-y-3.5">
-            {/* Profile Image Upload */}
             <div className="flex items-center gap-4 pb-1">
               <label className="relative cursor-pointer group">
-                <div className="w-16 h-16 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden group-hover:border-indigo-600 transition">
+                <div className="w-16 h-16 rounded-full bg-slate-50 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden group-hover:border-indigo-600 transition">
                   {previewUrl ? (
                     <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
@@ -289,13 +264,15 @@ export default function AuthModal() {
                 <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
               </label>
               <div>
-                <p className="text-xs font-semibold text-slate-800">Profile Picture</p>
+                <p className="text-xs font-bold text-slate-800">Profile Picture</p>
                 <p className="text-[11px] text-slate-500">Tap circle to upload your photo (JPG/PNG)</p>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">FULL NAME</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+                Full Name
+              </label>
               <div className="relative">
                 <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -303,14 +280,16 @@ export default function AuthModal() {
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Aarav Sharma"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
+                  placeholder="Enter your full name"
+                  className={inputClass}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">EMAIL ADDRESS (For OTP)</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+                Email Address
+              </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -318,14 +297,16 @@ export default function AuthModal() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="aarav@example.com"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
+                  placeholder="you@example.com"
+                  className={inputClass}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">MOBILE NUMBER</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+                Mobile Number
+              </label>
               <div className="relative">
                 <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -334,13 +315,15 @@ export default function AuthModal() {
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   placeholder="98XXXXXXXX"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
+                  className={inputClass}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">PASSWORD</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+                Password
+              </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -350,7 +333,7 @@ export default function AuthModal() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Minimum 6 characters"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
+                  className={inputClass}
                 />
               </div>
             </div>
@@ -358,10 +341,10 @@ export default function AuthModal() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 transition disabled:opacity-60"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              Sign Up & Send Email OTP
+              Create Account & Sign In
             </button>
 
             <p className="text-center text-xs text-slate-500 pt-1">
@@ -369,7 +352,7 @@ export default function AuthModal() {
               <button
                 type="button"
                 onClick={() => setAuthModalMode('LOGIN')}
-                className="font-semibold text-indigo-600 hover:underline"
+                className="font-bold text-indigo-600 hover:underline"
               >
                 Sign In
               </button>
@@ -377,60 +360,15 @@ export default function AuthModal() {
           </form>
         )}
 
-        {/* EMAIL OTP VERIFICATION FORM */}
-        {authModalMode === 'OTP' && (
-          <form onSubmit={handleVerifyOtp} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">6-DIGIT EMAIL OTP</label>
-              <div className="relative">
-                <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="123456"
-                  className="w-full pl-10 pr-4 py-2.5 text-center tracking-[0.4em] font-bold text-lg rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting || otpCode.length !== 6}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-lg shadow-emerald-600/25 transition disabled:opacity-60"
-            >
-              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              Verify OTP & Continue
-            </button>
-
-            <div className="flex items-center justify-between text-xs pt-2">
-              <button
-                type="button"
-                onClick={handleResendOtp}
-                className="font-semibold text-indigo-600 hover:underline"
-              >
-                Resend OTP to Email
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthModalMode('LOGIN')}
-                className="text-slate-500 hover:text-slate-700"
-              >
-                Back to Login
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* PASSWORD RESET / CHANGE WITH EMAIL OTP */}
+        {/* PASSWORD RESET / CHANGE WITH EMAIL OTP (ONLY PLACE WITH OTP) */}
         {authModalMode === 'RESET_PASSWORD' && (
           <div>
             {resetStep === 1 ? (
               <form onSubmit={handleRequestResetOtp} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">YOUR REGISTERED EMAIL</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                    Your Registered Email
+                  </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                     <input
@@ -439,14 +377,14 @@ export default function AuthModal() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
+                      className={inputClass}
                     />
                   </div>
                 </div>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Send 6-Digit OTP to Email
@@ -455,33 +393,43 @@ export default function AuthModal() {
             ) : (
               <form onSubmit={handleConfirmResetOtp} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">6-DIGIT EMAIL OTP</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={6}
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="123456"
-                    className="w-full px-4 py-2.5 text-center tracking-[0.3em] font-bold rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
-                  />
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+                    6-Digit Email OTP
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                      className="w-full pl-10 pr-4 py-2.5 text-center tracking-[0.35em] font-extrabold text-base rounded-xl !bg-white !text-slate-900 border border-slate-300 focus:border-indigo-600 outline-none"
+                    />
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">NEW PASSWORD</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password"
-                    className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
-                  />
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                      className={inputClass}
+                    />
+                  </div>
                 </div>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Verify OTP & Update Password
@@ -491,9 +439,9 @@ export default function AuthModal() {
             <button
               type="button"
               onClick={() => setAuthModalMode('LOGIN')}
-              className="w-full text-center text-xs text-slate-500 hover:text-slate-700 mt-4"
+              className="w-full text-center text-xs font-semibold text-slate-500 hover:text-slate-800 mt-4"
             >
-              Back to Sign In
+              ← Back to Sign In
             </button>
           </div>
         )}

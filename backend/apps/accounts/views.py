@@ -18,20 +18,16 @@ from .serializers import (
 )
 
 
-def generate_and_send_otp(email, purpose='SIGNUP'):
-    """Generates a 6-digit OTP, invalidates old unused OTPs, and emails it to the user."""
+def generate_and_send_otp(email, purpose='PASSWORD_RESET'):
+    """Generates a 6-digit OTP solely for Password Change / Reset and emails it."""
     EmailOTP.objects.filter(email=email, purpose=purpose, is_used=False).update(is_used=True)
     otp_code = f"{random.randint(100000, 999999)}"
     EmailOTP.objects.create(email=email, otp_code=otp_code, purpose=purpose)
 
-    subject = (
-        "SmartRent - Verify Your Account (OTP)"
-        if purpose == 'SIGNUP'
-        else "SmartRent - Password Change OTP Verification"
-    )
+    subject = "SmartRent - Password Change OTP Verification"
     message = (
         f"Namaste!\n\n"
-        f"Your SmartRent verification code is: {otp_code}\n\n"
+        f"Your SmartRent password change verification code is: {otp_code}\n\n"
         f"This 6-digit OTP is valid for 10 minutes. Please do not share this code with anyone.\n\n"
         f"— SmartRent House Management"
     )
@@ -54,6 +50,7 @@ def get_tokens_for_user(user):
 
 
 class SignupView(APIView):
+    """Creates account and logs the user in immediately without asking for OTP."""
     permission_classes = [permissions.AllowAny]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -61,15 +58,40 @@ class SignupView(APIView):
         serializer = SignupSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            generate_and_send_otp(user.email, purpose='SIGNUP')
+            tokens = get_tokens_for_user(user)
             return Response(
                 {
-                    "message": "Account created! A 6-digit OTP has been sent to your email.",
-                    "email": user.email,
+                    "message": "Account created successfully!",
+                    "tokens": tokens,
+                    "user": UserProfileSerializer(user, context={'request': request}).data,
                 },
                 status=status.HTTP_201_CREATED,
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LoginView(APIView):
+    """Logs the user in directly with email and password—never asks for OTP."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+
+        if not user.is_email_verified:
+            user.is_email_verified = True
+            user.save(update_fields=['is_email_verified'])
+
+        tokens = get_tokens_for_user(user)
+        return Response(
+            {
+                "message": "Login successful!",
+                "tokens": tokens,
+                "user": UserProfileSerializer(user, context={'request': request}).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class VerifyOTPView(APIView):
@@ -103,14 +125,10 @@ class VerifyOTPView(APIView):
         if not user:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if purpose == 'SIGNUP':
-            user.is_email_verified = True
-            user.save(update_fields=['is_email_verified'])
-
         tokens = get_tokens_for_user(user)
         return Response(
             {
-                "message": "Email verified successfully!",
+                "message": "OTP verified successfully!",
                 "tokens": tokens,
                 "user": UserProfileSerializer(user, context={'request': request}).data,
             },
@@ -123,47 +141,15 @@ class ResendOTPView(APIView):
 
     def post(self, request):
         email = request.data.get('email', '').lower().strip()
-        purpose = request.data.get('purpose', 'SIGNUP')
-
         if not User.objects.filter(email=email).exists():
             return Response(
                 {"error": "No account found with this email address."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        generate_and_send_otp(email, purpose=purpose)
+        generate_and_send_otp(email, purpose='PASSWORD_RESET')
         return Response(
-            {"message": f"A fresh 6-digit OTP has been sent to {email}."},
-            status=status.HTTP_200_OK,
-        )
-
-
-class LoginView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        serializer = LoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-
-        if not user.is_email_verified:
-            generate_and_send_otp(user.email, purpose='SIGNUP')
-            return Response(
-                {
-                    "error": "Email not verified yet. We have sent a fresh OTP to your email.",
-                    "requires_otp": True,
-                    "email": user.email,
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        tokens = get_tokens_for_user(user)
-        return Response(
-            {
-                "message": "Login successful!",
-                "tokens": tokens,
-                "user": UserProfileSerializer(user, context={'request': request}).data,
-            },
+            {"message": f"A fresh 6-digit password reset OTP has been sent to {email}."},
             status=status.HTTP_200_OK,
         )
 
@@ -190,7 +176,7 @@ class MeProfileView(APIView):
 
 
 class RequestPasswordChangeOTPView(APIView):
-    """Sends a 6-digit OTP to the user's email to authorize changing their password."""
+    """Sends a 6-digit OTP to the user's email to authorize changing/resetting their password."""
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -255,7 +241,6 @@ class ConfirmPasswordChangeOTPView(APIView):
 
 
 class AdminTenantListView(generics.ListAPIView):
-    """Allows Admin to view all registered users/tenants and manage them."""
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = UserProfileSerializer
 
