@@ -19,8 +19,10 @@ import {
   AlertTriangle,
   ArrowRight,
   Loader2,
+  Calendar,
+  X,
 } from 'lucide-react';
-import axiosClient from '../api/axiosClient';
+import axiosClient, { createReservation } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_HERO_IMAGE =
@@ -37,6 +39,19 @@ export default function PublicLanding() {
   const [activeSlide, setActiveSlide] = useState(0);
   const [openRuleIndex, setOpenRuleIndex] = useState(0);
 
+  // Reservation Modal States
+  const [reservingRoom, setReservingRoom] = useState(null);
+  const [requestType, setRequestType] = useState('RESERVE');
+  const [moveInDate, setMoveInDate] = useState(new Date().toISOString().split('T')[0]);
+  const [occupantsCount, setOccupantsCount] = useState(1);
+  const [phoneNum, setPhoneNum] = useState(user?.phone_number || '');
+  const [occupation, setOccupation] = useState('');
+  const [message, setMessage] = useState('');
+  const [tokenAmount, setTokenAmount] = useState('500');
+  const [paymentScreenshot, setPaymentScreenshot] = useState(null);
+  const [citizenshipDoc, setCitizenshipDoc] = useState(null);
+  const [reservationMsg, setReservationMsg] = useState({ type: '', text: '' });
+
   // Admin Hero Banner Manager States
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [bannerTitle, setBannerTitle] = useState('Studio B2 • Balcony Suite');
@@ -44,7 +59,7 @@ export default function PublicLanding() {
   const [bannerBadge, setBannerBadge] = useState('Physical Inspection Passed');
   const [bannerFile, setBannerFile] = useState(null);
 
-  // Fetch live Landing Data (auto-syncs every 5 seconds via TanStack Query)
+  // Fetch live Landing Data
   const { data, isLoading } = useQuery({
     queryKey: ['publicLandingData'],
     queryFn: async () => {
@@ -79,6 +94,30 @@ export default function PublicLanding() {
     },
   });
 
+  // Reservation Submission Mutation
+  const reserveMutation = useMutation({
+    mutationFn: async (formData) => {
+      return await createReservation(formData);
+    },
+    onSuccess: () => {
+      setReservationMsg({
+        type: 'success',
+        text: 'Room reservation request submitted successfully! Landlord will review and assign.',
+      });
+      setTimeout(() => {
+        setReservingRoom(null);
+        setReservationMsg({ type: '', text: '' });
+      }, 2500);
+      queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
+    },
+    onError: (err) => {
+      setReservationMsg({
+        type: 'error',
+        text: err.response?.data?.room?.[0] || err.response?.data?.detail || 'Failed to submit reservation.',
+      });
+    },
+  });
+
   const handleBannerUpload = (e) => {
     e.preventDefault();
     if (!bannerFile) return;
@@ -89,6 +128,25 @@ export default function PublicLanding() {
     formData.append('image', bannerFile);
     formData.append('is_active', true);
     uploadBannerMutation.mutate(formData);
+  };
+
+  const handleReservationSubmit = (e) => {
+    e.preventDefault();
+    if (!reservingRoom) return;
+
+    const formData = new FormData();
+    formData.append('room', reservingRoom.id);
+    formData.append('request_type', requestType);
+    formData.append('expected_move_in_date', moveInDate);
+    formData.append('occupants_count', occupantsCount);
+    formData.append('phone_number', phoneNum);
+    formData.append('occupation', occupation);
+    formData.append('message', message);
+    formData.append('token_amount', tokenAmount || '0');
+    if (paymentScreenshot) formData.append('payment_screenshot', paymentScreenshot);
+    if (citizenshipDoc) formData.append('citizenship_document', citizenshipDoc);
+
+    reserveMutation.mutate(formData);
   };
 
   const rooms = data?.rooms || [];
@@ -130,10 +188,9 @@ export default function PublicLanding() {
         </div>
       </div>
 
-      {/* HERO SECTION WITH RESPONSIVE IMAGE VIEWER */}
+      {/* HERO SECTION */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-14 lg:py-16">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-          {/* Left Hero Content */}
           <div className="lg:col-span-6 space-y-6">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-200/60 text-indigo-700 text-xs font-semibold">
               <ShieldCheck className="w-4 h-4 text-indigo-600" />
@@ -149,7 +206,6 @@ export default function PublicLanding() {
               Zero utility squabbles, transparent digital electricity and water calculation, and instant online/cash rent receipts. Designed for disciplined students, professionals, and peaceful living.
             </p>
 
-            {/* Live Availability Status Box */}
             <div className="rounded-2xl bg-white p-4 border border-slate-200/80 shadow-sm flex items-center justify-between max-w-lg">
               <div className="flex items-center gap-3">
                 <span className="w-3 h-3 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
@@ -165,7 +221,6 @@ export default function PublicLanding() {
               </span>
             </div>
 
-            {/* Hero CTA Buttons */}
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <a
                 href="#rooms-inventory"
@@ -192,7 +247,6 @@ export default function PublicLanding() {
               )}
             </div>
 
-            {/* Key Metrics Strip */}
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/80 max-w-lg">
               <div>
                 <p className="text-lg sm:text-xl font-extrabold text-slate-900">Rs. 2,500</p>
@@ -209,10 +263,8 @@ export default function PublicLanding() {
             </div>
           </div>
 
-          {/* Right Responsive Hero Image Viewer (4:5 Mobile Ratio, 16:10 Desktop Ratio) */}
           <div className="lg:col-span-6">
             <div className="relative rounded-3xl bg-white p-2.5 sm:p-3.5 shadow-2xl shadow-indigo-950/10 border border-slate-200/80">
-              {/* Responsive Image Container */}
               <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] rounded-2xl overflow-hidden bg-slate-900">
                 <img
                   src={currentBanner.image_url || DEFAULT_HERO_IMAGE}
@@ -221,13 +273,11 @@ export default function PublicLanding() {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-slate-950/20" />
 
-                {/* Top Badge */}
                 <div className="absolute top-3.5 left-3.5 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-xs font-bold shadow-md">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   {currentBanner.badge_text || 'Verified House Inspection'}
                 </div>
 
-                {/* Admin Manage Viewer Button */}
                 {isAdmin && (
                   <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
                     <button
@@ -240,7 +290,6 @@ export default function PublicLanding() {
                     {currentBanner.id && (
                       <button
                         onClick={() => deleteBannerMutation.mutate(currentBanner.id)}
-                        title="Delete current banner image"
                         className="p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -249,7 +298,6 @@ export default function PublicLanding() {
                   </div>
                 )}
 
-                {/* Prev / Next Controls if multiple images exist */}
                 {banners.length > 1 && (
                   <>
                     <button
@@ -271,7 +319,6 @@ export default function PublicLanding() {
                   </>
                 )}
 
-                {/* Bottom Overlay Info Card */}
                 <div className="absolute bottom-3.5 inset-x-3.5 rounded-2xl bg-white/95 backdrop-blur-md p-3.5 sm:p-4 shadow-lg flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
@@ -294,7 +341,6 @@ export default function PublicLanding() {
                 </div>
               </div>
 
-              {/* Slide Dots */}
               {banners.length > 1 && (
                 <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
                   {banners.map((b, idx) => (
@@ -309,7 +355,6 @@ export default function PublicLanding() {
                 </div>
               )}
 
-              {/* Admin Inline Hero Image Uploader Drawer */}
               {isAdmin && showBannerEditor && (
                 <form
                   onSubmit={handleBannerUpload}
@@ -323,7 +368,7 @@ export default function PublicLanding() {
                       type="text"
                       value={bannerTitle}
                       onChange={(e) => setBannerTitle(e.target.value)}
-                      placeholder="Image Title (e.g. Ground Floor A1)"
+                      placeholder="Image Title"
                       className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                       required
                     />
@@ -370,64 +415,6 @@ export default function PublicLanding() {
         </div>
       </section>
 
-      {/* SMART HOUSE INFRASTRUCTURE SECTION */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-slate-200/70">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
-              AUTOMATED LIVING OS
-            </p>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-              Smart House Infrastructure
-            </h2>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-500 max-w-md">
-            Transparent calculation every month from your exact entry date. Pay online with screenshot proof or directly in cash to Admin.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4">
-              <Zap className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-2">Sub-Metered Accuracy</h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Admin records your starting meter reading on move-in. Each month, enter your new reading and upload the meter photo—system computes <strong className="text-slate-800">(New − Old) × Rs. 15/unit</strong> automatically.
-            </p>
-            <span className="text-[11px] font-semibold text-indigo-600">
-              • Photo Proof Verification Guard
-            </span>
-          </div>
-
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
-              <Droplets className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-2">Transparent Monthly Ledger</h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Fixed <strong className="text-slate-800">Rs. 100 Water Bill</strong> per room plus your room rent (<strong className="text-slate-800">Rs. 2,500</strong> for Small rooms A3/B4 or <strong className="text-slate-800">Rs. 3,800</strong> for Standard rooms). Automated email reminders on your monthly entry anniversary.
-            </p>
-            <span className="text-[11px] font-semibold text-emerald-600">
-              • Online Screenshot or Cash to Admin
-            </span>
-          </div>
-
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
-              <Wrench className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-2">Real-Time Chat & Support</h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Built-in real-time chat with the Landlord/Admin and a dedicated Complaint Ticket system to report plumbing, electrical, or house issues immediately.
-            </p>
-            <span className="text-[11px] font-semibold text-amber-600">
-              • Instant No-Refresh WebSockets
-            </span>
-          </div>
-        </div>
-      </section>
-
       {/* REAL-TIME INVENTORY: ROOMS A1-A4 & B1-B5 */}
       <section id="rooms-inventory" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-slate-200/70">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -443,7 +430,6 @@ export default function PublicLanding() {
             </p>
           </div>
 
-          {/* Filter Pills */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
               {[
@@ -484,18 +470,13 @@ export default function PublicLanding() {
           </div>
         ) : (
           <div className="space-y-10">
-            {/* GROUND FLOOR: A1, A2, A3 (Small), A4 */}
             {(floorFilter === 'ALL' || floorFilter === 'GROUND') && (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">
-                      Ground Floor
-                    </h3>
-                    <span className="text-xs text-slate-500">
-                      4 Units • A1, A2, A3 (Small), A4
-                    </span>
+                    <h3 className="text-sm font-extrabold text-slate-900">Ground Floor</h3>
+                    <span className="text-xs text-slate-500">4 Units • A1, A2, A3 (Small), A4</span>
                   </div>
                   <span className="text-xs font-semibold text-emerald-600">
                     {groundRooms.filter((r) => !r.is_occupied).length} Available
@@ -507,27 +488,26 @@ export default function PublicLanding() {
                     <RoomCard
                       key={room.id}
                       room={room}
-                      onAction={() =>
-                        user ? navigate('/support') : openAuthModal('SIGNUP')
-                      }
+                      onAction={() => {
+                        if (!user) {
+                          openAuthModal('SIGNUP');
+                        } else {
+                          setReservingRoom(room);
+                        }
+                      }}
                     />
                   ))}
                 </div>
               </div>
             )}
 
-            {/* SECOND FLOOR: B1, B2, B3, B4 (Small), B5 */}
             {(floorFilter === 'ALL' || floorFilter === 'SECOND') && (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">
-                      Second Floor
-                    </h3>
-                    <span className="text-xs text-slate-500">
-                      5 Units • B1, B2, B3, B4 (Small), B5
-                    </span>
+                    <h3 className="text-sm font-extrabold text-slate-900">Second Floor</h3>
+                    <span className="text-xs text-slate-500">5 Units • B1, B2, B3, B4 (Small), B5</span>
                   </div>
                   <span className="text-xs font-semibold text-emerald-600">
                     {secondRooms.filter((r) => !r.is_occupied).length} Available
@@ -539,9 +519,13 @@ export default function PublicLanding() {
                     <RoomCard
                       key={room.id}
                       room={room}
-                      onAction={() =>
-                        user ? navigate('/support') : openAuthModal('SIGNUP')
-                      }
+                      onAction={() => {
+                        if (!user) {
+                          openAuthModal('SIGNUP');
+                        } else {
+                          setReservingRoom(room);
+                        }
+                      }}
                     />
                   ))}
                 </div>
@@ -551,7 +535,7 @@ export default function PublicLanding() {
         )}
       </section>
 
-      {/* HOUSE RULES & REGULATIONS ACCORDION */}
+      {/* HOUSE RULES */}
       <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-14 border-t border-slate-200/70">
         <div className="text-center mb-8">
           <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
@@ -560,9 +544,6 @@ export default function PublicLanding() {
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
             House Rules & Regulations
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-xl mx-auto">
-            All tenants living in the house must strictly follow cleanliness and discipline standards. Any property damage is fined according to actual repair/replacement costs.
-          </p>
         </div>
 
         <div className="space-y-3.5">
@@ -580,20 +561,13 @@ export default function PublicLanding() {
             };
 
             return (
-              <div
-                key={rule.id}
-                className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden"
-              >
+              <div key={rule.id} className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden">
                 <button
                   onClick={() => setOpenRuleIndex(isOpen ? -1 : idx)}
                   className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-slate-50/60 transition"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div
-                      className={`w-10 h-10 rounded-xl ${
-                        bgMap[rule.category] || 'bg-slate-100'
-                      } flex items-center justify-center shrink-0`}
-                    >
+                    <div className={`w-10 h-10 rounded-xl ${bgMap[rule.category] || 'bg-slate-100'} flex items-center justify-center shrink-0`}>
                       {iconMap[rule.category] || <ShieldCheck className="w-5 h-5" />}
                     </div>
                     <div>
@@ -601,11 +575,7 @@ export default function PublicLanding() {
                       <p className="text-xs text-slate-500">{rule.category_display}</p>
                     </div>
                   </div>
-                  <ChevronDown
-                    className={`w-5 h-5 text-slate-400 transition-transform ${
-                      isOpen ? 'rotate-180' : ''
-                    }`}
-                  />
+                  <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {isOpen && (
@@ -623,6 +593,205 @@ export default function PublicLanding() {
           })}
         </div>
       </section>
+
+      {/* ROOM RESERVATION & VISIT BOOKING MODAL */}
+      {reservingRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-100 my-8">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900">
+                  Book Room {reservingRoom.room_number} ({reservingRoom.room_floor_display || reservingRoom.floor})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Base Rent: Rs. {Number(reservingRoom.base_rent).toLocaleString()}/month
+                </p>
+              </div>
+              <button
+                onClick={() => setReservingRoom(null)}
+                className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {reservationMsg.text && (
+              <div
+                className={`mb-4 p-3 rounded-xl text-xs font-bold ${
+                  reservationMsg.type === 'error'
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                }`}
+              >
+                {reservationMsg.text}
+              </div>
+            )}
+
+            <form onSubmit={handleReservationSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  REQUEST TYPE
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRequestType('RESERVE')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition ${
+                      requestType === 'RESERVE'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Instant Room Reservation
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequestType('VISIT')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition ${
+                      requestType === 'VISIT'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Schedule Physical Visit
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    EXPECTED MOVE-IN / VISIT DATE
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={moveInDate}
+                    onChange={(e) => setMoveInDate(e.target.value)}
+                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    TOTAL OCCUPANTS
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    required
+                    value={occupantsCount}
+                    onChange={(e) => setOccupantsCount(e.target.value)}
+                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    PHONE NUMBER
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={phoneNum}
+                    onChange={(e) => setPhoneNum(e.target.value)}
+                    placeholder="e.g. 9848800000"
+                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    OCCUPATION / PROFESSION
+                  </label>
+                  <input
+                    type="text"
+                    value={occupation}
+                    onChange={(e) => setOccupation(e.target.value)}
+                    placeholder="e.g. BCA Student / IT Intern"
+                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              {requestType === 'RESERVE' && (
+                <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100 space-y-3">
+                  <p className="text-xs font-bold text-indigo-900">Token Deposit (Optional)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Token Amount (NPR)
+                      </label>
+                      <input
+                        type="number"
+                        value={tokenAmount}
+                        onChange={(e) => setTokenAmount(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Payment Screenshot Slip
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setPaymentScreenshot(e.target.files?.[0] || null)}
+                        className="text-[11px] text-slate-600 pt-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  CITIZENSHIP / ID CARD PHOTO (FOR KYC ONBOARDING)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setCitizenshipDoc(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-600 px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ADDITIONAL NOTES / PREFERRED VISIT TIME
+                </label>
+                <textarea
+                  rows="2"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Any special inquiries or time preferences..."
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReservingRoom(null)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={reserveMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 transition"
+                >
+                  {reserveMutation.isPending ? 'Submitting...' : 'Confirm Request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -630,6 +799,7 @@ export default function PublicLanding() {
 function RoomCard({ room, onAction }) {
   const isSmall = room.room_type === 'SMALL';
   const occupied = room.is_occupied;
+  const pendingCount = room.pending_reservations_count || 0;
 
   return (
     <div
@@ -640,7 +810,6 @@ function RoomCard({ room, onAction }) {
       }`}
     >
       <div>
-        {/* Top Row: Room Name & Occupancy Badge */}
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5">
             <h4 className="text-base font-extrabold text-slate-900">
@@ -668,7 +837,6 @@ function RoomCard({ room, onAction }) {
           {room.title} • {room.area_sqft} sq.ft
         </p>
 
-        {/* Features List */}
         <ul className="space-y-2 mb-5">
           {(room.features || []).map((feat, i) => (
             <li key={i} className="flex items-center gap-2 text-xs text-slate-600">
@@ -687,7 +855,6 @@ function RoomCard({ room, onAction }) {
         </ul>
       </div>
 
-      {/* Bottom Price & Action Button */}
       <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
         <div>
           <p className="text-base font-extrabold text-slate-900">
@@ -703,9 +870,14 @@ function RoomCard({ room, onAction }) {
         ) : (
           <button
             onClick={onAction}
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition relative"
           >
             Reserve / Apply
+            {pendingCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow">
+                {pendingCount}
+              </span>
+            )}
           </button>
         )}
       </div>

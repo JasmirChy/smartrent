@@ -14,6 +14,8 @@ import {
   BellRing,
   AlertTriangle,
   X,
+  CalendarCheck,
+  FileText,
 } from 'lucide-react';
 import {
   BarChart,
@@ -27,7 +29,7 @@ import {
   Cell,
   Legend,
 } from 'recharts';
-import axiosClient from '../api/axiosClient';
+import axiosClient, { fetchReservations, processReservationAction } from '../api/axiosClient';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -40,6 +42,10 @@ export default function AdminCommandCenter() {
   // Active tab for Audit Queue
   const [selectedBillForAudit, setSelectedBillForAudit] = useState(null);
   const [adminRemarks, setAdminRemarks] = useState('');
+
+  // Reservation Review State
+  const [selectedReservation, setSelectedReservation] = useState(null);
+  const [startingMeterOverride, setStartingMeterOverride] = useState('');
 
   // Cash Override Modal States
   const [showCashModal, setShowCashModal] = useState(false);
@@ -95,7 +101,7 @@ export default function AdminCommandCenter() {
     },
   });
 
-  // 4. Fetch all registered users (so Admin can assign a tenant to a room)
+  // 4. Fetch all registered users
   const { data: allUsers = [] } = useQuery({
     queryKey: ['adminUsersList'],
     queryFn: async () => {
@@ -104,7 +110,16 @@ export default function AdminCommandCenter() {
     },
   });
 
+  // 5. Fetch all room reservations
+  const { data: reservations = [] } = useQuery({
+    queryKey: ['adminReservations'],
+    queryFn: async () => {
+      return await fetchReservations();
+    },
+  });
+
   const pendingQueue = bills.filter((b) => b.status === 'PENDING_VERIFICATION');
+  const pendingReservations = reservations.filter((r) => r.status === 'PENDING');
   const unpaidOrPendingBills = bills.filter(
     (b) => b.status !== 'APPROVED' && b.status !== 'PAID_CASH'
   );
@@ -116,7 +131,27 @@ export default function AdminCommandCenter() {
     queryClient.invalidateQueries({ queryKey: ['roomsMatrix'] });
     queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
     queryClient.invalidateQueries({ queryKey: ['adminUsersList'] });
+    queryClient.invalidateQueries({ queryKey: ['adminReservations'] });
   };
+
+  // Reservation Action Mutation (Approve / Reject)
+  const reservationActionMutation = useMutation({
+    mutationFn: async ({ id, payload }) => {
+      return await processReservationAction(id, payload);
+    },
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setSelectedReservation(null);
+      setStartingMeterOverride('');
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text: err.response?.data?.detail || 'Failed to process reservation.',
+      });
+    },
+  });
 
   // Audit Mutation (Approve / Reject)
   const auditMutation = useMutation({
@@ -250,6 +285,9 @@ export default function AdminCommandCenter() {
   const activeAuditBill =
     selectedBillForAudit || pendingQueue[0] || bills.find((b) => b.status === 'UNPAID') || null;
 
+  const activeReviewReservation =
+    selectedReservation || pendingReservations[0] || reservations[0] || null;
+
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
       {/* HEADER BANNER */}
@@ -262,7 +300,7 @@ export default function AdminCommandCenter() {
             Executive Command Center
           </h1>
           <p className="text-xs sm:text-sm text-indigo-100 mt-1">
-            Real-time telemetric utility audit, tenant remittance clearing & financial ledger.
+            Real-time telemetric utility audit, room booking queues, and financial ledger.
           </p>
         </div>
 
@@ -330,17 +368,17 @@ export default function AdminCommandCenter() {
         <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              VERIFICATION QUEUE
+              BOOKING QUEUE
             </span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Users className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <CalendarCheck className="w-4 h-4" />
             </div>
           </div>
           <p className="text-2xl font-extrabold text-slate-900">
-            {pendingQueue.length} Submissions
+            {pendingReservations.length} Requests
           </p>
-          <p className="text-[11px] text-amber-600 font-semibold mt-1">
-            {pendingQueue.length > 0 ? 'Awaiting Photo Inspection' : 'All Submissions Cleared'}
+          <p className="text-[11px] text-indigo-600 font-semibold mt-1">
+            {pendingReservations.length > 0 ? 'Awaiting Room Approval' : 'No Pending Bookings'}
           </p>
         </div>
 
@@ -375,6 +413,205 @@ export default function AdminCommandCenter() {
           </p>
           <p className="text-[11px] text-slate-500 mt-1">Gross Revenue minus House Expenses</p>
         </div>
+      </div>
+
+      {/* NEW: ROOM RESERVATION & VISIT BOOKING QUEUE */}
+      <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+              Room Reservations & Visit Requests
+              {pendingReservations.length > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
+                  {pendingReservations.length} Pending
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Approve prospective tenant bookings to instantly assign rooms, set starting meter readings, and create lease terms.
+            </p>
+          </div>
+        </div>
+
+        {reservations.length === 0 ? (
+          <div className="py-10 text-center text-slate-400 text-xs">
+            No room reservations or visit requests submitted yet.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Queue List */}
+            <div className="lg:col-span-5 space-y-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                SELECT RESERVATION TO REVIEW
+              </p>
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                {reservations.map((res) => {
+                  const isSelected = activeReviewReservation?.id === res.id;
+                  return (
+                    <div
+                      key={res.id}
+                      onClick={() => {
+                        setSelectedReservation(res);
+                        setStartingMeterOverride(String(res.current_meter_reading || 0));
+                      }}
+                      className={`p-4 rounded-2xl border cursor-pointer transition ${
+                        isSelected
+                          ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-slate-900 text-xs">
+                          Room {res.room_number} • {res.user_full_name || res.user_email}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            res.status === 'PENDING'
+                              ? 'bg-amber-100 text-amber-800'
+                              : res.status === 'APPROVED'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-rose-100 text-rose-700'
+                          }`}
+                        >
+                          {res.status_display}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Type: {res.request_type_display}</span>
+                        <span>Move-in: {res.expected_move_in_date}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right Detailed Review Panel */}
+            {activeReviewReservation && (
+              <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-900">
+                      Room {activeReviewReservation.room_number} — {activeReviewReservation.user_full_name}
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Email: {activeReviewReservation.user_email} • Phone: {activeReviewReservation.phone_number || 'N/A'}
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 font-bold text-xs">
+                    {activeReviewReservation.request_type_display}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs text-slate-700 bg-white p-3.5 rounded-xl border border-slate-200/60">
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Expected Move-in</p>
+                    <p className="font-bold text-slate-900">{activeReviewReservation.expected_move_in_date}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Occupants Count</p>
+                    <p className="font-bold text-slate-900">{activeReviewReservation.occupants_count} Person(s)</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Occupation</p>
+                    <p className="font-bold text-slate-900">{activeReviewReservation.occupation || 'Not specified'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Token Deposit</p>
+                    <p className="font-bold text-slate-900">Rs. {Number(activeReviewReservation.token_amount || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                {activeReviewReservation.message && (
+                  <div className="p-3 rounded-xl bg-white border border-slate-200/60 text-xs text-slate-600">
+                    <span className="font-bold text-slate-900 block mb-1">Applicant Notes:</span>
+                    {activeReviewReservation.message}
+                  </div>
+                )}
+
+                {/* Uploaded Token / ID Photos */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {activeReviewReservation.payment_screenshot_url && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">Token Payment Slip</p>
+                      <a href={activeReviewReservation.payment_screenshot_url} target="_blank" rel="noreferrer">
+                        <img
+                          src={activeReviewReservation.payment_screenshot_url}
+                          alt="Token Slip"
+                          className="w-full h-32 rounded-xl object-cover border border-slate-300"
+                        />
+                      </a>
+                    </div>
+                  )}
+
+                  {activeReviewReservation.citizenship_document_url && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">KYC Citizenship ID</p>
+                      <a href={activeReviewReservation.citizenship_document_url} target="_blank" rel="noreferrer">
+                        <img
+                          src={activeReviewReservation.citizenship_document_url}
+                          alt="Citizenship ID"
+                          className="w-full h-32 rounded-xl object-cover border border-slate-300"
+                        />
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {activeReviewReservation.status === 'PENDING' && (
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                        INITIAL ELECTRICITY SUB-METER READING (UNITS)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={startingMeterOverride}
+                        onChange={(e) => setStartingMeterOverride(e.target.value)}
+                        placeholder="e.g. 1200"
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-indigo-600"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() =>
+                          reservationActionMutation.mutate({
+                            id: activeReviewReservation.id,
+                            payload: { action: 'REJECT', admin_remarks: 'Rejected by Landlord' },
+                          })
+                        }
+                        disabled={reservationActionMutation.isPending}
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition"
+                      >
+                        Reject Request
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          reservationActionMutation.mutate({
+                            id: activeReviewReservation.id,
+                            payload: {
+                              action: 'APPROVE',
+                              starting_meter_reading: startingMeterOverride || activeReviewReservation.current_meter_reading,
+                              entry_date: activeReviewReservation.expected_move_in_date,
+                              admin_remarks: 'Approved & assigned by Landlord Admin',
+                            },
+                          })
+                        }
+                        disabled={reservationActionMutation.isPending}
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition"
+                      >
+                        {reservationActionMutation.isPending ? 'Processing...' : 'Approve & Assign Room'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* UNIT TELEMETRY & OCCUPANCY MATRIX (ROOMS A1-A4 & B1-B5) */}
@@ -511,7 +748,6 @@ export default function AdminCommandCenter() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Left Queue List */}
             <div className="lg:col-span-5 space-y-3">
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 SELECT BILL FOR INSPECTION
@@ -560,7 +796,6 @@ export default function AdminCommandCenter() {
               </div>
             </div>
 
-            {/* Right Side-by-Side Inspection Target */}
             {activeAuditBill && (
               <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
@@ -577,7 +812,6 @@ export default function AdminCommandCenter() {
                   </span>
                 </div>
 
-                {/* Side-by-Side Images: Zone 1 Meter Photo & Zone 2 Payment Receipt */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
@@ -585,11 +819,7 @@ export default function AdminCommandCenter() {
                     </p>
                     <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border border-slate-300">
                       {activeAuditBill.meter_photo_url ? (
-                        <a
-                          href={activeAuditBill.meter_photo_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
+                        <a href={activeAuditBill.meter_photo_url} target="_blank" rel="noreferrer">
                           <img
                             src={activeAuditBill.meter_photo_url}
                             alt="Meter Snapshot"
@@ -602,10 +832,6 @@ export default function AdminCommandCenter() {
                         </div>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-600 mt-1">
-                      Reading: <strong>{activeAuditBill.current_meter_reading ?? 'Pending'} units</strong>{' '}
-                      (Prev: {activeAuditBill.previous_meter_reading})
-                    </p>
                   </div>
 
                   <div>
@@ -614,11 +840,7 @@ export default function AdminCommandCenter() {
                     </p>
                     <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border border-slate-300">
                       {activeAuditBill.payment_screenshot_url ? (
-                        <a
-                          href={activeAuditBill.payment_screenshot_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
+                        <a href={activeAuditBill.payment_screenshot_url} target="_blank" rel="noreferrer">
                           <img
                             src={activeAuditBill.payment_screenshot_url}
                             alt="Payment Slip"
@@ -631,9 +853,6 @@ export default function AdminCommandCenter() {
                         </div>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-600 mt-1">
-                      Ref: <strong>{activeAuditBill.transaction_reference || 'N/A'}</strong>
-                    </p>
                   </div>
                 </div>
 
@@ -691,7 +910,7 @@ export default function AdminCommandCenter() {
         )}
       </div>
 
-      {/* FINANCIAL VELOCITY & UTILITY CHARTS SECTION */}
+      {/* CHARTS SECTION */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
           <h3 className="text-base font-extrabold text-slate-900 mb-1">
@@ -713,18 +932,8 @@ export default function AdminCommandCenter() {
                   <YAxis stroke="#94A3B8" fontSize={11} />
                   <Tooltip />
                   <Legend />
-                  <Bar
-                    dataKey="income"
-                    name="Rental Income (Rs.)"
-                    fill="#4F46E5"
-                    radius={[6, 6, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="expenses"
-                    name="House Expenses (Rs.)"
-                    fill="#EF4444"
-                    radius={[6, 6, 0, 0]}
-                  />
+                  <Bar dataKey="income" name="Rental Income (Rs.)" fill="#4F46E5" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="expenses" name="House Expenses (Rs.)" fill="#EF4444" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -733,9 +942,7 @@ export default function AdminCommandCenter() {
 
         <div className="lg:col-span-4 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between">
           <div>
-            <h3 className="text-base font-extrabold text-slate-900 mb-1">
-              Utility Outflow (Pie Chart)
-            </h3>
+            <h3 className="text-base font-extrabold text-slate-900 mb-1">Utility Outflow (Pie Chart)</h3>
             <p className="text-xs text-slate-500">Breakdown of whole-house operational expenses</p>
           </div>
 
@@ -778,20 +985,18 @@ export default function AdminCommandCenter() {
         </div>
       </div>
 
-      {/* RECORD BUILDING OUTFLOW (EXPENSE LOGGER) */}
+      {/* RECORD BUILDING OUTFLOW */}
       <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
         <h3 className="text-base font-extrabold text-slate-900 mb-1">
           Record Whole-House Expense (Electricity, Water Supply, Maintenance)
         </h3>
         <p className="text-xs text-slate-500 mb-5">
-          Log main NEA electricity grid bills, water tanker bills, and building repair expenses to update the Pie and Bar charts automatically.
+          Log main NEA electricity grid bills, water tanker bills, and building repair expenses to update charts.
         </p>
 
         <form onSubmit={handleLogExpense} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-              CATEGORY
-            </label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">CATEGORY</label>
             <select
               value={expenseCategory}
               onChange={(e) => setExpenseCategory(e.target.value)}
@@ -800,15 +1005,13 @@ export default function AdminCommandCenter() {
               <option value="ELECTRICITY_MAIN">Main Electricity (NEA)</option>
               <option value="WATER_SUPPLY">Water Supply / Tanker</option>
               <option value="MAINTENANCE">Plumbing & Repairs</option>
-              <option value="CLEANING_SANITATION">Cleaning & Waste</option>
+              <option value="CLEANLINESS_SANITATION">Cleaning & Waste</option>
               <option value="INTERNET_OTHER">Internet / Other</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-              TITLE / VENDOR
-            </label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">TITLE / VENDOR</label>
             <input
               type="text"
               required
@@ -820,9 +1023,7 @@ export default function AdminCommandCenter() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-              AMOUNT (NPR)
-            </label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">AMOUNT (NPR)</label>
             <input
               type="number"
               step="0.01"
@@ -835,9 +1036,7 @@ export default function AdminCommandCenter() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-              EXPENSE DATE
-            </label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">EXPENSE DATE</label>
             <input
               type="date"
               required
@@ -857,7 +1056,7 @@ export default function AdminCommandCenter() {
         </form>
       </div>
 
-      {/* MODAL 1: ASSIGN TENANT TO ROOM & SET INITIAL METER READING */}
+      {/* MODALS */}
       {assignModalRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100">
@@ -865,7 +1064,7 @@ export default function AdminCommandCenter() {
               Assign Tenant to Room {assignModalRoom.room_number}
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              Base Rent: Rs. {Number(assignModalRoom.base_rent).toLocaleString()}/mo • Water: Rs. 100/mo • Electricity: Rs. 15/unit
+              Base Rent: Rs. {Number(assignModalRoom.base_rent).toLocaleString()}/mo • Water: Rs. 100/mo
             </p>
 
             <form
@@ -883,9 +1082,7 @@ export default function AdminCommandCenter() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  SELECT REGISTERED TENANT
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">SELECT REGISTERED TENANT</label>
                 <select
                   required
                   value={selectedTenantId}
@@ -902,9 +1099,7 @@ export default function AdminCommandCenter() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  MOVE-IN / ENTRY DATE (Determines Monthly Billing Date)
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">MOVE-IN / ENTRY DATE</label>
                 <input
                   type="date"
                   required
@@ -915,16 +1110,13 @@ export default function AdminCommandCenter() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  INITIAL ELECTRICITY SUB-METER READING (Units)
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">INITIAL SUB-METER READING (Units)</label>
                 <input
                   type="number"
                   step="0.01"
                   required
                   value={startingMeter}
                   onChange={(e) => setStartingMeter(e.target.value)}
-                  placeholder="e.g. 1200"
                   className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                 />
               </div>
@@ -950,17 +1142,10 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* MODAL 2: MANUAL CASH PAYMENT OVERRIDE */}
       {showCashModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100">
-            <h3 className="text-lg font-extrabold text-slate-900 mb-1">
-              Record Manual Cash Payment
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Enter the tenant's new meter reading to auto-calculate (New − Old) × Rs. 15 and mark the bill as Paid via Cash.
-            </p>
-
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Record Manual Cash Payment</h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -975,9 +1160,7 @@ export default function AdminCommandCenter() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  SELECT ACTIVE BILL
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">SELECT ACTIVE BILL</label>
                 <select
                   required
                   value={cashBillId}
@@ -994,43 +1177,13 @@ export default function AdminCommandCenter() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  NEW METER READING (Units)
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">NEW METER READING (Units)</label>
                 <input
                   type="number"
                   step="0.01"
                   required
                   value={cashMeterReading}
                   onChange={(e) => setCashMeterReading(e.target.value)}
-                  placeholder="e.g. 1245"
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  DAMAGE FINE AMOUNT (OPTIONAL)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={cashFine}
-                  onChange={(e) => setCashFine(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  FINE REASON (OPTIONAL)
-                </label>
-                <input
-                  type="text"
-                  value={cashReason}
-                  onChange={(e) => setCashReason(e.target.value)}
-                  placeholder="e.g. Broken switch replacement"
                   className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                 />
               </div>
@@ -1048,7 +1201,7 @@ export default function AdminCommandCenter() {
                   disabled={cashOverrideMutation.isPending}
                   className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md"
                 >
-                  {cashOverrideMutation.isPending ? 'Processing...' : 'Confirm Cash Payment'}
+                  Confirm Cash Payment
                 </button>
               </div>
             </form>
@@ -1056,17 +1209,10 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* MODAL 3: APPLY PROPERTY DAMAGE / RULE VIOLATION FINE */}
       {showFineModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100">
-            <h3 className="text-lg font-extrabold text-slate-900 mb-1">
-              Apply Property Damage / Rule Violation Fine
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Adds a surcharge directly to the tenant's active monthly bill.
-            </p>
-
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Apply Property Damage / Rule Fine</h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1081,9 +1227,7 @@ export default function AdminCommandCenter() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  SELECT TENANT BILL
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">SELECT TENANT BILL</label>
                 <select
                   required
                   value={fineBillId}
@@ -1100,30 +1244,24 @@ export default function AdminCommandCenter() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  FINE AMOUNT (NPR)
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">FINE AMOUNT (NPR)</label>
                 <input
                   type="number"
                   step="0.01"
                   required
                   value={fineAmount}
                   onChange={(e) => setFineAmount(e.target.value)}
-                  placeholder="e.g. 500"
                   className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  DAMAGE / VIOLATION REASON
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">REASON</label>
                 <input
                   type="text"
                   required
                   value={fineReason}
                   onChange={(e) => setFineReason(e.target.value)}
-                  placeholder="e.g. Corridor cleanliness violation / Broken window latch"
                   className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                 />
               </div>
@@ -1141,7 +1279,7 @@ export default function AdminCommandCenter() {
                   disabled={applyFineMutation.isPending}
                   className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md"
                 >
-                  {applyFineMutation.isPending ? 'Applying...' : 'Apply Fine to Bill'}
+                  Apply Fine
                 </button>
               </div>
             </form>

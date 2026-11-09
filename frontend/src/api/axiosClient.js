@@ -46,4 +46,22 @@ axiosClient.interceptors.response.use(
   }
 );
 
+// --- ROOM RESERVATION API HELPERS ---
+export const fetchReservations = async () => {
+  const res = await axiosClient.get('/rooms/reservations/');
+  return res.data;
+};
+
+export const createReservation = async (formData) => {
+  const res = await axiosClient.post('/rooms/reservations/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+};
+
+export const processReservationAction = async (reservationId, actionPayload) => {
+  const res = await axiosClient.post(`/rooms/reservations/${reservationId}/action/`, actionPayload);
+  return res.data;
+};
+
 export default axiosClient;

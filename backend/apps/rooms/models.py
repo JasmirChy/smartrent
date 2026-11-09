@@ -125,3 +125,45 @@ class HouseRule(models.Model):
 
     def __str__(self):
         return f"[{self.get_category_display()}] {self.title}"
+
+
+class RoomReservation(models.Model):
+    """Handles room reservation and physical inspection requests from users before Tenancy is created."""
+    STATUS_CHOICES = (
+        ('PENDING', 'Pending Review'),
+        ('APPROVED', 'Approved & Assigned'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled by User'),
+    )
+    REQUEST_TYPE_CHOICES = (
+        ('RESERVE', 'Instant Room Reservation'),
+        ('VISIT', 'Schedule Physical Inspection / Visit'),
+    )
+
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='reservations')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='reservations'
+    )
+    request_type = models.CharField(max_length=15, choices=REQUEST_TYPE_CHOICES, default='RESERVE')
+    expected_move_in_date = models.DateField(help_text="Proposed entry date for billing cycle")
+    occupants_count = models.PositiveSmallIntegerField(default=1)
+    phone_number = models.CharField(max_length=20, blank=True)
+    occupation = models.CharField(max_length=100, blank=True)
+    message = models.TextField(blank=True, help_text="Any notes or preferred visit time")
+
+    token_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    payment_screenshot = models.ImageField(upload_to='reservation_tokens/', null=True, blank=True)
+    citizenship_document = models.ImageField(upload_to='kyc_documents/', null=True, blank=True)
+
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
+    admin_remarks = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.email} -> Room {self.room.room_number} [{self.status}]"
