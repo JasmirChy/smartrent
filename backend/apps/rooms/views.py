@@ -9,9 +9,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
+from apps.communication.models import Notice
+from apps.communication.serializers import NoticeSerializer
 from apps.accounts.models import User
 from apps.billing.models import MonthlyBill
-from .models import Room, Tenancy, HeroBanner, HouseRule, RoomReservation
+from .models import Room, Tenancy, HeroBanner, HouseRule, RoomReservation, MoveOutRequest
 from .serializers import (
     RoomSerializer,
     HeroBannerSerializer,
@@ -42,13 +44,21 @@ def add_one_month(orig_date):
 
 
 class PublicLandingDataView(APIView):
-    """Single fast endpoint for the Homepage: Hero Images, Rooms (A1-A4, B1-B5), and House Rules."""
+    """
+    Single fast endpoint for the Homepage (/api/rooms/landing/):
+    Returns Hero Images, Rooms (A1-A4, B1-B5), House Rules, AND Active Notices!
+    """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
+        # Auto-heal any legacy 'SECOND' floor values to 'FIRST' so B1-B5 always appear
+        Room.objects.filter(room_number__istartswith='B').exclude(floor='FIRST').update(floor='FIRST')
+        Room.objects.filter(room_number__istartswith='A').exclude(floor='GROUND').update(floor='GROUND')
+
         rooms = Room.objects.all().prefetch_related('tenancies__tenant', 'reservations')
         banners = HeroBanner.objects.filter(is_active=True)
         rules = HouseRule.objects.filter(is_active=True)
+        notices = Notice.objects.filter(is_active=True).order_by('-created_at')[:5]
 
         total_rooms = rooms.count()
         occupied_rooms = rooms.filter(is_occupied=True).count()
@@ -63,7 +73,12 @@ class PublicLandingDataView(APIView):
             "banners": HeroBannerSerializer(banners, many=True, context={'request': request}).data,
             "rooms": RoomSerializer(rooms, many=True, context={'request': request}).data,
             "rules": HouseRuleSerializer(rules, many=True).data,
+            "notices": NoticeSerializer(notices, many=True, context={'request': request}).data,
         })
+
+
+# Alias so whether urls.py imports PublicLandingView or PublicLandingDataView, both work identically
+PublicLandingView = PublicLandingDataView
 
 
 class RoomListUpdateView(generics.ListAPIView):
@@ -204,12 +219,6 @@ class RoomReservationListCreateView(generics.ListCreateAPIView):
 class RoomReservationActionView(APIView):
     """
     POST /api/rooms/reservations/<pk>/action/
-    Body: {
-        "action": "APPROVE" | "REJECT" | "CANCEL",
-        "admin_remarks": "...",
-        "starting_meter_reading": 120.5,
-        "entry_date": "2026-11-10"
-    }
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -268,12 +277,10 @@ class RoomReservationActionView(APIView):
 
             tenant = reservation.user
 
-            # Update user's phone number if provided during reservation
             if reservation.phone_number and not getattr(tenant, 'phone_number', ''):
                 tenant.phone_number = reservation.phone_number
                 tenant.save(update_fields=['phone_number'])
 
-            # Deactivate any prior active tenancy for this room or tenant
             Tenancy.objects.filter(room=room, is_active=True).update(
                 is_active=False,
                 move_out_date=timezone.localdate()
@@ -283,12 +290,10 @@ class RoomReservationActionView(APIView):
                 move_out_date=timezone.localdate()
             )
 
-            # Mark reservation approved
             reservation.status = 'APPROVED'
             reservation.admin_remarks = remarks
             reservation.save(update_fields=['status', 'admin_remarks', 'updated_at'])
 
-            # Create active Tenancy
             tenancy = Tenancy.objects.create(
                 room=room,
                 tenant=tenant,
@@ -297,17 +302,14 @@ class RoomReservationActionView(APIView):
                 is_active=True,
             )
 
-            # Mark room as occupied and sync meter reading
             room.is_occupied = True
             room.current_meter_reading = starting_meter
             room.save(update_fields=['is_occupied', 'current_meter_reading', 'updated_at'])
 
-            # Ensure user role is TENANT (unless Admin)
             if getattr(tenant, 'role', '') not in ['ADMIN', 'TENANT']:
                 tenant.role = 'TENANT'
                 tenant.save(update_fields=['role'])
 
-            # Initialize first MonthlyBill cycle (entry_date -> +1 month)
             first_due_date = add_one_month(entry_date)
             month_label = first_due_date.strftime("%B %Y")
 
@@ -326,7 +328,6 @@ class RoomReservationActionView(APIView):
                 status='UNPAID',
             )
 
-            # Auto-reject other pending reservations for this same room
             RoomReservation.objects.filter(room=room, status='PENDING').exclude(pk=reservation.pk).update(
                 status='REJECTED',
                 admin_remarks='Room was assigned to another approved applicant.'
@@ -339,6 +340,150 @@ class RoomReservationActionView(APIView):
             })
 
         return Response({"detail": "Invalid action. Use APPROVE, REJECT, or CANCEL."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ============================================================================
+# ITEM B: MOVE-OUT & DEPOSIT SETTLEMENT VIEWS
+# ============================================================================
+
+class MoveOutStatusView(APIView):
+    """Returns whether the logged-in tenant has an active move-out request."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        req = MoveOutRequest.objects.filter(tenant=request.user).order_by('-created_at').first()
+        if not req or req.status == 'REJECTED':
+            return Response({"has_active_request": False, "request": None})
+        return Response({
+            "has_active_request": True,
+            "request": {
+                "id": req.id,
+                "room_number": req.room.room_number,
+                "requested_date": req.requested_date,
+                "reason": req.reason,
+                "status": req.status,
+                "status_display": req.get_status_display(),
+            }
+        })
+
+
+class RequestMoveOutView(APIView):
+    """Allows an active tenant to submit a move-out settlement request."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        active_tenancy = Tenancy.objects.filter(tenant=request.user, is_active=True).select_related('room').first()
+        if not active_tenancy:
+            return Response({"error": "You do not have an active room tenancy to vacate."}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = MoveOutRequest.objects.filter(tenancy=active_tenancy, status='PENDING').first()
+        if existing:
+            return Response({"error": "You already have a pending move-out request."}, status=status.HTTP_400_BAD_REQUEST)
+
+        requested_date = request.data.get('requested_date') or timezone.localdate()
+        reason = request.data.get('reason', '')
+
+        mo = MoveOutRequest.objects.create(
+            tenancy=active_tenancy,
+            room=active_tenancy.room,
+            tenant=request.user,
+            requested_date=requested_date,
+            reason=reason,
+            status='PENDING',
+        )
+
+        return Response({
+            "message": "Move-out request submitted successfully!",
+            "id": mo.id,
+        }, status=status.HTTP_201_CREATED)
+
+
+class PendingMoveOutListView(APIView):
+    """Returns all pending move-out requests for Admin Command Center."""
+    permission_classes = [IsAdminUserRole]
+
+    def get(self, request):
+        qs = MoveOutRequest.objects.filter(status='PENDING').select_related('room', 'tenant')
+        data = [
+            {
+                "id": mo.id,
+                "room_number": mo.room.room_number,
+                "tenant_name": mo.tenant.full_name,
+                "tenant_email": mo.tenant.email,
+                "requested_date": mo.requested_date,
+                "reason": mo.reason,
+                "status": mo.status,
+                "status_display": mo.get_status_display(),
+            }
+            for mo in qs
+        ]
+        return Response(data)
+
+
+class ProcessMoveOutRequestView(APIView):
+    """Allows Admin to approve (generate final settlement bill & vacate room) or reject a move-out request."""
+    permission_classes = [IsAdminUserRole]
+
+    @transaction.atomic
+    def post(self, request, pk):
+        mo = get_object_or_404(MoveOutRequest.objects.select_related('tenancy', 'room', 'tenant'), pk=pk)
+        action = (request.data.get('action') or '').upper()
+
+        if action == 'REJECT':
+            mo.status = 'REJECTED'
+            mo.resolved_at = timezone.now()
+            mo.save(update_fields=['status', 'resolved_at'])
+            return Response({"message": f"Move-out request for Room {mo.room.room_number} rejected."})
+
+        if action == 'APPROVE':
+            raw_meter = request.data.get('final_meter_reading')
+            room = mo.room
+            final_meter = Decimal(str(raw_meter)) if raw_meter not in [None, ''] else room.current_meter_reading
+
+            if final_meter < room.current_meter_reading:
+                return Response(
+                    {"detail": f"Final meter reading ({final_meter}) cannot be less than current reading ({room.current_meter_reading})."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Generate final settlement bill
+            today = timezone.localdate()
+            MonthlyBill.objects.create(
+                tenancy=mo.tenancy,
+                room=room,
+                tenant=mo.tenant,
+                billing_month_label=f"Final Move-Out Settlement ({today.strftime('%b %Y')})",
+                cycle_start_date=mo.tenancy.entry_date,
+                cycle_end_date=today,
+                due_date=today,
+                base_rent=room.base_rent,
+                water_bill=room.fixed_water_bill,
+                electricity_rate=room.electricity_rate_per_unit,
+                previous_meter_reading=room.current_meter_reading,
+                current_meter_reading=final_meter,
+                status='UNPAID',
+                admin_remarks='Final move-out settlement invoice.',
+            )
+
+            # Close tenancy and mark room available
+            mo.tenancy.is_active = False
+            mo.tenancy.move_out_date = today
+            mo.tenancy.save(update_fields=['is_active', 'move_out_date'])
+
+            room.is_occupied = False
+            room.current_meter_reading = final_meter
+            room.save(update_fields=['is_occupied', 'current_meter_reading', 'updated_at'])
+
+            mo.final_meter_reading = final_meter
+            mo.status = 'APPROVED'
+            mo.resolved_at = timezone.now()
+            mo.save(update_fields=['final_meter_reading', 'status', 'resolved_at'])
+
+            return Response({
+                "message": f"Move-out approved! Final bill generated and Room {room.room_number} is now vacant."
+            })
+
+        return Response({"detail": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class HeroBannerListCreateView(generics.ListCreateAPIView):

@@ -20,7 +20,6 @@ export default function ProfileSettings() {
   const [otpCode, setOtpCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [pwdMsg, setPwdMsg] = useState('');
-
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     setSaving(true);

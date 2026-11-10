@@ -1,18 +1,25 @@
 from django.db.models import Q
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.core.mail import send_mail
+from django.conf import settings
 from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from apps.accounts.models import User
+from apps.rooms.models import Tenancy, RoomReservation
 from apps.rooms.views import IsAdminUserRole
 from .models import ComplaintTicket, ChatMessage, Notice
 from .serializers import ComplaintTicketSerializer, ChatMessageSerializer, NoticeSerializer
 
 
 class ComplaintTicketListCreateView(generics.ListCreateAPIView):
+    """
+    Tenants can submit complaints and view their own tickets.
+    Admin can view all complaints across all rooms.
+    """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ComplaintTicketSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -32,12 +39,16 @@ class ComplaintTicketListCreateView(generics.ListCreateAPIView):
 
 
 class ComplaintTicketUpdateView(APIView):
+    """Allows Admin to update complaint status (OPEN, IN_PROGRESS, RESOLVED) & reply."""
     permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request, pk):
         ticket = get_object_or_404(ComplaintTicket, pk=pk)
         if request.user.role != 'ADMIN' and not request.user.is_superuser:
-            return Response({"error": "Only Admin can update ticket status."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "Only Admin can update ticket status."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         new_status = request.data.get('status', ticket.status)
         admin_response = request.data.get('admin_response', ticket.admin_response)
@@ -50,22 +61,84 @@ class ComplaintTicketUpdateView(APIView):
             ticket.resolved_at = timezone.now()
         ticket.save()
 
-        return Response(ComplaintTicketSerializer(ticket, context={'request': request}).data, status=status.HTTP_200_OK)
+        return Response(
+            ComplaintTicketSerializer(ticket, context={'request': request}).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 class NoticeListCreateView(generics.ListCreateAPIView):
-    """Anyone authenticated can read active notices; only Admin can create them."""
-    permission_classes = [permissions.IsAuthenticated]
+    """
+    Anyone authenticated (or viewing dashboard) can read active notices.
+    When Admin creates a notice, it is saved AND emailed to all active & reserved room tenants!
+    """
+    permission_classes = [permissions.AllowAny]
     serializer_class = NoticeSerializer
 
     def get_queryset(self):
-        user = self.request.user
-        if user.role == 'ADMIN' or user.is_superuser:
-            return Notice.objects.all()
-        return Notice.objects.filter(is_active=True)
+        user = getattr(self.request, 'user', None)
+        if user and user.is_authenticated and (getattr(user, 'role', '') == 'ADMIN' or user.is_superuser):
+            return Notice.objects.all().order_by('-created_at')
+        return Notice.objects.filter(is_active=True).order_by('-created_at')
 
-    def perform_create(self, serializer):
-        serializer.save(posted_by=self.request.user)
+    def create(self, request, *args, **kwargs):
+        if not request.user.is_authenticated or (request.user.role != 'ADMIN' and not request.user.is_superuser):
+            return Response({"error": "Only Admin can publish notices."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        notice = serializer.save(posted_by=request.user, is_active=True)
+
+        # Collect emails of all active room tenants + all reserved room tenants
+        active_tenant_emails = list(
+            Tenancy.objects.filter(is_active=True)
+            .select_related('tenant')
+            .values_list('tenant__email', flat=True)
+        )
+        reserved_tenant_emails = list(
+            RoomReservation.objects.filter(status__in=['PENDING', 'APPROVED'])
+            .select_related('user')
+            .values_list('user__email', flat=True)
+        )
+        all_tenant_emails = list(
+            User.objects.filter(role='TENANT', is_active=True).values_list('email', flat=True)
+        )
+
+        recipient_set = {
+            email.strip()
+            for email in (active_tenant_emails + reserved_tenant_emails + all_tenant_emails)
+            if email and email.strip()
+        }
+
+        emailed_count = 0
+        if recipient_set:
+            subject = f"SmartRent Notice [{notice.get_category_display()}]: {notice.title}"
+            message = (
+                f"Namaste,\n\n"
+                f"A new official house announcement has been published on SmartRent:\n\n"
+                f"Title: {notice.title}\n"
+                f"Category: {notice.get_category_display()}\n"
+                f"----------------------------------------\n"
+                f"{notice.content}\n"
+                f"----------------------------------------\n\n"
+                f"Log in to your SmartRent Tenant Dashboard to view all house updates.\n\n"
+                f"— SmartRent House Management"
+            )
+            try:
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=list(recipient_set),
+                    fail_silently=True,
+                )
+                emailed_count = len(recipient_set)
+            except Exception:
+                pass
+
+        data = NoticeSerializer(notice, context={'request': request}).data
+        data['emailed_count'] = emailed_count
+        return Response(data, status=status.HTTP_201_CREATED)
 
 
 class NoticeDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -75,6 +148,10 @@ class NoticeDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class ChatContactsView(APIView):
+    """
+    For Admin: Returns all Tenants with their assigned room, last message, and unread count.
+    For Tenant: Returns the Admin/Landlord contact so the tenant can chat directly with Admin.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
@@ -124,6 +201,7 @@ class ChatContactsView(APIView):
 
 
 class ChatConversationView(APIView):
+    """Fetches message history with a specific user and allows sending text/image messages."""
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -138,7 +216,9 @@ class ChatConversationView(APIView):
             | Q(sender=other_user, receiver=request.user)
         ).select_related('sender', 'receiver').order_by('created_at')
 
-        return Response(ChatMessageSerializer(messages, many=True, context={'request': request}).data)
+        return Response(
+            ChatMessageSerializer(messages, many=True, context={'request': request}).data
+        )
 
     def post(self, request, other_user_id):
         other_user = get_object_or_404(User, id=other_user_id)
@@ -146,7 +226,10 @@ class ChatConversationView(APIView):
         attachment = request.FILES.get('attachment')
 
         if not message_text and not attachment:
-            return Response({"error": "Message text or image attachment is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Message text or image attachment is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         msg = ChatMessage.objects.create(
             sender=request.user,
@@ -155,4 +238,7 @@ class ChatConversationView(APIView):
             attachment=attachment,
         )
 
-        return Response(ChatMessageSerializer(msg, context={'request': request}).data, status=status.HTTP_201_CREATED)
+        return Response(
+            ChatMessageSerializer(msg, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )

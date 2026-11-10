@@ -50,7 +50,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('room_number', models.CharField(max_length=10, unique=True)),
-                ('floor', models.CharField(choices=[('GROUND', 'Ground Floor'), ('SECOND', 'Second Floor')], max_length=10)),
+                ('floor', models.CharField(choices=[('GROUND', 'Ground Floor'), ('FIRST', 'First Floor')], max_length=10)),
                 ('room_type', models.CharField(choices=[('STANDARD', 'Standard Room (Rs. 3,800)'), ('SMALL', 'Small / Compact Room (Rs. 2,500)')], default='STANDARD', max_length=15)),
                 ('title', models.CharField(default='Standard Deluxe Room', max_length=100)),
                 ('area_sqft', models.PositiveIntegerField(default=130)),

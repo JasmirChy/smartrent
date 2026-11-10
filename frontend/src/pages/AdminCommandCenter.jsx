@@ -3,19 +3,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ShieldAlert,
   DollarSign,
-  Users,
   Building,
-  TrendingUp,
-  CheckCircle2,
-  XCircle,
   Zap,
-  Loader2,
   UserPlus,
   BellRing,
   AlertTriangle,
   X,
   CalendarCheck,
-  FileText,
+  Megaphone,
+  Trash2,
+  LogOut,
 } from 'lucide-react';
 import {
   BarChart,
@@ -29,44 +26,51 @@ import {
   Cell,
   Legend,
 } from 'recharts';
-import axiosClient, { fetchReservations, processReservationAction } from '../api/axiosClient';
+import axiosClient, {
+  fetchReservations,
+  processReservationAction,
+  triggerBulkGenerateBills,
+  fetchNotices,
+  createNotice,
+  deleteNotice,
+  fetchPendingMoveOuts,
+  processMoveOutRequest,
+} from '../api/axiosClient';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 export default function AdminCommandCenter() {
   const queryClient = useQueryClient();
 
-  // Feedback Toast State
   const [bannerMsg, setBannerMsg] = useState({ type: '', text: '' });
-
-  // Active tab for Audit Queue
   const [selectedBillForAudit, setSelectedBillForAudit] = useState(null);
   const [adminRemarks, setAdminRemarks] = useState('');
-
-  // Reservation Review State
   const [selectedReservation, setSelectedReservation] = useState(null);
   const [startingMeterOverride, setStartingMeterOverride] = useState('');
 
-  // Cash Override Modal States
+  // Overrides & Modals
   const [showCashModal, setShowCashModal] = useState(false);
   const [cashBillId, setCashBillId] = useState('');
   const [cashMeterReading, setCashMeterReading] = useState('');
   const [cashFine, setCashFine] = useState('0');
   const [cashReason, setCashReason] = useState('');
 
-  // Assign Tenant to Room Modal States
   const [assignModalRoom, setAssignModalRoom] = useState(null);
   const [selectedTenantId, setSelectedTenantId] = useState('');
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [startingMeter, setStartingMeter] = useState('0');
 
-  // Apply Fine Modal States
   const [showFineModal, setShowFineModal] = useState(false);
   const [fineBillId, setFineBillId] = useState('');
   const [fineAmount, setFineAmount] = useState('');
   const [fineReason, setFineReason] = useState('');
 
-  // Expense Logger Form States
+  // Notice Board Form States (ITEM A)
+  const [noticeTitle, setNoticeTitle] = useState('');
+  const [noticeContent, setNoticeContent] = useState('');
+  const [noticeCategory, setNoticeCategory] = useState('GENERAL');
+
+  // Expense Form
   const [expenseCategory, setExpenseCategory] = useState('ELECTRICITY_MAIN');
   const [expenseTitle, setExpenseTitle] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
@@ -74,94 +78,95 @@ export default function AdminCommandCenter() {
   const [expenseNotes, setExpenseNotes] = useState('');
   const [expenseReceipt, setExpenseReceipt] = useState(null);
 
-  // 1. Fetch Analytics & KPI data
+  // Move Out Review State
+  const [selectedMoveOut, setSelectedMoveOut] = useState(null);
+  const [finalMeterReading, setFinalMeterReading] = useState('');
+
+  // Queries
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: ['adminAnalytics'],
-    queryFn: async () => {
-      const res = await axiosClient.get('/billing/analytics/');
-      return res.data;
-    },
+    queryFn: async () => (await axiosClient.get('/billing/analytics/')).data,
   });
 
-  // 2. Fetch all bills
-  const { data: bills = [], isLoading: billsLoading } = useQuery({
+  const { data: rawBills = [] } = useQuery({
     queryKey: ['allBills'],
     queryFn: async () => {
       const res = await axiosClient.get('/billing/');
-      return res.data;
+      return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
   });
 
-  // 3. Fetch rooms matrix (A1-A4, B1-B5)
   const { data: roomsData } = useQuery({
     queryKey: ['roomsMatrix'],
-    queryFn: async () => {
-      const res = await axiosClient.get('/rooms/');
-      return res.data;
-    },
+    queryFn: async () => (await axiosClient.get('/rooms/')).data,
   });
 
-  // 4. Fetch all registered users
-  const { data: allUsers = [] } = useQuery({
+  const { data: rawUsers = [] } = useQuery({
     queryKey: ['adminUsersList'],
     queryFn: async () => {
       const res = await axiosClient.get('/accounts/users/');
-      return res.data;
+      return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
   });
 
-  // 5. Fetch all room reservations
-  const { data: reservations = [] } = useQuery({
+  const { data: rawReservations = [] } = useQuery({
     queryKey: ['adminReservations'],
-    queryFn: async () => {
-      return await fetchReservations();
-    },
+    queryFn: fetchReservations,
   });
+
+  const { data: rawNotices = [] } = useQuery({
+    queryKey: ['adminNotices'],
+    queryFn: fetchNotices,
+  });
+
+  const { data: rawPendingMoveOuts = [] } = useQuery({
+    queryKey: ['pendingMoveOuts'],
+    queryFn: fetchPendingMoveOuts,
+  });
+
+  const bills = Array.isArray(rawBills) ? rawBills : [];
+  const allUsers = Array.isArray(rawUsers) ? rawUsers : [];
+  const reservations = Array.isArray(rawReservations) ? rawReservations : [];
+  const notices = Array.isArray(rawNotices) ? rawNotices : [];
+  const pendingMoveOuts = Array.isArray(rawPendingMoveOuts) ? rawPendingMoveOuts : [];
 
   const pendingQueue = bills.filter((b) => b.status === 'PENDING_VERIFICATION');
   const pendingReservations = reservations.filter((r) => r.status === 'PENDING');
   const unpaidOrPendingBills = bills.filter(
     (b) => b.status !== 'APPROVED' && b.status !== 'PAID_CASH'
   );
-  const roomsList = Array.isArray(roomsData) ? roomsData : roomsData?.rooms || [];
+  const roomsList = Array.isArray(roomsData)
+    ? roomsData
+    : Array.isArray(roomsData?.rooms)
+    ? roomsData.rooms
+    : Array.isArray(roomsData?.results)
+    ? roomsData.results
+    : [];
 
   const refreshAllAdminData = () => {
     queryClient.invalidateQueries({ queryKey: ['allBills'] });
     queryClient.invalidateQueries({ queryKey: ['adminAnalytics'] });
     queryClient.invalidateQueries({ queryKey: ['roomsMatrix'] });
-    queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
     queryClient.invalidateQueries({ queryKey: ['adminUsersList'] });
     queryClient.invalidateQueries({ queryKey: ['adminReservations'] });
+    queryClient.invalidateQueries({ queryKey: ['adminNotices'] });
+    queryClient.invalidateQueries({ queryKey: ['pendingMoveOuts'] });
   };
 
-  // Reservation Action Mutation (Approve / Reject)
+  // Mutations
   const reservationActionMutation = useMutation({
-    mutationFn: async ({ id, payload }) => {
-      return await processReservationAction(id, payload);
-    },
+    mutationFn: async ({ id, payload }) => processReservationAction(id, payload),
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
       setSelectedReservation(null);
       setStartingMeterOverride('');
     },
-    onError: (err) => {
-      setBannerMsg({
-        type: 'error',
-        text: err.response?.data?.detail || 'Failed to process reservation.',
-      });
-    },
   });
 
-  // Audit Mutation (Approve / Reject)
   const auditMutation = useMutation({
-    mutationFn: async ({ billId, action, remarks }) => {
-      const res = await axiosClient.post(`/billing/${billId}/audit/`, {
-        action,
-        admin_remarks: remarks,
-      });
-      return res.data;
-    },
+    mutationFn: async ({ billId, action, remarks }) =>
+      (await axiosClient.post(`/billing/${billId}/audit/`, { action, admin_remarks: remarks })).data,
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
@@ -170,93 +175,95 @@ export default function AdminCommandCenter() {
     },
   });
 
-  // Cash Override Mutation
   const cashOverrideMutation = useMutation({
-    mutationFn: async (payload) => {
-      const res = await axiosClient.post('/billing/cash-override/', payload);
-      return res.data;
-    },
+    mutationFn: async (payload) => (await axiosClient.post('/billing/cash-override/', payload)).data,
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
       setShowCashModal(false);
-      setCashBillId('');
-      setCashMeterReading('');
-      setCashFine('0');
-      setCashReason('');
-    },
-    onError: (err) => {
-      setBannerMsg({
-        type: 'error',
-        text: err.response?.data?.error || 'Failed to record cash payment.',
-      });
     },
   });
 
-  // Assign Tenant to Room Mutation
   const assignTenantMutation = useMutation({
-    mutationFn: async ({ roomId, payload }) => {
-      const res = await axiosClient.post(`/rooms/${roomId}/assign-tenant/`, payload);
-      return res.data;
-    },
+    mutationFn: async ({ roomId, payload }) =>
+      (await axiosClient.post(`/rooms/${roomId}/assign-tenant/`, payload)).data,
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
       setAssignModalRoom(null);
-      setSelectedTenantId('');
-    },
-    onError: (err) => {
-      setBannerMsg({
-        type: 'error',
-        text: err.response?.data?.error || 'Could not assign tenant to room.',
-      });
     },
   });
 
-  // Apply Property Damage Fine Mutation
   const applyFineMutation = useMutation({
-    mutationFn: async ({ billId, payload }) => {
-      const res = await axiosClient.post(`/billing/${billId}/apply-fine/`, payload);
-      return res.data;
-    },
+    mutationFn: async ({ billId, payload }) =>
+      (await axiosClient.post(`/billing/${billId}/apply-fine/`, payload)).data,
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
       setShowFineModal(false);
-      setFineBillId('');
-      setFineAmount('');
-      setFineReason('');
     },
   });
 
-  // Expense Logger Mutation
   const expenseMutation = useMutation({
-    mutationFn: async (formData) => {
-      const res = await axiosClient.post('/billing/expenses/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      return res.data;
-    },
+    mutationFn: async (formData) =>
+      (
+        await axiosClient.post('/billing/expenses/', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      ).data,
     onSuccess: () => {
-      setBannerMsg({ type: 'success', text: 'House expense recorded in ledger!' });
+      setBannerMsg({ type: 'success', text: 'Expense recorded!' });
       refreshAllAdminData();
-      setExpenseTitle('');
-      setExpenseAmount('');
-      setExpenseNotes('');
-      setExpenseReceipt(null);
     },
   });
 
-  // Trigger Due Email Reminders Mutation
   const reminderMutation = useMutation({
-    mutationFn: async () => {
-      const res = await axiosClient.post('/billing/send-due-reminders/');
-      return res.data;
+    mutationFn: async () => (await axiosClient.post('/billing/send-due-reminders/')).data,
+    onSuccess: (data) => setBannerMsg({ type: 'success', text: data.message }),
+  });
+
+  const createNoticeMutation = useMutation({
+    mutationFn: createNotice,
+    onSuccess: () => {
+      setBannerMsg({ type: 'success', text: 'Notice published to all tenants!' });
+      refreshAllAdminData();
+      setNoticeTitle('');
+      setNoticeContent('');
     },
+  });
+
+  const deleteNoticeMutation = useMutation({
+    mutationFn: deleteNotice,
+    onSuccess: () => {
+      setBannerMsg({ type: 'success', text: 'Notice deleted.' });
+      refreshAllAdminData();
+    },
+  });
+
+  const processMoveOutMutation = useMutation({
+    mutationFn: async ({ id, payload }) => processMoveOutRequest(id, payload),
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setSelectedMoveOut(null);
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text: err.response?.data?.detail || 'Failed to process move-out.',
+      });
     },
   });
+
+  const handlePostNotice = (e) => {
+    e.preventDefault();
+    createNoticeMutation.mutate({
+      title: noticeTitle,
+      content: noticeContent,
+      category: noticeCategory,
+      is_active: true,
+    });
+  };
 
   const handleLogExpense = (e) => {
     e.preventDefault();
@@ -276,57 +283,63 @@ export default function AdminCommandCenter() {
     total_revenue: 0,
     total_expenses: 0,
     net_profit: 0,
-    pending_verifications_count: 0,
-    total_rooms: 9,
     occupied_rooms: 0,
+    total_rooms: 9,
     vacant_rooms: 9,
   };
 
   const activeAuditBill =
     selectedBillForAudit || pendingQueue[0] || bills.find((b) => b.status === 'UNPAID') || null;
-
   const activeReviewReservation =
     selectedReservation || pendingReservations[0] || reservations[0] || null;
+  const activeMoveOut = selectedMoveOut || pendingMoveOuts[0] || null;
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
       {/* HEADER BANNER */}
       <div className="rounded-3xl bg-indigo-600 text-white p-6 sm:p-8 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-xs font-bold mb-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-xs font-bold mb-2">
             <ShieldAlert className="w-3.5 h-3.5" /> LANDLORD COMMAND DECK
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Executive Command Center
           </h1>
-          <p className="text-xs sm:text-sm text-indigo-100 mt-1">
-            Real-time telemetric utility audit, room booking queues, and financial ledger.
-          </p>
         </div>
-
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => {
+              triggerBulkGenerateBills()
+                .then((res) => {
+                  setBannerMsg({ type: 'success', text: res.message });
+                  refreshAllAdminData();
+                })
+                .catch(() => {
+                  setBannerMsg({ type: 'error', text: 'Bulk generate endpoint not wired yet.' });
+                });
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition"
+          >
+            <Zap className="w-3.5 h-3.5" /> Auto-Generate Bills
+          </button>
           <button
             onClick={() => reminderMutation.mutate()}
             disabled={reminderMutation.isPending}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold border border-indigo-400 transition"
           >
-            <BellRing className="w-3.5 h-3.5" />
-            {reminderMutation.isPending ? 'Sending...' : 'Send Due Email Alerts'}
+            <BellRing className="w-3.5 h-3.5" /> Send Alerts
           </button>
-
           <button
             onClick={() => setShowFineModal(true)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-sm transition"
           >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            + Apply Damage Fine
+            <AlertTriangle className="w-3.5 h-3.5" /> + Apply Fine
           </button>
-
           <button
             onClick={() => setShowCashModal(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white text-indigo-600 hover:bg-indigo-50 text-xs font-bold shadow-md transition"
           >
-            + Manual Cash Override
+            + Cash Override
           </button>
         </div>
       </div>
@@ -351,7 +364,7 @@ export default function AdminCommandCenter() {
         <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              TOTAL COLLECTED REVENUE
+              TOTAL REVENUE
             </span>
             <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <DollarSign className="w-4 h-4" />
@@ -360,11 +373,7 @@ export default function AdminCommandCenter() {
           <p className="text-2xl font-extrabold text-slate-900">
             Rs. {Number(kpis.total_revenue).toLocaleString()}
           </p>
-          <p className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
-            <TrendingUp className="w-3 h-3" /> Rent + Water + Electricity + Fines
-          </p>
         </div>
-
         <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -377,15 +386,11 @@ export default function AdminCommandCenter() {
           <p className="text-2xl font-extrabold text-slate-900">
             {pendingReservations.length} Requests
           </p>
-          <p className="text-[11px] text-indigo-600 font-semibold mt-1">
-            {pendingReservations.length > 0 ? 'Awaiting Room Approval' : 'No Pending Bookings'}
-          </p>
         </div>
-
         <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              ROOM OCCUPANCY
+              OCCUPANCY
             </span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <Building className="w-4 h-4" />
@@ -394,15 +399,11 @@ export default function AdminCommandCenter() {
           <p className="text-2xl font-extrabold text-slate-900">
             {kpis.occupied_rooms} / {kpis.total_rooms} Rooms
           </p>
-          <p className="text-[11px] text-slate-500 mt-1">
-            {kpis.vacant_rooms} Available • Ground (A1–A4) & 1st (B1–B5)
-          </p>
         </div>
-
         <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              NET OPERATING PROFIT
+              NET PROFIT
             </span>
             <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <Zap className="w-4 h-4" />
@@ -411,170 +412,170 @@ export default function AdminCommandCenter() {
           <p className="text-2xl font-extrabold text-indigo-600">
             Rs. {Number(kpis.net_profit).toLocaleString()}
           </p>
-          <p className="text-[11px] text-slate-500 mt-1">Gross Revenue minus House Expenses</p>
         </div>
       </div>
 
-      {/* NEW: ROOM RESERVATION & VISIT BOOKING QUEUE */}
-      <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              Room Reservations & Visit Requests
-              {pendingReservations.length > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
-                  {pendingReservations.length} Pending
-                </span>
-              )}
-            </h3>
-            <p className="text-xs text-slate-500">
-              Approve prospective tenant bookings to instantly assign rooms, set starting meter readings, and create lease terms.
-            </p>
-          </div>
+      {/* NOTICE BOARD PUBLISHER (ITEM A) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
+          <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2 mb-1">
+            <Megaphone className="w-5 h-5 text-indigo-600" /> Broadcast House Notice
+          </h3>
+          <p className="text-xs text-slate-500 mb-5">
+            Publish announcements, maintenance schedules, or urgent alerts directly to all tenants'
+            dashboards.
+          </p>
+          <form onSubmit={handlePostNotice} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                  NOTICE TITLE
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={noticeTitle}
+                  onChange={(e) => setNoticeTitle(e.target.value)}
+                  placeholder="e.g., Water Tank Cleaning This Sunday"
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                  CATEGORY
+                </label>
+                <select
+                  value={noticeCategory}
+                  onChange={(e) => setNoticeCategory(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                >
+                  <option value="GENERAL">General Notice</option>
+                  <option value="MAINTENANCE">Maintenance</option>
+                  <option value="URGENT">Urgent Alert</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                NOTICE CONTENT
+              </label>
+              <textarea
+                required
+                rows="3"
+                value={noticeContent}
+                onChange={(e) => setNoticeContent(e.target.value)}
+                placeholder="Details of the announcement..."
+                className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={createNoticeMutation.isPending}
+              className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition"
+            >
+              {createNoticeMutation.isPending ? 'Publishing...' : 'Publish Notice to Tenants'}
+            </button>
+          </form>
         </div>
 
+        <div className="lg:col-span-4 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 overflow-y-auto max-h-[350px]">
+          <h3 className="text-sm font-extrabold text-slate-900 mb-4">Active Broadcasts</h3>
+          {notices.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-4">No active notices.</p>
+          ) : (
+            <div className="space-y-3">
+              {notices.map((n) => (
+                <div
+                  key={n.id}
+                  className="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span
+                      className={`text-[10px] font-bold ${
+                        n.category === 'URGENT' ? 'text-rose-600' : 'text-indigo-600'
+                      }`}
+                    >
+                      {n.category_display || n.category}
+                    </span>
+                    <button
+                      onClick={() => deleteNoticeMutation.mutate(n.id)}
+                      className="text-slate-400 hover:text-rose-600 transition"
+                      title="Delete Notice"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <p className="text-xs font-bold text-slate-900">{n.title}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">{n.content}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ROOM RESERVATION & VISIT BOOKING QUEUE */}
+      <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
+        <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+          Room Reservations & Visit Requests
+          {pendingReservations.length > 0 && (
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
+              {pendingReservations.length} Pending
+            </span>
+          )}
+        </h3>
         {reservations.length === 0 ? (
-          <div className="py-10 text-center text-slate-400 text-xs">
-            No room reservations or visit requests submitted yet.
+          <div className="py-8 text-center text-slate-400 text-xs">
+            No room reservations submitted yet.
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Left Queue List */}
-            <div className="lg:col-span-5 space-y-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                SELECT RESERVATION TO REVIEW
-              </p>
-              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                {reservations.map((res) => {
-                  const isSelected = activeReviewReservation?.id === res.id;
-                  return (
-                    <div
-                      key={res.id}
-                      onClick={() => {
-                        setSelectedReservation(res);
-                        setStartingMeterOverride(String(res.current_meter_reading || 0));
-                      }}
-                      className={`p-4 rounded-2xl border cursor-pointer transition ${
-                        isSelected
-                          ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-900 text-xs">
-                          Room {res.room_number} • {res.user_full_name || res.user_email}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            res.status === 'PENDING'
-                              ? 'bg-amber-100 text-amber-800'
-                              : res.status === 'APPROVED'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-rose-100 text-rose-700'
-                          }`}
-                        >
-                          {res.status_display}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Type: {res.request_type_display}</span>
-                        <span>Move-in: {res.expected_move_in_date}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="lg:col-span-5 space-y-2 max-h-[360px] overflow-y-auto pr-1">
+              {reservations.map((res) => (
+                <div
+                  key={res.id}
+                  onClick={() => {
+                    setSelectedReservation(res);
+                    setStartingMeterOverride(String(res.current_meter_reading || 0));
+                  }}
+                  className={`p-4 rounded-2xl border cursor-pointer ${
+                    activeReviewReservation?.id === res.id
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-slate-900 text-xs">
+                      Room {res.room_number} • {res.user_full_name || res.user_email}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800">
+                      {res.status_display}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Move-in: {res.expected_move_in_date}
+                  </p>
+                </div>
+              ))}
             </div>
 
-            {/* Right Detailed Review Panel */}
             {activeReviewReservation && (
               <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
-                  <div>
-                    <h4 className="text-sm font-extrabold text-slate-900">
-                      Room {activeReviewReservation.room_number} — {activeReviewReservation.user_full_name}
-                    </h4>
-                    <p className="text-[11px] text-slate-500">
-                      Email: {activeReviewReservation.user_email} • Phone: {activeReviewReservation.phone_number || 'N/A'}
-                    </p>
-                  </div>
-                  <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 font-bold text-xs">
-                    {activeReviewReservation.request_type_display}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs text-slate-700 bg-white p-3.5 rounded-xl border border-slate-200/60">
-                  <div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Expected Move-in</p>
-                    <p className="font-bold text-slate-900">{activeReviewReservation.expected_move_in_date}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Occupants Count</p>
-                    <p className="font-bold text-slate-900">{activeReviewReservation.occupants_count} Person(s)</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Occupation</p>
-                    <p className="font-bold text-slate-900">{activeReviewReservation.occupation || 'Not specified'}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Token Deposit</p>
-                    <p className="font-bold text-slate-900">Rs. {Number(activeReviewReservation.token_amount || 0).toLocaleString()}</p>
-                  </div>
-                </div>
-
-                {activeReviewReservation.message && (
-                  <div className="p-3 rounded-xl bg-white border border-slate-200/60 text-xs text-slate-600">
-                    <span className="font-bold text-slate-900 block mb-1">Applicant Notes:</span>
-                    {activeReviewReservation.message}
-                  </div>
-                )}
-
-                {/* Uploaded Token / ID Photos */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {activeReviewReservation.payment_screenshot_url && (
-                    <div>
-                      <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">Token Payment Slip</p>
-                      <a href={activeReviewReservation.payment_screenshot_url} target="_blank" rel="noreferrer">
-                        <img
-                          src={activeReviewReservation.payment_screenshot_url}
-                          alt="Token Slip"
-                          className="w-full h-32 rounded-xl object-cover border border-slate-300"
-                        />
-                      </a>
-                    </div>
-                  )}
-
-                  {activeReviewReservation.citizenship_document_url && (
-                    <div>
-                      <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">KYC Citizenship ID</p>
-                      <a href={activeReviewReservation.citizenship_document_url} target="_blank" rel="noreferrer">
-                        <img
-                          src={activeReviewReservation.citizenship_document_url}
-                          alt="Citizenship ID"
-                          className="w-full h-32 rounded-xl object-cover border border-slate-300"
-                        />
-                      </a>
-                    </div>
-                  )}
-                </div>
-
+                <h4 className="text-sm font-extrabold text-slate-900">
+                  Room {activeReviewReservation.room_number} —{' '}
+                  {activeReviewReservation.user_full_name}
+                </h4>
                 {activeReviewReservation.status === 'PENDING' && (
-                  <div className="space-y-3 pt-2">
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                        INITIAL ELECTRICITY SUB-METER READING (UNITS)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={startingMeterOverride}
-                        onChange={(e) => setStartingMeterOverride(e.target.value)}
-                        placeholder="e.g. 1200"
-                        className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-indigo-600"
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-3">
+                  <div className="space-y-3">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={startingMeterOverride}
+                      onChange={(e) => setStartingMeterOverride(e.target.value)}
+                      placeholder="Initial Sub-Meter Reading"
+                      className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200"
+                    />
+                    <div className="flex gap-3">
                       <button
                         onClick={() =>
                           reservationActionMutation.mutate({
@@ -582,28 +583,26 @@ export default function AdminCommandCenter() {
                             payload: { action: 'REJECT', admin_remarks: 'Rejected by Landlord' },
                           })
                         }
-                        disabled={reservationActionMutation.isPending}
-                        className="flex-1 py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition"
+                        className="flex-1 py-2.5 rounded-xl bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200"
                       >
-                        Reject Request
+                        Reject
                       </button>
-
                       <button
                         onClick={() =>
                           reservationActionMutation.mutate({
                             id: activeReviewReservation.id,
                             payload: {
                               action: 'APPROVE',
-                              starting_meter_reading: startingMeterOverride || activeReviewReservation.current_meter_reading,
+                              starting_meter_reading:
+                                startingMeterOverride ||
+                                activeReviewReservation.current_meter_reading,
                               entry_date: activeReviewReservation.expected_move_in_date,
-                              admin_remarks: 'Approved & assigned by Landlord Admin',
                             },
                           })
                         }
-                        disabled={reservationActionMutation.isPending}
-                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition"
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
                       >
-                        {reservationActionMutation.isPending ? 'Processing...' : 'Approve & Assign Room'}
+                        Approve & Assign
                       </button>
                     </div>
                   </div>
@@ -614,46 +613,27 @@ export default function AdminCommandCenter() {
         )}
       </div>
 
-      {/* UNIT TELEMETRY & OCCUPANCY MATRIX (ROOMS A1-A4 & B1-B5) */}
+      {/* UNIT TELEMETRY MATRIX */}
       <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900">
-              Unit Telemetry & Occupancy Matrix (Rooms A1–A4 & B1–B5)
-            </h3>
-            <p className="text-xs text-slate-500">
-              Click "Assign Tenant" on any vacant room to set the tenant's entry date, initial sub-meter reading, and generate their monthly bill.
-            </p>
-          </div>
-        </div>
-
+        <h3 className="text-base font-extrabold text-slate-900">
+          Unit Telemetry & Occupancy Matrix
+        </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {roomsList.map((room) => {
             const occupied = room.is_occupied;
             const tenant = room.active_tenancy;
-            const isSmall = room.room_type === 'SMALL';
-
             return (
               <div
                 key={room.id}
-                className={`p-4 rounded-2xl border transition flex flex-col justify-between ${
-                  occupied
-                    ? 'border-indigo-200 bg-white shadow-xs'
-                    : 'border-slate-200 bg-slate-50/70'
+                className={`p-4 rounded-2xl border flex flex-col justify-between ${
+                  occupied ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-slate-50'
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-sm font-extrabold text-slate-900">
-                        Room {room.room_number}
-                      </h4>
-                      {isSmall && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">
-                          Small (Rs. 2,500)
-                        </span>
-                      )}
-                    </div>
+                    <h4 className="text-sm font-extrabold text-slate-900">
+                      Room {room.room_number}
+                    </h4>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                         occupied
@@ -664,31 +644,21 @@ export default function AdminCommandCenter() {
                       {occupied ? 'Occupied' : 'Vacant'}
                     </span>
                   </div>
-
                   <p className="text-xs font-bold text-slate-800 mb-2">
-                    {occupied && tenant ? tenant.full_name : 'Available for Lease'}
+                    {occupied && tenant ? tenant.full_name : 'Available'}
                   </p>
-
                   <div className="space-y-1 text-[11px] text-slate-500 mb-4">
                     <p>
-                      Current Sub-Meter: <strong>{room.current_meter_reading} units</strong>
-                    </p>
-                    <p>
-                      Rent: Rs. {Number(room.base_rent).toLocaleString()} + Rs. 100 Water
+                      Meter: <strong>{room.current_meter_reading} units</strong>
                     </p>
                     {occupied && tenant && (
-                      <>
-                        <p>Entry Date: <strong>{tenant.entry_date}</strong></p>
-                        <p>Next Due: <strong>{tenant.next_due_date}</strong></p>
-                      </>
+                      <p>
+                        Next Due: <strong>{tenant.next_due_date}</strong>
+                      </p>
                     )}
                   </div>
                 </div>
-
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 font-semibold">
-                    {room.floor_display}
-                  </span>
+                <div className="pt-3 border-t border-slate-100 flex justify-end">
                   {occupied ? (
                     <button
                       onClick={() => {
@@ -698,7 +668,7 @@ export default function AdminCommandCenter() {
                           });
                         }
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-bold transition"
+                      className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold"
                     >
                       Vacate Room
                     </button>
@@ -708,7 +678,7 @@ export default function AdminCommandCenter() {
                         setAssignModalRoom(room);
                         setStartingMeter(String(room.current_meter_reading || 0));
                       }}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold shadow-xs transition"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold"
                     >
                       <UserPlus className="w-3.5 h-3.5" /> Assign Tenant
                     </button>
@@ -722,78 +692,43 @@ export default function AdminCommandCenter() {
 
       {/* REMITTANCE & METER AUDIT CLEARING QUEUE */}
       <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              Remittance & Meter Audit Clearing
-              {pendingQueue.length > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                  {pendingQueue.length} Pending
-                </span>
-              )}
-            </h3>
-            <p className="text-xs text-slate-500">
-              Review unit telemetry, side-by-side meter dial captures, and digital payment slips
-            </p>
-          </div>
-        </div>
+        <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+          Remittance & Meter Audit Clearing
+          {pendingQueue.length > 0 && (
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+              {pendingQueue.length} Pending
+            </span>
+          )}
+        </h3>
 
-        {billsLoading ? (
-          <div className="py-12 flex justify-center">
-            <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
-          </div>
-        ) : bills.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 text-xs">
-            No bills generated yet. Assign a tenant to any room above to generate their first monthly bill!
-          </div>
+        {bills.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 text-xs">No bills generated yet.</div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <div className="lg:col-span-5 space-y-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                SELECT BILL FOR INSPECTION
-              </p>
-              <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                {bills.map((b) => {
-                  const isSelected = activeAuditBill?.id === b.id;
-                  return (
-                    <div
-                      key={b.id}
-                      onClick={() => setSelectedBillForAudit(b)}
-                      className={`p-4 rounded-2xl border cursor-pointer transition ${
-                        isSelected
-                          ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-900 text-xs">
-                          Room {b.room_number} • {b.tenant_name}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            b.status === 'PENDING_VERIFICATION'
-                              ? 'bg-amber-100 text-amber-800'
-                              : b.status === 'APPROVED' || b.status === 'PAID_CASH'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {b.status_display}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>
-                          Meter: {b.previous_meter_reading} → {b.current_meter_reading ?? '...'} (
-                          {b.units_consumed} units)
-                        </span>
-                        <span className="font-extrabold text-slate-900">
-                          Rs. {Number(b.total_payable).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="lg:col-span-5 space-y-2 max-h-[420px] overflow-y-auto pr-1">
+              {bills.map((b) => (
+                <div
+                  key={b.id}
+                  onClick={() => setSelectedBillForAudit(b)}
+                  className={`p-4 rounded-2xl border cursor-pointer ${
+                    activeAuditBill?.id === b.id
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-slate-900 text-xs">
+                      Room {b.room_number} • {b.tenant_name}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600">
+                      {b.status_display}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Rs. {Number(b.total_payable).toLocaleString()}</span>
+                  </div>
+                </div>
+              ))}
             </div>
 
             {activeAuditBill && (
@@ -804,104 +739,86 @@ export default function AdminCommandCenter() {
                       Room {activeAuditBill.room_number} — {activeAuditBill.tenant_name}
                     </h4>
                     <p className="text-[11px] text-slate-500">
-                      Cycle: {activeAuditBill.billing_month_label} • Due: {activeAuditBill.due_date}
+                      Cycle: {activeAuditBill.billing_month_label}
                     </p>
                   </div>
                   <span className="text-sm font-extrabold text-indigo-600">
                     Total: Rs. {Number(activeAuditBill.total_payable).toLocaleString()}
                   </span>
                 </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                      Zone 1: Sub-Meter Snapshot
+                      Zone 1: Sub-Meter
                     </p>
-                    <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border border-slate-300">
-                      {activeAuditBill.meter_photo_url ? (
-                        <a href={activeAuditBill.meter_photo_url} target="_blank" rel="noreferrer">
+                    <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border">
+                      {activeAuditBill.meter_photo_url && (
+                        <a
+                          href={activeAuditBill.meter_photo_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
                           <img
                             src={activeAuditBill.meter_photo_url}
-                            alt="Meter Snapshot"
+                            alt="Meter"
                             className="w-full h-full object-cover"
                           />
                         </a>
-                      ) : (
-                        <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                          No meter photo uploaded yet
-                        </div>
                       )}
                     </div>
                   </div>
-
                   <div>
                     <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                      Zone 2: Payment Receipt Slip
+                      Zone 2: Payment Receipt
                     </p>
-                    <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border border-slate-300">
-                      {activeAuditBill.payment_screenshot_url ? (
-                        <a href={activeAuditBill.payment_screenshot_url} target="_blank" rel="noreferrer">
+                    <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border">
+                      {activeAuditBill.payment_screenshot_url && (
+                        <a
+                          href={activeAuditBill.payment_screenshot_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
                           <img
                             src={activeAuditBill.payment_screenshot_url}
-                            alt="Payment Slip"
+                            alt="Payment"
                             className="w-full h-full object-cover"
                           />
                         </a>
-                      ) : (
-                        <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                          No payment screenshot uploaded yet
-                        </div>
                       )}
                     </div>
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                    ADMIN AUDIT REMARKS / REJECTION REASON
-                  </label>
-                  <input
-                    type="text"
-                    value={adminRemarks}
-                    onChange={(e) => setAdminRemarks(e.target.value)}
-                    placeholder="e.g., Verified successfully or Please upload clearer meter photo"
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-indigo-600"
-                  />
-                </div>
-
+                <input
+                  type="text"
+                  value={adminRemarks}
+                  onChange={(e) => setAdminRemarks(e.target.value)}
+                  placeholder="Remarks..."
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
+                />
                 <div className="flex items-center gap-3 pt-2">
                   <button
                     onClick={() =>
                       auditMutation.mutate({
                         billId: activeAuditBill.id,
                         action: 'REJECT',
-                        remarks: adminRemarks || 'Please re-upload clearer meter photo or receipt.',
+                        remarks: adminRemarks || 'Please re-upload.',
                       })
                     }
-                    disabled={auditMutation.isPending}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition"
+                    className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
                   >
-                    <XCircle className="w-4 h-4" />
-                    Reject / Request Re-upload
+                    Reject
                   </button>
-
                   <button
                     onClick={() =>
                       auditMutation.mutate({
                         billId: activeAuditBill.id,
                         action: 'APPROVE',
-                        remarks: adminRemarks || 'Verified and approved by Landlord.',
+                        remarks: adminRemarks || 'Verified.',
                       })
                     }
-                    disabled={auditMutation.isPending}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition"
+                    className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
                   >
-                    {auditMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="w-4 h-4" />
-                    )}
-                    Approve & Issue Receipt
+                    Approve
                   </button>
                 </div>
               </div>
@@ -914,38 +831,37 @@ export default function AdminCommandCenter() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
           <h3 className="text-base font-extrabold text-slate-900 mb-1">
-            Financial Velocity & Operational Net (Bar Chart)
+            Financial Velocity (Bar Chart)
           </h3>
-          <p className="text-xs text-slate-500 mb-6">
-            Monthly comparison of rental & utility income vs. whole-house expenses
-          </p>
-
-          <div className="w-full h-72">
-            {analyticsLoading ? (
-              <div className="h-full flex items-center justify-center">
-                <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
-              </div>
-            ) : (
+          <div className="w-full h-72 mt-4">
+            {!analyticsLoading && (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={analytics?.monthly_trend_chart || []}>
                   <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
                   <YAxis stroke="#94A3B8" fontSize={11} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="income" name="Rental Income (Rs.)" fill="#4F46E5" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="expenses" name="House Expenses (Rs.)" fill="#EF4444" radius={[6, 6, 0, 0]} />
+                  <Bar
+                    dataKey="income"
+                    name="Income (Rs.)"
+                    fill="#4F46E5"
+                    radius={[6, 6, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="expenses"
+                    name="Expenses (Rs.)"
+                    fill="#EF4444"
+                    radius={[6, 6, 0, 0]}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </div>
         </div>
-
         <div className="lg:col-span-4 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900 mb-1">Utility Outflow (Pie Chart)</h3>
-            <p className="text-xs text-slate-500">Breakdown of whole-house operational expenses</p>
-          </div>
-
+          <h3 className="text-base font-extrabold text-slate-900 mb-1">
+            Utility Outflow (Pie Chart)
+          </h3>
           <div className="w-full h-56 my-2">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -960,27 +876,12 @@ export default function AdminCommandCenter() {
                   paddingAngle={3}
                 >
                   {(analytics?.expense_pie_chart || []).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={index} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
-          </div>
-
-          <div className="space-y-1.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600">
-            {(analytics?.expense_pie_chart || []).map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 truncate">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: COLORS[idx % COLORS.length] }}
-                  />
-                  <span className="truncate">{item.name}</span>
-                </span>
-                <span className="font-bold text-slate-900">Rs. {item.value.toLocaleString()}</span>
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -988,85 +889,70 @@ export default function AdminCommandCenter() {
       {/* RECORD BUILDING OUTFLOW */}
       <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
         <h3 className="text-base font-extrabold text-slate-900 mb-1">
-          Record Whole-House Expense (Electricity, Water Supply, Maintenance)
+          Record Whole-House Expense
         </h3>
-        <p className="text-xs text-slate-500 mb-5">
-          Log main NEA electricity grid bills, water tanker bills, and building repair expenses to update charts.
-        </p>
-
-        <form onSubmit={handleLogExpense} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+        <form
+          onSubmit={handleLogExpense}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end mt-4"
+        >
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">CATEGORY</label>
+            <label className="block text-[11px] font-bold mb-1">CATEGORY</label>
             <select
               value={expenseCategory}
               onChange={(e) => setExpenseCategory(e.target.value)}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+              className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
             >
               <option value="ELECTRICITY_MAIN">Main Electricity (NEA)</option>
               <option value="WATER_SUPPLY">Water Supply / Tanker</option>
               <option value="MAINTENANCE">Plumbing & Repairs</option>
-              <option value="CLEANLINESS_SANITATION">Cleaning & Waste</option>
-              <option value="INTERNET_OTHER">Internet / Other</option>
             </select>
           </div>
-
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">TITLE / VENDOR</label>
+            <label className="block text-[11px] font-bold mb-1">TITLE</label>
             <input
               type="text"
               required
               value={expenseTitle}
               onChange={(e) => setExpenseTitle(e.target.value)}
-              placeholder="e.g. NEA Main Meter Bill"
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+              className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
             />
           </div>
-
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">AMOUNT (NPR)</label>
+            <label className="block text-[11px] font-bold mb-1">AMOUNT</label>
             <input
               type="number"
               step="0.01"
               required
               value={expenseAmount}
               onChange={(e) => setExpenseAmount(e.target.value)}
-              placeholder="e.g. 4200"
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+              className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
             />
           </div>
-
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">EXPENSE DATE</label>
+            <label className="block text-[11px] font-bold mb-1">DATE</label>
             <input
               type="date"
               required
               value={expenseDate}
               onChange={(e) => setExpenseDate(e.target.value)}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+              className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
             />
           </div>
-
           <button
             type="submit"
             disabled={expenseMutation.isPending}
-            className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition"
+            className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs"
           >
-            {expenseMutation.isPending ? 'Saving...' : 'Commit Expense'}
+            Commit Expense
           </button>
         </form>
       </div>
 
       {/* MODALS */}
       {assignModalRoom && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100">
-            <h3 className="text-lg font-extrabold text-slate-900 mb-1">
-              Assign Tenant to Room {assignModalRoom.room_number}
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Base Rent: Rs. {Number(assignModalRoom.base_rent).toLocaleString()}/mo • Water: Rs. 100/mo
-            </p>
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">Assign Room {assignModalRoom.room_number}</h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1081,60 +967,43 @@ export default function AdminCommandCenter() {
               }}
               className="space-y-4"
             >
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">SELECT REGISTERED TENANT</label>
-                <select
-                  required
-                  value={selectedTenantId}
-                  onChange={(e) => setSelectedTenantId(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                >
-                  <option value="">-- Choose User --</option>
-                  {allUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.full_name} ({u.email} • {u.phone_number})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">MOVE-IN / ENTRY DATE</label>
-                <input
-                  type="date"
-                  required
-                  value={entryDate}
-                  onChange={(e) => setEntryDate(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">INITIAL SUB-METER READING (Units)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={startingMeter}
-                  onChange={(e) => setStartingMeter(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
+              <select
+                required
+                value={selectedTenantId}
+                onChange={(e) => setSelectedTenantId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              >
+                <option value="">Choose User</option>
+                {allUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                required
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <input
+                type="number"
+                required
+                value={startingMeter}
+                onChange={(e) => setStartingMeter(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setAssignModalRoom(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="flex-1 py-2 border rounded-xl"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={assignTenantMutation.isPending}
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md"
-                >
-                  {assignTenantMutation.isPending ? 'Assigning...' : 'Confirm Assignment'}
+                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">
+                  Confirm
                 </button>
               </div>
             </form>
@@ -1143,9 +1012,9 @@ export default function AdminCommandCenter() {
       )}
 
       {showCashModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100">
-            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Record Manual Cash Payment</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">Record Cash Payment</h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1154,54 +1023,43 @@ export default function AdminCommandCenter() {
                   current_meter_reading: cashMeterReading,
                   damage_fine_amount: cashFine || '0',
                   damage_fine_reason: cashReason,
-                  admin_remarks: 'Paid via Cash directly to Landlord Admin',
+                  admin_remarks: 'Paid via Cash',
                 });
               }}
               className="space-y-4"
             >
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">SELECT ACTIVE BILL</label>
-                <select
-                  required
-                  value={cashBillId}
-                  onChange={(e) => setCashBillId(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                >
-                  <option value="">-- Choose Tenant Bill --</option>
-                  {unpaidOrPendingBills.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      Room {b.room_number} — {b.tenant_name} (Prev Meter: {b.previous_meter_reading})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">NEW METER READING (Units)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={cashMeterReading}
-                  onChange={(e) => setCashMeterReading(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
+              <select
+                required
+                value={cashBillId}
+                onChange={(e) => setCashBillId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              >
+                <option value="">Choose Bill</option>
+                {unpaidOrPendingBills.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    Room {b.room_number} — {b.tenant_name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={cashMeterReading}
+                onChange={(e) => setCashMeterReading(e.target.value)}
+                placeholder="New Meter Reading"
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setShowCashModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="flex-1 py-2 border rounded-xl"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={cashOverrideMutation.isPending}
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md"
-                >
-                  Confirm Cash Payment
+                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">
+                  Confirm
                 </button>
               </div>
             </form>
@@ -1210,9 +1068,9 @@ export default function AdminCommandCenter() {
       )}
 
       {showFineModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100">
-            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Apply Property Damage / Rule Fine</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">Apply Fine</h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1226,59 +1084,45 @@ export default function AdminCommandCenter() {
               }}
               className="space-y-4"
             >
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">SELECT TENANT BILL</label>
-                <select
-                  required
-                  value={fineBillId}
-                  onChange={(e) => setFineBillId(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                >
-                  <option value="">-- Choose Active Bill --</option>
-                  {unpaidOrPendingBills.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      Room {b.room_number} — {b.tenant_name} ({b.billing_month_label})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">FINE AMOUNT (NPR)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={fineAmount}
-                  onChange={(e) => setFineAmount(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">REASON</label>
-                <input
-                  type="text"
-                  required
-                  value={fineReason}
-                  onChange={(e) => setFineReason(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
+              <select
+                required
+                value={fineBillId}
+                onChange={(e) => setFineBillId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              >
+                <option value="">Choose Bill</option>
+                {unpaidOrPendingBills.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    Room {b.room_number}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={fineAmount}
+                onChange={(e) => setFineAmount(e.target.value)}
+                placeholder="Fine Amount"
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <input
+                type="text"
+                required
+                value={fineReason}
+                onChange={(e) => setFineReason(e.target.value)}
+                placeholder="Reason"
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setShowFineModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="flex-1 py-2 border rounded-xl"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={applyFineMutation.isPending}
-                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md"
-                >
+                <button type="submit" className="flex-1 py-2 bg-rose-600 text-white rounded-xl">
                   Apply Fine
                 </button>
               </div>

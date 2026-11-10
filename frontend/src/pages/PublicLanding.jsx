@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   Zap,
   Droplets,
-  Wrench,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -19,8 +18,8 @@ import {
   AlertTriangle,
   ArrowRight,
   Loader2,
-  Calendar,
   X,
+  BellRing,
 } from 'lucide-react';
 import axiosClient, { createReservation } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
@@ -59,7 +58,7 @@ export default function PublicLanding() {
   const [bannerBadge, setBannerBadge] = useState('Physical Inspection Passed');
   const [bannerFile, setBannerFile] = useState(null);
 
-  // Fetch live Landing Data
+  // Fetch live Landing Data (Now includes active notices!)
   const { data, isLoading } = useQuery({
     queryKey: ['publicLandingData'],
     queryFn: async () => {
@@ -113,7 +112,10 @@ export default function PublicLanding() {
     onError: (err) => {
       setReservationMsg({
         type: 'error',
-        text: err.response?.data?.room?.[0] || err.response?.data?.detail || 'Failed to submit reservation.',
+        text:
+          err.response?.data?.room?.[0] ||
+          err.response?.data?.detail ||
+          'Failed to submit reservation.',
       });
     },
   });
@@ -149,9 +151,10 @@ export default function PublicLanding() {
     reserveMutation.mutate(formData);
   };
 
-  const rooms = data?.rooms || [];
-  const banners = data?.banners || [];
-  const rules = data?.rules || [];
+  const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
+  const banners = Array.isArray(data?.banners) ? data.banners : [];
+  const rules = Array.isArray(data?.rules) ? data.rules : [];
+  const notices = Array.isArray(data?.notices) ? data.notices : [];
   const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
 
   const currentBanner = banners[activeSlide] || {
@@ -162,9 +165,21 @@ export default function PublicLanding() {
     image_url: DEFAULT_HERO_IMAGE,
   };
 
+  // Foolproof floor filter: matches both DB floor value AND room_number prefix (A1-A4 vs B1-B5)
   const filterRoomList = (floorCode) => {
     return rooms.filter((r) => {
-      if (floorCode && r.floor !== floorCode) return false;
+      const roomNo = String(r.room_number || '').trim().toUpperCase();
+      const dbFloor = String(r.floor || '').trim().toUpperCase();
+
+      if (floorCode === 'GROUND') {
+        const isGround = dbFloor === 'GROUND' || roomNo.startsWith('A');
+        if (!isGround) return false;
+      } else if (floorCode === 'FIRST') {
+        const isFirst =
+          dbFloor === 'FIRST' || dbFloor === 'SECOND' || roomNo.startsWith('B');
+        if (!isFirst) return false;
+      }
+
       if (availableOnly && r.is_occupied) return false;
       return true;
     });
@@ -187,6 +202,32 @@ export default function PublicLanding() {
           </span>
         </div>
       </div>
+
+      {/* PUBLIC HOUSE NOTICES / ANNOUNCEMENTS BANNER */}
+      {notices.length > 0 && (
+        <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white px-4 py-3 shadow-md border-b border-indigo-700/50">
+          <div className="max-w-7xl mx-auto space-y-2">
+            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-indigo-300">
+              <BellRing className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+              Official House Announcements
+            </div>
+            {notices.map((notice) => (
+              <div key={notice.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-white/10 p-2.5 rounded-xl backdrop-blur-xs">
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${notice.category === 'URGENT' ? 'bg-rose-600 text-white animate-pulse' : 'bg-indigo-500 text-white'}`}>
+                    {notice.category_display || notice.category}
+                  </span>
+                  <span className="font-bold">{notice.title}:</span>
+                  <span className="text-indigo-100 line-clamp-1">{notice.content}</span>
+                </div>
+                <span className="text-[10px] text-indigo-300 whitespace-nowrap">
+                  {notice.created_at ? new Date(notice.created_at).toLocaleDateString() : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* HERO SECTION */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-14 lg:py-16">
@@ -416,7 +457,10 @@ export default function PublicLanding() {
       </section>
 
       {/* REAL-TIME INVENTORY: ROOMS A1-A4 & B1-B5 */}
-      <section id="rooms-inventory" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-slate-200/70">
+      <section
+        id="rooms-inventory"
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-slate-200/70"
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
@@ -433,7 +477,7 @@ export default function PublicLanding() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
               {[
-                { key: 'ALL', label: 'All Units (9)' },
+                { key: 'ALL', label: `All Units (${rooms.length || 9})` },
                 { key: 'GROUND', label: 'Ground Floor (A1–A4)' },
                 { key: 'FIRST', label: 'First Floor (B1–B5)' },
               ].map((tab) => (
@@ -507,7 +551,9 @@ export default function PublicLanding() {
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
                     <h3 className="text-sm font-extrabold text-slate-900">First Floor</h3>
-                    <span className="text-xs text-slate-500">5 Units • B1, B2, B3, B4 (Small), B5</span>
+                    <span className="text-xs text-slate-500">
+                      5 Units • B1, B2, B3, B4 (Small), B5
+                    </span>
                   </div>
                   <span className="text-xs font-semibold text-emerald-600">
                     {firstRooms.filter((r) => !r.is_occupied).length} Available
@@ -561,13 +607,20 @@ export default function PublicLanding() {
             };
 
             return (
-              <div key={rule.id} className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden">
+              <div
+                key={rule.id}
+                className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden"
+              >
                 <button
                   onClick={() => setOpenRuleIndex(isOpen ? -1 : idx)}
                   className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-slate-50/60 transition"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div className={`w-10 h-10 rounded-xl ${bgMap[rule.category] || 'bg-slate-100'} flex items-center justify-center shrink-0`}>
+                    <div
+                      className={`w-10 h-10 rounded-xl ${
+                        bgMap[rule.category] || 'bg-slate-100'
+                      } flex items-center justify-center shrink-0`}
+                    >
                       {iconMap[rule.category] || <ShieldCheck className="w-5 h-5" />}
                     </div>
                     <div>
@@ -575,7 +628,11 @@ export default function PublicLanding() {
                       <p className="text-xs text-slate-500">{rule.category_display}</p>
                     </div>
                   </div>
-                  <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown
+                    className={`w-5 h-5 text-slate-400 transition-transform ${
+                      isOpen ? 'rotate-180' : ''
+                    }`}
+                  />
                 </button>
 
                 {isOpen && (
@@ -601,7 +658,11 @@ export default function PublicLanding() {
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
               <div>
                 <h3 className="text-lg font-extrabold text-slate-900">
-                  Book Room {reservingRoom.room_number} ({reservingRoom.room_floor_display || reservingRoom.floor})
+                  Book Room {reservingRoom.room_number} (
+                  {String(reservingRoom.room_number).startsWith('B')
+                    ? 'First Floor'
+                    : 'Ground Floor'}
+                  )
                 </h3>
                 <p className="text-xs text-slate-500">
                   Base Rent: Rs. {Number(reservingRoom.base_rent).toLocaleString()}/month

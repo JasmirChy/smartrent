@@ -35,6 +35,16 @@ class Room(models.Model):
     class Meta:
         ordering = ['room_number']
 
+    def save(self, *args, **kwargs):
+        # Always keep floor synced with room_number prefix (A -> GROUND, B -> FIRST)
+        if self.room_number:
+            prefix = self.room_number.strip().upper()[0]
+            if prefix == 'A':
+                self.floor = 'GROUND'
+            elif prefix == 'B':
+                self.floor = 'FIRST'
+        super().save(*args, **kwargs)
+
     def __str__(self):
         status = "Occupied" if self.is_occupied else "Available"
         return f"Room {self.room_number} ({self.get_floor_display()}) - Rs. {self.base_rent} [{status}]"
@@ -167,3 +177,33 @@ class RoomReservation(models.Model):
 
     def __str__(self):
         return f"{self.user.email} -> Room {self.room.room_number} [{self.status}]"
+
+
+class MoveOutRequest(models.Model):
+    """Item B: Handles tenant move-out & final meter settlement requests."""
+    STATUS_CHOICES = (
+        ('PENDING', 'Pending Final Settlement'),
+        ('APPROVED', 'Approved & Room Vacated'),
+        ('REJECTED', 'Rejected'),
+    )
+
+    tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='move_out_requests')
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='move_out_requests')
+    tenant = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='move_out_requests'
+    )
+    requested_date = models.DateField()
+    reason = models.TextField(blank=True)
+    final_meter_reading = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
+    admin_remarks = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Move-Out: Room {self.room.room_number} ({self.tenant.full_name}) [{self.status}]"

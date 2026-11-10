@@ -6,6 +6,13 @@ const axiosClient = axios.create({
   baseURL: API_BASE_URL,
 });
 
+// Helper to always extract an array safely even if DRF pagination is enabled
+const asArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.results)) return data.results;
+  return [];
+};
+
 // Automatically attach JWT Access Token to every request
 axiosClient.interceptors.request.use(
   (config) => {
@@ -48,8 +55,12 @@ axiosClient.interceptors.response.use(
 
 // --- ROOM RESERVATION API HELPERS ---
 export const fetchReservations = async () => {
-  const res = await axiosClient.get('/rooms/reservations/');
-  return res.data;
+  try {
+    const res = await axiosClient.get('/rooms/reservations/');
+    return asArray(res.data);
+  } catch {
+    return [];
+  }
 };
 
 export const createReservation = async (formData) => {
@@ -66,8 +77,12 @@ export const processReservationAction = async (reservationId, actionPayload) => 
 
 // --- TENANT KYC & DIGITAL LEASE API HELPERS ---
 export const fetchKYCProfile = async () => {
-  const res = await axiosClient.get('/accounts/kyc/');
-  return res.data;
+  try {
+    const res = await axiosClient.get('/accounts/kyc/');
+    return res.data;
+  } catch {
+    return null;
+  }
 };
 
 export const updateKYCProfile = async (formData) => {
@@ -83,12 +98,74 @@ export const acceptDigitalLease = async () => {
 };
 
 export const fetchAdminKYCList = async () => {
-  const res = await axiosClient.get('/accounts/kyc/admin-list/');
-  return res.data;
+  try {
+    const res = await axiosClient.get('/accounts/kyc/admin-list/');
+    return asArray(res.data);
+  } catch {
+    return [];
+  }
 };
 
 export const auditKYC = async (id, action, notes) => {
-  const res = await axiosClient.post(`/accounts/kyc/${id}/audit/`, { action, admin_notes: notes });
+  const res = await axiosClient.post(`/accounts/kyc/${id}/audit/`, {
+    action,
+    admin_notes: notes,
+  });
+  return res.data;
+};
+
+// --- BILLING & SUB-METER HELPERS ---
+export const triggerBulkGenerateBills = async () => {
+  const res = await axiosClient.post('/billing/bulk-generate/');
+  return res.data;
+};
+
+// --- ITEM A: NOTICE BOARD HELPERS ---
+export const fetchNotices = async () => {
+  try {
+    const res = await axiosClient.get('/communication/notices/');
+    return asArray(res.data);
+  } catch {
+    return [];
+  }
+};
+
+export const createNotice = async (payload) => {
+  const res = await axiosClient.post('/communication/notices/', payload);
+  return res.data;
+};
+
+export const deleteNotice = async (id) => {
+  const res = await axiosClient.delete(`/communication/notices/${id}/`);
+  return res.data;
+};
+
+// --- ITEM B: MOVE-OUT & SETTLEMENT HELPERS ---
+export const fetchMoveOutStatus = async () => {
+  try {
+    const res = await axiosClient.get('/rooms/move-out/status/');
+    return res.data;
+  } catch {
+    return { has_active_request: false, request: null };
+  }
+};
+
+export const requestMoveOut = async (payload) => {
+  const res = await axiosClient.post('/rooms/move-out/request/', payload);
+  return res.data;
+};
+
+export const fetchPendingMoveOuts = async () => {
+  try {
+    const res = await axiosClient.get('/rooms/move-out/pending/');
+    return asArray(res.data);
+  } catch {
+    return [];
+  }
+};
+
+export const processMoveOutRequest = async (id, payload) => {
+  const res = await axiosClient.post(`/rooms/move-out/${id}/process/`, payload);
   return res.data;
 };
 
