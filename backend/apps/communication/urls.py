@@ -6,6 +6,7 @@ from .views import (
     NoticeDetailView,
     ChatContactsView,
     ChatConversationView,
+    DeleteConversationView,
 )
 
 urlpatterns = [
@@ -15,4 +16,5 @@ urlpatterns = [
     path('notices/<int:pk>/', NoticeDetailView.as_view(), name='notice_detail'),
     path('contacts/', ChatContactsView.as_view(), name='chat_contacts'),
     path('messages/<int:other_user_id>/', ChatConversationView.as_view(), name='chat_conversation'),
+    path('messages/<int:other_user_id>/delete/', DeleteConversationView.as_view(), name='delete_conversation'),
 ]

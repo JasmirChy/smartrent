@@ -17,8 +17,9 @@ import {
   Sparkles,
   CheckCircle2,
   Clock,
+  Trash2,
 } from 'lucide-react';
-import axiosClient from '../api/axiosClient';
+import axiosClient, { deleteEntireChat } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
 
 export default function SupportHub() {
@@ -39,6 +40,7 @@ export default function SupportHub() {
 
   // Lightbox for viewing chat/complaint images full-screen
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [bannerMsg, setBannerMsg] = useState({ type: '', text: '' });
 
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -56,12 +58,12 @@ export default function SupportHub() {
   const [replyTexts, setReplyTexts] = useState({});
 
   const { data: rawContacts = [] } = useQuery({
-    queryKey: ['chatContacts'],
+    queryKey: ['chatContacts', user?.id, isAdmin],
     queryFn: async () => {
       const res = await axiosClient.get('/communication/contacts/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: 6000,
+    refetchInterval: 5000,
   });
 
   const { data: rawComplaints = [] } = useQuery({
@@ -72,12 +74,27 @@ export default function SupportHub() {
     },
   });
 
-  const contacts = Array.isArray(rawContacts) ? rawContacts : [];
+  const allFetchedContacts = Array.isArray(rawContacts) ? rawContacts : [];
+
+  // STRICT FRONTEND GUARD:
+  // If user is a Tenant (!isAdmin), ONLY show the Landlord/Admin contact. Never show other tenants!
+  const contacts = isAdmin
+    ? allFetchedContacts.filter((c) => c.role !== 'ADMIN')
+    : allFetchedContacts.filter(
+        (c) => c.role === 'ADMIN' || c.room_badge === 'Landlord / Admin'
+      );
+
   const complaints = Array.isArray(rawComplaints) ? rawComplaints : [];
 
+  // Auto-select the first valid contact (for Tenant, this immediately selects Landlord Admin)
   useEffect(() => {
-    if (contacts.length > 0 && !selectedContact) {
-      setSelectedContact(contacts[0]);
+    if (contacts.length > 0) {
+      const stillValid = contacts.some((c) => c.id === selectedContact?.id);
+      if (!selectedContact || !stillValid) {
+        setSelectedContact(contacts[0]);
+      }
+    } else {
+      setSelectedContact(null);
     }
   }, [contacts, selectedContact]);
 
@@ -127,6 +144,15 @@ export default function SupportHub() {
     setChatImage(null);
     setChatImagePreview(null);
   };
+
+  const deleteChatMutation = useMutation({
+    mutationFn: (userId) => deleteEntireChat(userId),
+    onSuccess: (data) => {
+      setChatMessages([]);
+      setBannerMsg({ type: 'success', text: data.message });
+      queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
+    },
+  });
 
   const handleSendMessage = async (e) => {
     e?.preventDefault();
@@ -203,7 +229,6 @@ export default function SupportHub() {
     queryClient.invalidateQueries({ queryKey: ['complaintTickets'] });
   };
 
-  // Filtered contacts for search bar
   const filteredContacts = contacts.filter((c) => {
     const q = contactSearch.toLowerCase().trim();
     if (!q) return true;
@@ -214,7 +239,6 @@ export default function SupportHub() {
     );
   });
 
-  // Filtered complaints
   const filteredComplaints = complaints.filter((c) => {
     if (complaintFilter === 'OPEN') return c.status !== 'RESOLVED';
     if (complaintFilter === 'RESOLVED') return c.status === 'RESOLVED';
@@ -313,6 +337,15 @@ export default function SupportHub() {
         </div>
       </div>
 
+      {bannerMsg.text && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex justify-between items-center">
+          <span>{bannerMsg.text}</span>
+          <button onClick={() => setBannerMsg({ type: '', text: '' })}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* TAB 1: WHATSAPP / MESSENGER STYLE REAL-TIME CHAT */}
       {activeTab === 'CHAT' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl border border-slate-200/80 shadow-md overflow-hidden h-[72vh] min-h-[540px] max-h-[760px]">
@@ -322,7 +355,6 @@ export default function SupportHub() {
               mobileShowChat ? 'hidden lg:flex' : 'flex'
             }`}
           >
-            {/* Contacts Search Header */}
             <div className="p-4 border-b border-slate-100 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
@@ -333,23 +365,27 @@ export default function SupportHub() {
                 </span>
               </div>
 
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={contactSearch}
-                  onChange={(e) => setContactSearch(e.target.value)}
-                  placeholder="Search name, room, or phone..."
-                  className="w-full pl-9 pr-4 py-2.5 text-xs rounded-2xl bg-slate-100/80 border border-transparent focus:bg-white focus:border-indigo-500 outline-none transition"
-                />
-              </div>
+              {/* Search bar only needed for Admin managing multiple tenants */}
+              {isAdmin && (
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={contactSearch}
+                    onChange={(e) => setContactSearch(e.target.value)}
+                    placeholder="Search tenant name, room, or phone..."
+                    className="w-full pl-9 pr-4 py-2.5 text-xs rounded-2xl bg-slate-100/80 border border-transparent focus:bg-white focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
+              )}
             </div>
 
-            {/* Scrollable Contact Items */}
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100/80">
               {filteredContacts.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">
-                  No contacts matching "{contactSearch}"
+                  {isAdmin
+                    ? `No tenants matching "${contactSearch}"`
+                    : 'Landlord Admin support channel is ready.'}
                 </div>
               ) : (
                 filteredContacts.map((c) => {
@@ -376,7 +412,7 @@ export default function SupportHub() {
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-extrabold flex items-center justify-center text-base shadow-xs">
-                            {c.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                            {c.full_name?.charAt(0)?.toUpperCase() || 'A'}
                           </div>
                         )}
                         <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
@@ -385,7 +421,7 @@ export default function SupportHub() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
                           <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                            {c.full_name}
+                            {c.full_name || 'Landlord Admin'}
                           </h4>
                           {c.last_message_time && (
                             <span className="text-[10px] font-semibold text-slate-400 shrink-0">
@@ -433,10 +469,9 @@ export default function SupportHub() {
           >
             {selectedContact ? (
               <>
-                {/* Conversation Top Header */}
+                {/* Conversation Top Header with Clear Chat / Delete History Option */}
                 <div className="px-4 py-3.5 bg-white border-b border-slate-200/80 flex items-center justify-between shadow-2xs z-10">
                   <div className="flex items-center gap-3 min-w-0">
-                    {/* Mobile Back Button */}
                     <button
                       type="button"
                       onClick={() => setMobileShowChat(false)}
@@ -454,7 +489,7 @@ export default function SupportHub() {
                         />
                       ) : (
                         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white font-extrabold flex items-center justify-center text-sm">
-                          {selectedContact.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                          {selectedContact.full_name?.charAt(0)?.toUpperCase() || 'A'}
                         </div>
                       )}
                       <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
@@ -462,7 +497,7 @@ export default function SupportHub() {
 
                     <div className="min-w-0">
                       <h3 className="text-sm font-extrabold text-slate-900 truncate">
-                        {selectedContact.full_name}
+                        {selectedContact.full_name || 'Landlord Admin'}
                       </h3>
                       <div className="flex items-center gap-2 text-[11px] text-slate-500">
                         <span className="font-bold text-indigo-600">
@@ -478,16 +513,38 @@ export default function SupportHub() {
                     </div>
                   </div>
 
-                  {selectedContact.phone_number && (
-                    <a
-                      href={`tel:${selectedContact.phone_number}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-extrabold transition"
-                      title="Call directly"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Call</span>
-                    </a>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Are you sure you want to delete the entire chat history with ${selectedContact.full_name}?`
+                            )
+                          ) {
+                            deleteChatMutation.mutate(selectedContact.id);
+                          }
+                        }}
+                        className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center gap-1.5"
+                        title="Delete Entire Chat History"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span className="hidden sm:inline text-[11px]">Clear Chat</span>
+                      </button>
+                    )}
+
+                    {selectedContact.phone_number && (
+                      <a
+                        href={`tel:${selectedContact.phone_number}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-extrabold transition"
+                        title="Call directly"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Call</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 {/* Chat Messages Scroll Container */}
@@ -505,7 +562,7 @@ export default function SupportHub() {
                         <Sparkles className="w-6 h-6" />
                       </div>
                       <p className="text-sm font-extrabold text-slate-800">
-                        No messages with {selectedContact.full_name} yet
+                        No messages with {selectedContact.full_name || 'Landlord Admin'} yet
                       </p>
                       <p className="text-xs text-slate-500 max-w-xs mt-1">
                         Send a message or attach a photo below to start a real-time conversation.
@@ -537,7 +594,7 @@ export default function SupportHub() {
                           >
                             {!isMe && (
                               <div className="w-7 h-7 rounded-xl bg-indigo-100 text-indigo-700 font-extrabold text-xs flex items-center justify-center shrink-0 mb-1">
-                                {selectedContact.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                                {selectedContact.full_name?.charAt(0)?.toUpperCase() || 'A'}
                               </div>
                             )}
 
@@ -656,7 +713,7 @@ export default function SupportHub() {
                           handleSendMessage(e);
                         }
                       }}
-                      placeholder={`Write a message to ${selectedContact.full_name}...`}
+                      placeholder={`Write a message to ${selectedContact.full_name || 'Landlord Admin'}...`}
                       className="flex-1 px-4 py-3 text-xs sm:text-sm rounded-2xl bg-slate-100/90 border border-transparent focus:bg-white focus:border-indigo-500 outline-none transition"
                     />
 
@@ -844,7 +901,6 @@ export default function SupportHub() {
         </div>
       )}
 
-      {/* FULLSCREEN IMAGE LIGHTBOX MODAL */}
       {lightboxUrl && (
         <div
           onClick={() => setLightboxUrl(null)}
@@ -864,7 +920,6 @@ export default function SupportHub() {
         </div>
       )}
 
-      {/* REPORT A COMPLAINT MODAL */}
       {showNewComplaintModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100">

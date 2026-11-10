@@ -1,13 +1,17 @@
 import random
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db import transaction
 from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 
+from apps.rooms.models import Tenancy
+from apps.rooms.views import IsAdminUserRole
 from .models import User, EmailOTP, KYCProfile
 from .serializers import (
     UserProfileSerializer,
@@ -245,6 +249,112 @@ class AdminTenantListView(generics.ListAPIView):
         if self.request.user.role != 'ADMIN' and not self.request.user.is_superuser:
             return User.objects.filter(id=self.request.user.id)
         return User.objects.all().order_by('-created_at')
+
+
+class AdminUserManagementListView(APIView):
+    """Returns all registered users with room assignments, role, and full KYC details for Admin management."""
+    permission_classes = [IsAdminUserRole]
+
+    def get(self, request):
+        users = User.objects.all().prefetch_related('tenancies__room', 'kyc_profile')
+        data = []
+        for u in users:
+            active_tenancy = u.tenancies.filter(is_active=True).select_related('room').first()
+            kyc = getattr(u, 'kyc_profile', None)
+            data.append({
+                "id": u.id,
+                "full_name": u.full_name,
+                "email": u.email,
+                "phone_number": u.phone_number,
+                "role": u.role,
+                "is_active": u.is_active,
+                "room_number": active_tenancy.room.room_number if active_tenancy else None,
+                "entry_date": str(active_tenancy.entry_date) if active_tenancy else None,
+                "kyc_status": kyc.status if kyc else "NOT_SUBMITTED",
+                "citizenship_number": kyc.citizenship_number if kyc else None,
+                "citizenship_front_url": request.build_absolute_uri(kyc.citizenship_front.url) if kyc and kyc.citizenship_front else None,
+                "citizenship_back_url": request.build_absolute_uri(kyc.citizenship_back.url) if kyc and kyc.citizenship_back else None,
+                "profile_picture_url": request.build_absolute_uri(u.profile_picture.url) if u.profile_picture else None,
+            })
+        return Response(data)
+
+
+class AdminEvictOrManageUserView(APIView):
+    """Allows Admin to terminate tenancy, vacate room, and manage user status."""
+    permission_classes = [IsAdminUserRole]
+
+    @transaction.atomic
+    def post(self, request, user_id):
+        target_user = get_object_or_404(User, id=user_id)
+        active_tenancies = Tenancy.objects.filter(tenant=target_user, is_active=True).select_related('room')
+        
+        vacated_rooms = []
+        for t in active_tenancies:
+            room = t.room
+            room.is_occupied = False
+            room.save(update_fields=['is_occupied', 'updated_at'])
+            t.is_active = False
+            t.move_out_date = timezone.localdate()
+            t.save(update_fields=['is_active', 'move_out_date'])
+            vacated_rooms.append(room.room_number)
+
+        action_type = request.data.get('action_type', 'VACATE')
+        if action_type == 'BAN':
+            target_user.is_active = False
+            target_user.save(update_fields=['is_active'])
+
+        return Response({
+            "message": f"Successfully processed request for {target_user.full_name}. Vacated rooms: {', '.join(vacated_rooms) if vacated_rooms else 'None'}."
+        })
+
+
+class AdminManageAdminsView(APIView):
+    """Allows an Admin to create a new Admin account or remove/demote an existing Admin."""
+    permission_classes = [IsAdminUserRole]
+
+    @transaction.atomic
+    def post(self, request):
+        action = (request.data.get('action') or '').upper()
+        target_email = request.data.get('email', '').lower().strip()
+
+        if action == 'CREATE':
+            full_name = request.data.get('full_name', '')
+            phone_number = request.data.get('phone_number', '')
+            password = request.data.get('password', '')
+
+            if not target_email or not password or not full_name or not phone_number:
+                return Response({"error": "All fields (email, full name, phone number, password) are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if User.objects.filter(email=target_email).exists():
+                return Response({"error": "A user with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+            new_admin = User.objects.create_user(
+                email=target_email,
+                full_name=full_name,
+                phone_number=phone_number,
+                password=password,
+                role='ADMIN',
+                is_staff=True,
+                is_email_verified=True,
+            )
+            return Response({"message": f"Successfully created new Admin account for {new_admin.email}!"}, status=status.HTTP_201_CREATED)
+
+        if action == 'REMOVE':
+            target_id = request.data.get('user_id')
+            user = get_object_or_404(User, id=target_id)
+
+            if user == request.user:
+                return Response({"error": "You cannot remove your own admin privileges."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if User.objects.filter(role='ADMIN', is_active=True).count() <= 1:
+                return Response({"error": "Cannot remove the last active administrator."}, status=status.HTTP_400_BAD_REQUEST)
+
+            user.role = 'TENANT'
+            user.is_staff = False
+            user.save(update_fields=['role', 'is_staff', 'updated_at'])
+            return Response({"message": f"Successfully removed admin privileges from {user.full_name}."})
+
+        return Response({"error": "Invalid action specified."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class KYCProfileView(generics.RetrieveUpdateAPIView):

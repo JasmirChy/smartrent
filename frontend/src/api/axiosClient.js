@@ -6,14 +6,12 @@ const axiosClient = axios.create({
   baseURL: API_BASE_URL,
 });
 
-// Helper to always extract an array safely even if DRF pagination is enabled
 const asArray = (data) => {
   if (Array.isArray(data)) return data;
   if (data && Array.isArray(data.results)) return data.results;
   return [];
 };
 
-// Automatically attach JWT Access Token to every request
 axiosClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('smartrent_access_token');
@@ -25,7 +23,6 @@ axiosClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Automatically refresh token if 401 Unauthorized occurs
 axiosClient.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -111,6 +108,32 @@ export const auditKYC = async (id, action, notes) => {
     action,
     admin_notes: notes,
   });
+  return res.data;
+};
+
+// --- ADMIN USER & ADMIN MANAGEMENT HELPERS ---
+export const fetchAdminUsersManagement = async () => {
+  try {
+    const res = await axiosClient.get('/accounts/admin/users-management/');
+    return asArray(res.data);
+  } catch {
+    return [];
+  }
+};
+
+export const adminEvictOrManageUser = async (userId, payload) => {
+  const res = await axiosClient.post(`/accounts/admin/users/${userId}/manage/`, payload);
+  return res.data;
+};
+
+export const manageAdminRole = async (payload) => {
+  const res = await axiosClient.post('/accounts/admin/manage-admins/', payload);
+  return res.data;
+};
+
+// --- CHAT CONVERSATION DELETE HELPER ---
+export const deleteEntireChat = async (otherUserId) => {
+  const res = await axiosClient.delete(`/communication/messages/${otherUserId}/delete/`);
   return res.data;
 };
 
