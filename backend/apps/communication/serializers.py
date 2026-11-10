@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ComplaintTicket, ChatMessage
+from .models import ComplaintTicket, ChatMessage, Notice
 
 
 class ComplaintTicketSerializer(serializers.ModelSerializer):
@@ -13,23 +13,10 @@ class ComplaintTicketSerializer(serializers.ModelSerializer):
     class Meta:
         model = ComplaintTicket
         fields = [
-            'id',
-            'tenant',
-            'tenant_name',
-            'tenant_email',
-            'room',
-            'room_number',
-            'title',
-            'description',
-            'attachment',
-            'attachment_url',
-            'priority',
-            'priority_display',
-            'status',
-            'status_display',
-            'admin_response',
-            'created_at',
-            'resolved_at',
+            'id', 'tenant', 'tenant_name', 'tenant_email', 'room', 'room_number',
+            'title', 'description', 'attachment', 'attachment_url', 'priority',
+            'priority_display', 'status', 'status_display', 'admin_response',
+            'created_at', 'resolved_at',
         ]
         read_only_fields = ['id', 'tenant', 'room', 'created_at', 'resolved_at']
 
@@ -57,17 +44,8 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
         fields = [
-            'id',
-            'sender',
-            'sender_name',
-            'sender_role',
-            'receiver',
-            'receiver_name',
-            'message',
-            'attachment',
-            'attachment_url',
-            'is_read',
-            'created_at',
+            'id', 'sender', 'sender_name', 'sender_role', 'receiver', 'receiver_name',
+            'message', 'attachment', 'attachment_url', 'is_read', 'created_at',
         ]
         read_only_fields = ['id', 'sender', 'is_read', 'created_at']
 
@@ -78,3 +56,16 @@ class ChatMessageSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.attachment.url)
             return obj.attachment.url
         return None
+
+
+class NoticeSerializer(serializers.ModelSerializer):
+    posted_by_name = serializers.CharField(source='posted_by.full_name', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+
+    class Meta:
+        model = Notice
+        fields = [
+            'id', 'title', 'content', 'category', 'category_display',
+            'posted_by', 'posted_by_name', 'is_active', 'created_at',
+        ]
+        read_only_fields = ['id', 'posted_by', 'created_at']

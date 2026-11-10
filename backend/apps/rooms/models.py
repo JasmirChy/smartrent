@@ -8,7 +8,7 @@ from datetime import date
 class Room(models.Model):
     FLOOR_CHOICES = (
         ('GROUND', 'Ground Floor'),
-        ('SECOND', 'Second Floor'),
+        ('FIRST', 'First Floor'),
     )
     TYPE_CHOICES = (
         ('STANDARD', 'Standard Room (Rs. 3,800)'),

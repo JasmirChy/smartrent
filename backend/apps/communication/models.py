@@ -66,3 +66,30 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"From {self.sender.full_name} to {self.receiver.full_name} at {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class Notice(models.Model):
+    """Landlord announcements broadcasted to all tenants."""
+    CATEGORY_CHOICES = (
+        ('GENERAL', 'General Announcement'),
+        ('MAINTENANCE', 'Utility & Maintenance Notice'),
+        ('URGENT', 'Urgent Alert'),
+    )
+
+    title = models.CharField(max_length=150)
+    content = models.TextField()
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='GENERAL')
+    posted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='notices'
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Notice: {self.title} [{self.category}]"

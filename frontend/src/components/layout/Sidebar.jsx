@@ -57,7 +57,7 @@ export default function Sidebar() {
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
         </div>
         <p className="text-xs font-bold text-slate-900">9 Sub-Meters Active</p>
-        <p className="text-[11px] text-slate-500 mt-0.5">Ground (A1–A4) • 2nd (B1–B5)</p>
+        <p className="text-[11px] text-slate-500 mt-0.5">Ground (A1–A4) • 1st (B1–B5)</p>
       </div>
     </aside>
   );

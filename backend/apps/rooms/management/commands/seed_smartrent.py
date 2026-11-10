@@ -4,7 +4,7 @@ from apps.rooms.models import Room, HouseRule
 
 
 class Command(BaseCommand):
-    help = "Seeds Ground Floor (A1-A4) & Second Floor (B1-B5) rooms and strict House Rules."
+    help = "Seeds Ground Floor (A1-A4) & First Floor (B1-B5) rooms and strict House Rules."
 
     def handle(self, *args, **options):
         rooms_data = [
@@ -46,19 +46,19 @@ class Command(BaseCommand):
                 "features": ["Quiet Corner Unit", "24/7 Water Supply", "Dedicated Digital Sub-meter"],
             },
 
-            # Second Floor (B1, B2, B3, B4 [Small], B5)
+            # First Floor (B1, B2, B3, B4 [Small], B5)
             {
                 "room_number": "B1",
-                "floor": "SECOND",
+                "floor": "FIRST",
                 "room_type": "STANDARD",
-                "title": "Second Floor Corner Room",
+                "title": "First Floor Corner Room",
                 "area_sqft": 140,
                 "base_rent": Decimal("3800.00"),
                 "features": ["Terrace Access", "24/7 Water Supply", "Dedicated Digital Sub-meter"],
             },
             {
                 "room_number": "B2",
-                "floor": "SECOND",
+                "floor": "FIRST",
                 "room_type": "STANDARD",
                 "title": "Balcony View Standard Room",
                 "area_sqft": 135,
@@ -67,7 +67,7 @@ class Command(BaseCommand):
             },
             {
                 "room_number": "B3",
-                "floor": "SECOND",
+                "floor": "FIRST",
                 "room_type": "STANDARD",
                 "title": "East Wing Standard Room",
                 "area_sqft": 135,
@@ -76,7 +76,7 @@ class Command(BaseCommand):
             },
             {
                 "room_number": "B4",
-                "floor": "SECOND",
+                "floor": "FIRST",
                 "room_type": "SMALL",
                 "title": "Compact Mini Studio",
                 "area_sqft": 85,
@@ -85,7 +85,7 @@ class Command(BaseCommand):
             },
             {
                 "room_number": "B5",
-                "floor": "SECOND",
+                "floor": "FIRST",
                 "room_type": "STANDARD",
                 "title": "West Terrace Standard Room",
                 "area_sqft": 130,

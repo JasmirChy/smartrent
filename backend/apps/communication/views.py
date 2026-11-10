@@ -7,15 +7,12 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from apps.accounts.models import User
-from .models import ComplaintTicket, ChatMessage
-from .serializers import ComplaintTicketSerializer, ChatMessageSerializer
+from apps.rooms.views import IsAdminUserRole
+from .models import ComplaintTicket, ChatMessage, Notice
+from .serializers import ComplaintTicketSerializer, ChatMessageSerializer, NoticeSerializer
 
 
 class ComplaintTicketListCreateView(generics.ListCreateAPIView):
-    """
-    Tenants can submit complaints and view their own tickets.
-    Admin can view all complaints across all rooms.
-    """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ComplaintTicketSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -35,16 +32,12 @@ class ComplaintTicketListCreateView(generics.ListCreateAPIView):
 
 
 class ComplaintTicketUpdateView(APIView):
-    """Allows Admin to update complaint status (OPEN, IN_PROGRESS, RESOLVED) & reply."""
     permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request, pk):
         ticket = get_object_or_404(ComplaintTicket, pk=pk)
         if request.user.role != 'ADMIN' and not request.user.is_superuser:
-            return Response(
-                {"error": "Only Admin can update ticket status."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"error": "Only Admin can update ticket status."}, status=status.HTTP_403_FORBIDDEN)
 
         new_status = request.data.get('status', ticket.status)
         admin_response = request.data.get('admin_response', ticket.admin_response)
@@ -57,17 +50,31 @@ class ComplaintTicketUpdateView(APIView):
             ticket.resolved_at = timezone.now()
         ticket.save()
 
-        return Response(
-            ComplaintTicketSerializer(ticket, context={'request': request}).data,
-            status=status.HTTP_200_OK,
-        )
+        return Response(ComplaintTicketSerializer(ticket, context={'request': request}).data, status=status.HTTP_200_OK)
+
+
+class NoticeListCreateView(generics.ListCreateAPIView):
+    """Anyone authenticated can read active notices; only Admin can create them."""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = NoticeSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'ADMIN' or user.is_superuser:
+            return Notice.objects.all()
+        return Notice.objects.filter(is_active=True)
+
+    def perform_create(self, serializer):
+        serializer.save(posted_by=self.request.user)
+
+
+class NoticeDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUserRole]
+    serializer_class = NoticeSerializer
+    queryset = Notice.objects.all()
 
 
 class ChatContactsView(APIView):
-    """
-    For Admin: Returns all Tenants with their assigned room, last message, and unread count.
-    For Tenant: Returns the Admin/Landlord contact so the tenant can chat directly with Admin.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
@@ -117,13 +124,11 @@ class ChatContactsView(APIView):
 
 
 class ChatConversationView(APIView):
-    """Fetches message history with a specific user and allows sending text/image messages."""
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request, other_user_id):
         other_user = get_object_or_404(User, id=other_user_id)
-        # Mark incoming unread messages from this user as read
         ChatMessage.objects.filter(
             sender=other_user, receiver=request.user, is_read=False
         ).update(is_read=True)
@@ -133,9 +138,7 @@ class ChatConversationView(APIView):
             | Q(sender=other_user, receiver=request.user)
         ).select_related('sender', 'receiver').order_by('created_at')
 
-        return Response(
-            ChatMessageSerializer(messages, many=True, context={'request': request}).data
-        )
+        return Response(ChatMessageSerializer(messages, many=True, context={'request': request}).data)
 
     def post(self, request, other_user_id):
         other_user = get_object_or_404(User, id=other_user_id)
@@ -143,10 +146,7 @@ class ChatConversationView(APIView):
         attachment = request.FILES.get('attachment')
 
         if not message_text and not attachment:
-            return Response(
-                {"error": "Message text or image attachment is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "Message text or image attachment is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         msg = ChatMessage.objects.create(
             sender=request.user,
@@ -155,7 +155,4 @@ class ChatConversationView(APIView):
             attachment=attachment,
         )
 
-        return Response(
-            ChatMessageSerializer(msg, context={'request': request}).data,
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(ChatMessageSerializer(msg, context={'request': request}).data, status=status.HTTP_201_CREATED)

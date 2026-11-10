@@ -34,7 +34,7 @@ export default function PublicLanding() {
   const queryClient = useQueryClient();
 
   // UI Filter & Accordion States
-  const [floorFilter, setFloorFilter] = useState('ALL'); // ALL | GROUND | SECOND
+  const [floorFilter, setFloorFilter] = useState('ALL'); // ALL | GROUND | FIRST
   const [availableOnly, setAvailableOnly] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [openRuleIndex, setOpenRuleIndex] = useState(0);
@@ -156,7 +156,7 @@ export default function PublicLanding() {
 
   const currentBanner = banners[activeSlide] || {
     id: null,
-    title: 'Smart House Rental • Ground & 2nd Floor',
+    title: 'Smart House Rental • Ground & 1st Floor',
     subtitle: 'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
     badge_text: 'Verified Direct-Landlord Listing',
     image_url: DEFAULT_HERO_IMAGE,
@@ -171,7 +171,7 @@ export default function PublicLanding() {
   };
 
   const groundRooms = filterRoomList('GROUND');
-  const secondRooms = filterRoomList('SECOND');
+  const firstRooms = filterRoomList('FIRST');
 
   return (
     <div className="w-full">
@@ -217,7 +217,7 @@ export default function PublicLanding() {
                 </div>
               </div>
               <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-700">
-                GROUND & 2ND FL
+                GROUND & FIRST FL
               </span>
             </div>
 
@@ -435,7 +435,7 @@ export default function PublicLanding() {
               {[
                 { key: 'ALL', label: 'All Units (9)' },
                 { key: 'GROUND', label: 'Ground Floor (A1–A4)' },
-                { key: 'SECOND', label: 'Second Floor (B1–B5)' },
+                { key: 'FIRST', label: 'First Floor (B1–B5)' },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -501,21 +501,21 @@ export default function PublicLanding() {
               </div>
             )}
 
-            {(floorFilter === 'ALL' || floorFilter === 'SECOND') && (
+            {(floorFilter === 'ALL' || floorFilter === 'FIRST') && (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">Second Floor</h3>
+                    <h3 className="text-sm font-extrabold text-slate-900">First Floor</h3>
                     <span className="text-xs text-slate-500">5 Units • B1, B2, B3, B4 (Small), B5</span>
                   </div>
                   <span className="text-xs font-semibold text-emerald-600">
-                    {secondRooms.filter((r) => !r.is_occupied).length} Available
+                    {firstRooms.filter((r) => !r.is_occupied).length} Available
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                  {secondRooms.map((room) => (
+                  {firstRooms.map((room) => (
                     <RoomCard
                       key={room.id}
                       room={room}

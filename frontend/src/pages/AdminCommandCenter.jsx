@@ -395,7 +395,7 @@ export default function AdminCommandCenter() {
             {kpis.occupied_rooms} / {kpis.total_rooms} Rooms
           </p>
           <p className="text-[11px] text-slate-500 mt-1">
-            {kpis.vacant_rooms} Available • Ground (A1–A4) & 2nd (B1–B5)
+            {kpis.vacant_rooms} Available • Ground (A1–A4) & 1st (B1–B5)
           </p>
         </div>
 

@@ -30,7 +30,7 @@ export default function Navbar() {
             SmartRent
           </span>
           <span className="text-[10px] font-medium text-slate-500 tracking-wide">
-            Telemetry & Leases
+            Smart rental services by JASMIR
           </span>
         </div>
       </Link>
