@@ -44,6 +44,7 @@ export default function SupportHub() {
 
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const prevMsgCountRef = useRef(0);
 
   // New Complaint Modal States
   const [showNewComplaintModal, setShowNewComplaintModal] = useState(false);
@@ -57,21 +58,26 @@ export default function SupportHub() {
   // Admin Complaint Reply State
   const [replyTexts, setReplyTexts] = useState({});
 
+  // 4-Second Live Sync for Contacts
   const { data: rawContacts = [] } = useQuery({
     queryKey: ['chatContacts', user?.id, isAdmin],
     queryFn: async () => {
       const res = await axiosClient.get('/communication/contacts/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: 5000,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
+  // 4-Second Live Sync for Maintenance Tickets
   const { data: rawComplaints = [] } = useQuery({
     queryKey: ['complaintTickets'],
     queryFn: async () => {
       const res = await axiosClient.get('/communication/complaints/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
   const allFetchedContacts = Array.isArray(rawContacts) ? rawContacts : [];
@@ -98,14 +104,23 @@ export default function SupportHub() {
     }
   }, [contacts, selectedContact]);
 
+  // 4-Second Live Sync + WebSocket for Active Chat Conversation
   useEffect(() => {
     if (!selectedContact || !user) return;
 
-    axiosClient.get(`/communication/messages/${selectedContact.id}/`).then((res) => {
-      const msgs = Array.isArray(res.data) ? res.data : res.data?.results || [];
-      setChatMessages(msgs);
-      queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
-    });
+    const fetchLatestMessages = () => {
+      axiosClient
+        .get(`/communication/messages/${selectedContact.id}/`)
+        .then((res) => {
+          const msgs = Array.isArray(res.data) ? res.data : res.data?.results || [];
+          setChatMessages(msgs);
+        })
+        .catch(() => {});
+    };
+
+    // Initial load + 4-second background sync (catches image uploads, read receipts & deleted chats effortlessly)
+    fetchLatestMessages();
+    const syncTimer = setInterval(fetchLatestMessages, 4000);
 
     const wsBase = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/ws';
     const wsUrl = `${wsBase}/chat/${user.id}/${selectedContact.id}/`;
@@ -120,18 +135,26 @@ export default function SupportHub() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setChatMessages((prev) => [...prev, data]);
+      setChatMessages((prev) => {
+        if (data.id && prev.some((m) => m.id === data.id)) return prev;
+        return [...prev, data];
+      });
       queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
     };
 
     return () => {
+      clearInterval(syncTimer);
       setWsConnected(false);
       ws.close();
     };
-  }, [selectedContact, user, queryClient]);
+  }, [selectedContact?.id, user?.id, queryClient]);
 
+  // Smooth scroll to bottom ONLY when a new message arrives
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatMessages.length !== prevMsgCountRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      prevMsgCountRef.current = chatMessages.length;
+    }
   }, [chatMessages]);
 
   const handleSelectImage = (file) => {
@@ -285,7 +308,7 @@ export default function SupportHub() {
                     wsConnected ? 'text-emerald-500 animate-pulse' : 'text-indigo-500'
                   }`}
                 />
-                {wsConnected ? 'REALTIME WS' : 'INSTANT SYNC'}
+                {wsConnected ? 'REALTIME LIVE' : '4S AUTO-SYNC'}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -365,7 +388,6 @@ export default function SupportHub() {
                 </span>
               </div>
 
-              {/* Search bar only needed for Admin managing multiple tenants */}
               {isAdmin && (
                 <div className="relative">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -469,7 +491,6 @@ export default function SupportHub() {
           >
             {selectedContact ? (
               <>
-                {/* Conversation Top Header with Clear Chat / Delete History Option */}
                 <div className="px-4 py-3.5 bg-white border-b border-slate-200/80 flex items-center justify-between shadow-2xs z-10">
                   <div className="flex items-center gap-3 min-w-0">
                     <button

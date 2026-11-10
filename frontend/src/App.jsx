@@ -60,7 +60,6 @@ function AdminRoute({ children }) {
     return <Navigate to="/" replace />;
   }
 
-  // If a standard tenant tries to access /admin-deck via URL, send them to /tenant
   if (!isAdmin) {
     return <Navigate to="/tenant" replace />;
   }
@@ -70,14 +69,14 @@ function AdminRoute({ children }) {
 
 export default function App() {
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900 pb-16 lg:pb-0">
+    <div className="min-h-screen w-full flex flex-col bg-[#F8FAFC] text-slate-900 pb-16 lg:pb-0">
       <ScrollToTop />
       <Navbar />
       <AuthModal />
 
-      <div className="flex-1 flex">
+      <div className="flex-1 flex w-full">
         <Sidebar />
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 w-full min-w-0">
           <Routes>
             {/* Public Homepage */}
             <Route path="/" element={<PublicLanding />} />

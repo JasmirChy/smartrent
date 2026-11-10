@@ -111,7 +111,7 @@ export const auditKYC = async (id, action, notes) => {
   return res.data;
 };
 
-// --- ADMIN USER & ADMIN MANAGEMENT HELPERS ---
+// --- ADMIN USER, ADMIN TEAM & SYSTEM RESET HELPERS ---
 export const fetchAdminUsersManagement = async () => {
   try {
     const res = await axiosClient.get('/accounts/admin/users-management/');
@@ -128,6 +128,13 @@ export const adminEvictOrManageUser = async (userId, payload) => {
 
 export const manageAdminRole = async (payload) => {
   const res = await axiosClient.post('/accounts/admin/manage-admins/', payload);
+  return res.data;
+};
+
+export const resetSmartRentDatabase = async (confirmPhrase) => {
+  const res = await axiosClient.post('/accounts/admin/reset-database/', {
+    confirm_phrase: confirmPhrase,
+  });
   return res.data;
 };
 

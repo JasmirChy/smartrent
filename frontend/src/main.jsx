@@ -6,12 +6,13 @@ import { AuthProvider } from './context/AuthContext';
 import App from './App';
 import './index.css';
 
-// Configured for Facebook-like instant background updates without page refresh
+// Global Facebook-style 4-second silent background sync for the entire app
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      refetchInterval: 4000,
+      refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
-      refetchInterval: 5000, // Auto-syncs live data every 5 seconds silently
       staleTime: 2000,
       retry: 1,
     },

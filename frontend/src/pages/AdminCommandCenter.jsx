@@ -12,7 +12,8 @@ import {
   CalendarCheck,
   Megaphone,
   Trash2,
-  Users,
+  Radio,
+  RotateCcw,
   ShieldCheck,
 } from 'lucide-react';
 import {
@@ -34,11 +35,10 @@ import axiosClient, {
   fetchNotices,
   createNotice,
   deleteNotice,
-  fetchPendingMoveOuts,
-  processMoveOutRequest,
   fetchAdminUsersManagement,
   adminEvictOrManageUser,
   manageAdminRole,
+  resetSmartRentDatabase,
 } from '../api/axiosClient';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -79,6 +79,11 @@ export default function AdminCommandCenter() {
   const [newAdminPhone, setNewAdminPhone] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
 
+  // 2-Step Database Factory Reset Modal States
+  const [resetStep, setResetStep] = useState(0); // 0 = closed, 1 = First Warning, 2 = Second Final Warning
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetModalError, setResetModalError] = useState('');
+
   // Notice Board Form States
   const [noticeTitle, setNoticeTitle] = useState('');
   const [noticeContent, setNoticeContent] = useState('');
@@ -92,10 +97,12 @@ export default function AdminCommandCenter() {
   const [expenseNotes, setExpenseNotes] = useState('');
   const [expenseReceipt, setExpenseReceipt] = useState(null);
 
-  // Queries
+  // 4-Second Live Auto-Sync Queries
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: ['adminAnalytics'],
     queryFn: async () => (await axiosClient.get('/billing/analytics/')).data,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: rawBills = [] } = useQuery({
@@ -104,31 +111,45 @@ export default function AdminCommandCenter() {
       const res = await axiosClient.get('/billing/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: roomsData } = useQuery({
     queryKey: ['roomsMatrix'],
     queryFn: async () => (await axiosClient.get('/rooms/')).data,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: adminUsers = [] } = useQuery({
     queryKey: ['adminUsersManagement'],
     queryFn: fetchAdminUsersManagement,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: rawReservations = [] } = useQuery({
     queryKey: ['adminReservations'],
     queryFn: fetchReservations,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: rawNotices = [] } = useQuery({
     queryKey: ['adminNotices'],
     queryFn: fetchNotices,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
   });
 
   const bills = Array.isArray(rawBills) ? rawBills : [];
   const reservations = Array.isArray(rawReservations) ? rawReservations : [];
   const notices = Array.isArray(rawNotices) ? rawNotices : [];
+
+  // Separate Tenants from Admins for clean directory tabs
+  const tenantUsers = adminUsers.filter((u) => u.role !== 'ADMIN');
+  const adminTeamUsers = adminUsers.filter((u) => u.role === 'ADMIN');
 
   const pendingQueue = bills.filter((b) => b.status === 'PENDING_VERIFICATION');
   const pendingReservations = reservations.filter((r) => r.status === 'PENDING');
@@ -150,6 +171,8 @@ export default function AdminCommandCenter() {
     queryClient.invalidateQueries({ queryKey: ['adminUsersManagement'] });
     queryClient.invalidateQueries({ queryKey: ['adminReservations'] });
     queryClient.invalidateQueries({ queryKey: ['adminNotices'] });
+    queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
+    queryClient.invalidateQueries({ queryKey: ['complaintTickets'] });
   };
 
   // Mutations
@@ -213,6 +236,10 @@ export default function AdminCommandCenter() {
     onSuccess: () => {
       setBannerMsg({ type: 'success', text: 'Expense recorded!' });
       refreshAllAdminData();
+      setExpenseTitle('');
+      setExpenseAmount('');
+      setExpenseNotes('');
+      setExpenseReceipt(null);
     },
   });
 
@@ -268,6 +295,25 @@ export default function AdminCommandCenter() {
     },
   });
 
+  const resetDatabaseMutation = useMutation({
+    mutationFn: (phrase) => resetSmartRentDatabase(phrase),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      setResetStep(0);
+      setResetConfirmText('');
+      setResetModalError('');
+      refreshAllAdminData();
+    },
+    onError: (err) => {
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        'Backend reset endpoint failed. Please check that Django server reloaded.';
+      setResetModalError(msg);
+      setBannerMsg({ type: 'error', text: msg });
+    },
+  });
+
   const handlePostNotice = (e) => {
     e.preventDefault();
     createNoticeMutation.mutate({
@@ -311,8 +357,13 @@ export default function AdminCommandCenter() {
       {/* HEADER BANNER */}
       <div className="rounded-3xl bg-indigo-600 text-white p-6 sm:p-8 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-xs font-bold mb-2">
-            <ShieldAlert className="w-3.5 h-3.5" /> LANDLORD COMMAND DECK
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-xs font-bold">
+              <ShieldAlert className="w-3.5 h-3.5" /> LANDLORD COMMAND DECK
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/20 text-emerald-200 text-[11px] font-extrabold border border-emerald-400/30">
+              <Radio className="w-3 h-3 text-emerald-300 animate-pulse" /> LIVE 4S AUTO-SYNC
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Executive Command Center
@@ -327,7 +378,7 @@ export default function AdminCommandCenter() {
                   refreshAllAdminData();
                 })
                 .catch(() => {
-                  setBannerMsg({ type: 'error', text: 'Bulk generate endpoint not wired yet.' });
+                  setBannerMsg({ type: 'error', text: 'Bulk generate endpoint error.' });
                 });
             }}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition"
@@ -353,6 +404,18 @@ export default function AdminCommandCenter() {
           >
             + Cash Override
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setResetConfirmText('');
+              setResetModalError('');
+              setResetStep(1);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-950/90 hover:bg-rose-900 text-rose-100 border border-rose-400/40 text-xs font-extrabold shadow-sm transition"
+            title="Factory Reset Database (Keeps Admin)"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Reset Database
+          </button>
         </div>
       </div>
 
@@ -375,8 +438,8 @@ export default function AdminCommandCenter() {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
         {[
           { key: 'OVERVIEW', label: '📊 Executive Command Overview' },
-          { key: 'USERS', label: `👥 Tenants Directory (${adminUsers.length})` },
-          { key: 'ADMINS', label: `🛡️ Admin Team Management` },
+          { key: 'USERS', label: `👥 Tenants Directory (${tenantUsers.length})` },
+          { key: 'ADMINS', label: `🛡️ Admin Team Management (${adminTeamUsers.length})` },
         ].map((t) => (
           <button
             key={t.key}
@@ -394,89 +457,107 @@ export default function AdminCommandCenter() {
 
       {activeAdminTab === 'USERS' && (
         <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-slate-900">
                 Registered Users & Tenants Directory
               </h3>
               <p className="text-xs text-slate-500">
-                Manage all registered accounts, inspect KYC citizenship documents, and process room terminations.
+                Manage all registered tenant accounts, inspect KYC citizenship documents, and process room terminations.
               </p>
             </div>
+            {tenantUsers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setResetConfirmText('');
+                  setResetModalError('');
+                  setResetStep(1);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Wipe All Tenants & Reset DB
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {adminUsers.map((u) => (
-              <div
-                key={u.id}
-                className="p-5 rounded-3xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-md transition-all flex flex-col justify-between space-y-4"
-              >
-                <div className="flex items-center gap-4">
-                  {u.profile_picture_url ? (
-                    <img
-                      src={u.profile_picture_url}
-                      alt={u.full_name}
-                      className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-200"
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white font-extrabold text-lg flex items-center justify-center">
-                      {u.full_name?.charAt(0)?.toUpperCase()}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                      {u.full_name}
-                    </h4>
-                    <p className="text-xs text-slate-500 truncate">{u.email}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
-                          u.role === 'ADMIN'
-                            ? 'bg-purple-100 text-purple-700'
-                            : 'bg-indigo-100 text-indigo-700'
-                        }`}
-                      >
-                        {u.role}
-                      </span>
-                      {u.room_number && (
-                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                          Room {u.room_number}
+          {tenantUsers.length === 0 ? (
+            <div className="py-12 text-center rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+              <p className="text-sm font-extrabold text-slate-700">
+                No tenants registered in the database
+              </p>
+              <p className="text-xs text-slate-400">
+                The database is clean and ready for new tenant signups.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {tenantUsers.map((u) => (
+                <div
+                  key={u.id}
+                  className="p-5 rounded-3xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                >
+                  <div className="flex items-center gap-4">
+                    {u.profile_picture_url ? (
+                      <img
+                        src={u.profile_picture_url}
+                        alt={u.full_name}
+                        className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-200"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white font-extrabold text-lg flex items-center justify-center">
+                        {u.full_name?.charAt(0)?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-extrabold text-slate-900 truncate">
+                        {u.full_name}
+                      </h4>
+                      <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-700">
+                          {u.role}
                         </span>
-                      )}
+                        {u.room_number && (
+                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                            Room {u.room_number}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="pt-3 border-t border-slate-200/60 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedUserModal(u)}
-                    className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition"
-                  >
-                    View Profile & KYC
-                  </button>
-                  {u.room_number && (
+                  <div className="pt-3 border-t border-slate-200/60 flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`
-                          )
-                        ) {
-                          evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
-                        }
-                      }}
-                      className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition"
-                      title="Ask to Leave / Vacate Room"
+                      onClick={() => setSelectedUserModal(u)}
+                      className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition"
                     >
-                      Ask to Leave
+                      View Profile & KYC
                     </button>
-                  )}
+                    {u.room_number && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`
+                            )
+                          ) {
+                            evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
+                          }
+                        }}
+                        className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition"
+                        title="Ask to Leave / Vacate Room"
+                      >
+                        Ask to Leave
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -501,56 +582,54 @@ export default function AdminCommandCenter() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {adminUsers
-              .filter((u) => u.role === 'ADMIN')
-              .map((adm) => (
-                <div
-                  key={adm.id}
-                  className="p-5 rounded-3xl border border-indigo-100 bg-indigo-50/30 flex items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    {adm.profile_picture_url ? (
-                      <img
-                        src={adm.profile_picture_url}
-                        alt={adm.full_name}
-                        className="w-12 h-12 rounded-2xl object-cover border"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-extrabold text-base flex items-center justify-center shrink-0">
-                        {adm.full_name?.charAt(0)?.toUpperCase()}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                        {adm.full_name}
-                      </h4>
-                      <p className="text-xs text-slate-500 truncate">{adm.email}</p>
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-extrabold uppercase">
-                        Landlord Admin
-                      </span>
+            {adminTeamUsers.map((adm) => (
+              <div
+                key={adm.id}
+                className="p-5 rounded-3xl border border-indigo-100 bg-indigo-50/30 flex items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  {adm.profile_picture_url ? (
+                    <img
+                      src={adm.profile_picture_url}
+                      alt={adm.full_name}
+                      className="w-12 h-12 rounded-2xl object-cover border"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-extrabold text-base flex items-center justify-center shrink-0">
+                      {adm.full_name?.charAt(0)?.toUpperCase()}
                     </div>
-                  </div>
-
-                  {adminUsers.filter((u) => u.role === 'ADMIN').length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Are you sure you want to revoke admin privileges from ${adm.full_name}?`
-                          )
-                        ) {
-                          manageAdminMutation.mutate({ action: 'REMOVE', user_id: adm.id });
-                        }
-                      }}
-                      className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition shrink-0"
-                      title="Remove Admin Access"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   )}
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-extrabold text-slate-900 truncate">
+                      {adm.full_name}
+                    </h4>
+                    <p className="text-xs text-slate-500 truncate">{adm.email}</p>
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-extrabold uppercase">
+                      Landlord Admin
+                    </span>
+                  </div>
                 </div>
-              ))}
+
+                {adminTeamUsers.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Are you sure you want to revoke admin privileges from ${adm.full_name}?`
+                        )
+                      ) {
+                        manageAdminMutation.mutate({ action: 'REMOVE', user_id: adm.id });
+                      }
+                    }}
+                    className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition shrink-0"
+                    title="Remove Admin Access"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -613,7 +692,7 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* NOTICE BOARD PUBLISHER (ITEM A) */}
+          {/* NOTICE BOARD PUBLISHER */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2 mb-1">
@@ -887,7 +966,405 @@ export default function AdminCommandCenter() {
               })}
             </div>
           </div>
+
+          {/* REMITTANCE & METER AUDIT CLEARING QUEUE */}
+          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
+            <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+              Remittance & Meter Audit Clearing
+              {pendingQueue.length > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+                  {pendingQueue.length} Pending
+                </span>
+              )}
+            </h3>
+
+            {bills.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 text-xs">
+                No bills generated yet.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <div className="lg:col-span-5 space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {bills.map((b) => (
+                    <div
+                      key={b.id}
+                      onClick={() => setSelectedBillForAudit(b)}
+                      className={`p-4 rounded-2xl border cursor-pointer ${
+                        activeAuditBill?.id === b.id
+                          ? 'border-indigo-600 bg-indigo-50/50'
+                          : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-slate-900 text-xs">
+                          Room {b.room_number} • {b.tenant_name}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600">
+                          {b.status_display}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Rs. {Number(b.total_payable).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {activeAuditBill && (
+                  <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900">
+                          Room {activeAuditBill.room_number} — {activeAuditBill.tenant_name}
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Cycle: {activeAuditBill.billing_month_label}
+                        </p>
+                      </div>
+                      <span className="text-sm font-extrabold text-indigo-600">
+                        Total: Rs. {Number(activeAuditBill.total_payable).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                          Zone 1: Sub-Meter
+                        </p>
+                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border">
+                          {activeAuditBill.meter_photo_url && (
+                            <a
+                              href={activeAuditBill.meter_photo_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <img
+                                src={activeAuditBill.meter_photo_url}
+                                alt="Meter"
+                                className="w-full h-full object-cover"
+                              />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                          Zone 2: Payment Receipt
+                        </p>
+                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border">
+                          {activeAuditBill.payment_screenshot_url && (
+                            <a
+                              href={activeAuditBill.payment_screenshot_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <img
+                                src={activeAuditBill.payment_screenshot_url}
+                                alt="Payment"
+                                className="w-full h-full object-cover"
+                              />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={adminRemarks}
+                      onChange={(e) => setAdminRemarks(e.target.value)}
+                      placeholder="Remarks..."
+                      className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
+                    />
+                    <div className="flex items-center gap-3 pt-2">
+                      <button
+                        onClick={() =>
+                          auditMutation.mutate({
+                            billId: activeAuditBill.id,
+                            action: 'REJECT',
+                            remarks: adminRemarks || 'Please re-upload.',
+                          })
+                        }
+                        className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        onClick={() =>
+                          auditMutation.mutate({
+                            billId: activeAuditBill.id,
+                            action: 'APPROVE',
+                            remarks: adminRemarks || 'Verified.',
+                          })
+                        }
+                        className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
+                      >
+                        Approve
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* CHARTS SECTION */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
+              <h3 className="text-base font-extrabold text-slate-900 mb-1">
+                Financial Velocity (Bar Chart)
+              </h3>
+              <div className="w-full h-72 mt-4">
+                {!analyticsLoading && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={analytics?.monthly_trend_chart || []}>
+                      <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
+                      <YAxis stroke="#94A3B8" fontSize={11} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar
+                        dataKey="income"
+                        name="Income (Rs.)"
+                        fill="#4F46E5"
+                        radius={[6, 6, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="expenses"
+                        name="Expenses (Rs.)"
+                        fill="#EF4444"
+                        radius={[6, 6, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+            <div className="lg:col-span-4 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <h3 className="text-base font-extrabold text-slate-900 mb-1">
+                Utility Outflow (Pie Chart)
+              </h3>
+              <div className="w-full h-56 my-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={analytics?.expense_pie_chart || []}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={78}
+                      paddingAngle={3}
+                    >
+                      {(analytics?.expense_pie_chart || []).map((entry, index) => (
+                        <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* RECORD BUILDING OUTFLOW */}
+          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
+            <h3 className="text-base font-extrabold text-slate-900 mb-1">
+              Record Whole-House Expense
+            </h3>
+            <form
+              onSubmit={handleLogExpense}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end mt-4"
+            >
+              <div>
+                <label className="block text-[11px] font-bold mb-1">CATEGORY</label>
+                <select
+                  value={expenseCategory}
+                  onChange={(e) => setExpenseCategory(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
+                >
+                  <option value="ELECTRICITY_MAIN">Main Electricity (NEA)</option>
+                  <option value="WATER_SUPPLY">Water Supply / Tanker</option>
+                  <option value="MAINTENANCE">Plumbing & Repairs</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold mb-1">TITLE</label>
+                <input
+                  type="text"
+                  required
+                  value={expenseTitle}
+                  onChange={(e) => setExpenseTitle(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold mb-1">AMOUNT</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={expenseAmount}
+                  onChange={(e) => setExpenseAmount(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold mb-1">DATE</label>
+                <input
+                  type="date"
+                  required
+                  value={expenseDate}
+                  onChange={(e) => setExpenseDate(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={expenseMutation.isPending}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs"
+              >
+                Commit Expense
+              </button>
+            </form>
+          </div>
         </>
+      )}
+
+      {/* 2-STEP DANGER CONFIRMATION MODAL FOR DATABASE FACTORY RESET */}
+      {resetStep > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border-2 border-rose-200 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-rose-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                    {resetStep === 1 ? 'Danger Confirmation (1 of 2)' : 'Final Irreversible Warning (2 of 2)'}
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    Factory Reset SmartRent Database
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetStep(0);
+                  setResetConfirmText('');
+                  setResetModalError('');
+                }}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {resetModalError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                {resetModalError}
+              </div>
+            )}
+
+            {resetStep === 1 ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-950 space-y-2">
+                  <p className="font-extrabold text-rose-700">
+                    Are you sure you want to reset the entire system to brand new?
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1 text-[11px] text-rose-800">
+                    <li>Deletes all <strong>Tenant accounts</strong> and their KYC documents.</li>
+                    <li>Deletes all <strong>Monthly Bills, Expenses, Reservations, and Tenancies</strong>.</li>
+                    <li>Deletes all <strong>Chat Messages, Maintenance Tickets, and Notices</strong>.</li>
+                    <li>Resets all <strong>Rooms to Vacant</strong> with <strong>0.00 meter reading</strong>.</li>
+                  </ul>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>Safe Protected:</strong> Your Landlord Admin account(s) and room structure will NOT be deleted.
+                  </span>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetStep(0)}
+                    className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResetStep(2)}
+                    className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md transition"
+                  >
+                    Yes, Proceed to Final Step →
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (resetConfirmText.trim().toUpperCase() !== 'RESET') return;
+                  resetDatabaseMutation.mutate('RESET');
+                }}
+                className="space-y-4"
+              >
+                <div className="p-4 rounded-2xl bg-rose-600 text-white text-xs space-y-1.5 shadow-inner">
+                  <p className="font-black uppercase tracking-wide flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0" /> SECOND & FINAL CONFIRMATION
+                  </p>
+                  <p className="text-[11px] text-rose-100 leading-relaxed">
+                    This action cannot be undone. Every tenant, bill, and chat will be permanently erased, leaving only your Admin account and fresh vacant rooms.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1.5">
+                    Type <span className="text-rose-600 font-black">RESET</span> below to unlock final wipe:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={resetConfirmText}
+                    onChange={(e) => setResetConfirmText(e.target.value)}
+                    placeholder="Type RESET in capital letters"
+                    className="w-full px-3.5 py-2.5 text-xs font-extrabold tracking-widest uppercase rounded-xl border-2 border-rose-300 focus:border-rose-600 outline-none"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetStep(0);
+                      setResetConfirmText('');
+                      setResetModalError('');
+                    }}
+                    className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel & Keep Data
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      resetConfirmText.trim().toUpperCase() !== 'RESET' ||
+                      resetDatabaseMutation.isPending
+                    }
+                    className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-800 disabled:opacity-40 text-white text-xs font-extrabold shadow-lg transition"
+                  >
+                    {resetDatabaseMutation.isPending
+                      ? 'Wiping Database...'
+                      : '🔥 Wipe & Reset Database Now'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
       )}
 
       {/* USER PROFILE & KYC INSPECTION MODAL */}
@@ -1115,6 +1592,191 @@ export default function AdminCommandCenter() {
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md"
                 >
                   {manageAdminMutation.isPending ? 'Creating...' : 'Create Admin'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ASSIGN TENANT MODAL */}
+      {assignModalRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">Assign Room {assignModalRoom.room_number}</h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                assignTenantMutation.mutate({
+                  roomId: assignModalRoom.id,
+                  payload: {
+                    tenant_id: Number(selectedTenantId),
+                    entry_date: entryDate,
+                    starting_meter_reading: startingMeter,
+                  },
+                });
+              }}
+              className="space-y-4"
+            >
+              <select
+                required
+                value={selectedTenantId}
+                onChange={(e) => setSelectedTenantId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              >
+                <option value="">Choose User</option>
+                {tenantUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name} ({u.email})
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                required
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <input
+                type="number"
+                required
+                value={startingMeter}
+                onChange={(e) => setStartingMeter(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAssignModalRoom(null)}
+                  className="flex-1 py-2 border rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">
+                  Confirm
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CASH OVERRIDE MODAL */}
+      {showCashModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">Record Cash Payment</h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                cashOverrideMutation.mutate({
+                  bill_id: Number(cashBillId),
+                  current_meter_reading: cashMeterReading,
+                  damage_fine_amount: cashFine || '0',
+                  damage_fine_reason: cashReason,
+                  admin_remarks: 'Paid via Cash',
+                });
+              }}
+              className="space-y-4"
+            >
+              <select
+                required
+                value={cashBillId}
+                onChange={(e) => setCashBillId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              >
+                <option value="">Choose Bill</option>
+                {unpaidOrPendingBills.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    Room {b.room_number} — {b.tenant_name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={cashMeterReading}
+                onChange={(e) => setCashMeterReading(e.target.value)}
+                placeholder="New Meter Reading"
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCashModal(false)}
+                  className="flex-1 py-2 border rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">
+                  Confirm
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* APPLY FINE MODAL */}
+      {showFineModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">Apply Fine</h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                applyFineMutation.mutate({
+                  billId: Number(fineBillId),
+                  payload: {
+                    damage_fine_amount: fineAmount,
+                    damage_fine_reason: fineReason,
+                  },
+                });
+              }}
+              className="space-y-4"
+            >
+              <select
+                required
+                value={fineBillId}
+                onChange={(e) => setFineBillId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl"
+              >
+                <option value="">Choose Bill</option>
+                {unpaidOrPendingBills.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    Room {b.room_number}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={fineAmount}
+                onChange={(e) => setFineAmount(e.target.value)}
+                placeholder="Fine Amount"
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <input
+                type="text"
+                required
+                value={fineReason}
+                onChange={(e) => setFineReason(e.target.value)}
+                placeholder="Reason"
+                className="w-full px-3 py-2 border rounded-xl"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFineModal(false)}
+                  className="flex-1 py-2 border rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-2 bg-rose-600 text-white rounded-xl">
+                  Apply Fine
                 </button>
               </div>
             </form>

@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   color-scheme: light !important;
 }
@@ -5,6 +7,9 @@
 body {
   background-color: #F8FAFC !important;
   color: #0F172A !important;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
 }
 
 /* Force all inputs, selects, and textareas to pure white background & dark text */
