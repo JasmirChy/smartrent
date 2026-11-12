@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ShieldAlert,
@@ -15,6 +15,9 @@ import {
   Radio,
   RotateCcw,
   ShieldCheck,
+  QrCode,
+  Download,
+  Upload,
 } from 'lucide-react';
 import {
   BarChart,
@@ -39,6 +42,10 @@ import axiosClient, {
   adminEvictOrManageUser,
   manageAdminRole,
   resetSmartRentDatabase,
+  fetchPaymentQRConfig,
+  updatePaymentQRConfig,
+  deletePaymentQRConfig,
+  downloadFileFromUrl,
 } from '../api/axiosClient';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -72,6 +79,13 @@ export default function AdminCommandCenter() {
   const [fineAmount, setFineAmount] = useState('');
   const [fineReason, setFineReason] = useState('');
 
+  // Payment QR Setup Modal States
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrMerchantName, setQrMerchantName] = useState('');
+  const [qrPaymentNote, setQrPaymentNote] = useState('');
+  const [qrImageFile, setQrImageFile] = useState(null);
+  const [qrImagePreview, setQrImagePreview] = useState(null);
+
   // Add Admin Modal States
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -80,7 +94,7 @@ export default function AdminCommandCenter() {
   const [newAdminPassword, setNewAdminPassword] = useState('');
 
   // 2-Step Database Factory Reset Modal States
-  const [resetStep, setResetStep] = useState(0); // 0 = closed, 1 = First Warning, 2 = Second Final Warning
+  const [resetStep, setResetStep] = useState(0);
   const [resetConfirmText, setResetConfirmText] = useState('');
   const [resetModalError, setResetModalError] = useState('');
 
@@ -115,6 +129,12 @@ export default function AdminCommandCenter() {
     refetchIntervalInBackground: true,
   });
 
+  const { data: paymentQR } = useQuery({
+    queryKey: ['paymentQRConfig'],
+    queryFn: fetchPaymentQRConfig,
+    refetchInterval: 4000,
+  });
+
   const { data: roomsData } = useQuery({
     queryKey: ['roomsMatrix'],
     queryFn: async () => (await axiosClient.get('/rooms/')).data,
@@ -143,11 +163,20 @@ export default function AdminCommandCenter() {
     refetchIntervalInBackground: true,
   });
 
+  useEffect(() => {
+    if (paymentQR) {
+      setQrMerchantName(paymentQR.merchant_name || 'SmartRent Official eSewa / Fonepay');
+      setQrPaymentNote(
+        paymentQR.payment_note ||
+          'Scan this QR with eSewa, Khalti, or Mobile Banking and upload screenshot.'
+      );
+    }
+  }, [paymentQR]);
+
   const bills = Array.isArray(rawBills) ? rawBills : [];
   const reservations = Array.isArray(rawReservations) ? rawReservations : [];
   const notices = Array.isArray(rawNotices) ? rawNotices : [];
 
-  // Separate Tenants from Admins for clean directory tabs
   const tenantUsers = adminUsers.filter((u) => u.role !== 'ADMIN');
   const adminTeamUsers = adminUsers.filter((u) => u.role === 'ADMIN');
 
@@ -171,11 +200,39 @@ export default function AdminCommandCenter() {
     queryClient.invalidateQueries({ queryKey: ['adminUsersManagement'] });
     queryClient.invalidateQueries({ queryKey: ['adminReservations'] });
     queryClient.invalidateQueries({ queryKey: ['adminNotices'] });
+    queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
     queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
     queryClient.invalidateQueries({ queryKey: ['complaintTickets'] });
   };
 
   // Mutations
+  const updateQRMutation = useMutation({
+    mutationFn: (formData) => updatePaymentQRConfig(formData),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      setQrImageFile(null);
+      setQrImagePreview(null);
+      setShowQRModal(false);
+      queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text: err.response?.data?.error || 'Failed to upload Payment QR Code.',
+      });
+    },
+  });
+
+  const deleteQRMutation = useMutation({
+    mutationFn: deletePaymentQRConfig,
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      setQrImageFile(null);
+      setQrImagePreview(null);
+      queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
+    },
+  });
+
   const reservationActionMutation = useMutation({
     mutationFn: async ({ id, payload }) => processReservationAction(id, payload),
     onSuccess: (data) => {
@@ -314,6 +371,17 @@ export default function AdminCommandCenter() {
     },
   });
 
+  const handleSaveQRConfig = (e) => {
+    e.preventDefault();
+    const fd = new FormData();
+    fd.append('merchant_name', qrMerchantName);
+    fd.append('payment_note', qrPaymentNote);
+    if (qrImageFile) {
+      fd.append('qr_image', qrImageFile);
+    }
+    updateQRMutation.mutate(fd);
+  };
+
   const handlePostNotice = (e) => {
     e.preventDefault();
     createNoticeMutation.mutate({
@@ -370,6 +438,13 @@ export default function AdminCommandCenter() {
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setShowQRModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-xs font-extrabold shadow-sm transition"
+          >
+            <QrCode className="w-3.5 h-3.5" /> Payment QR Setup
+          </button>
           <button
             onClick={() => {
               triggerBulkGenerateBills()
@@ -1227,6 +1302,157 @@ export default function AdminCommandCenter() {
             </form>
           </div>
         </>
+      )}
+
+      {/* ADMIN PAYMENT QR CODE UPLOAD & MANAGEMENT MODAL */}
+      {showQRModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4">
+          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Official Payment QR Setup
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Upload or update the QR code shown to all tenants
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQRModal(false);
+                  setQrImageFile(null);
+                  setQrImagePreview(null);
+                }}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQRConfig} className="space-y-4">
+              {/* Current or Preview QR Display */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center space-y-3">
+                {qrImagePreview || paymentQR?.qr_image_url ? (
+                  <>
+                    <img
+                      src={qrImagePreview || paymentQR.qr_image_url}
+                      alt="Payment QR Preview"
+                      className="w-48 h-48 object-contain rounded-xl bg-white p-2 border border-slate-200 shadow-xs"
+                    />
+                    <div className="flex items-center gap-2">
+                      {paymentQR?.qr_image_url && !qrImagePreview && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              downloadFileFromUrl(
+                                paymentQR.qr_image_url,
+                                'SmartRent-Official-Payment-QR.png'
+                              )
+                            }
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Download Current QR
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm('Remove current Payment QR code?')) {
+                                deleteQRMutation.mutate();
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-extrabold transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    No QR code image uploaded yet. Select an image below.
+                  </div>
+                )}
+
+                <label className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-extrabold cursor-pointer transition border border-indigo-200">
+                  <Upload className="w-4 h-4" />
+                  <span>
+                    {paymentQR?.qr_image_url || qrImagePreview
+                      ? 'Choose New QR Image to Replace'
+                      : 'Upload QR Code Image'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setQrImageFile(f);
+                        setQrImagePreview(URL.createObjectURL(f));
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
+                  Merchant / Account Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={qrMerchantName}
+                  onChange={(e) => setQrMerchantName(e.target.value)}
+                  placeholder="e.g. SmartRent Official eSewa / Fonepay"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
+                  Payment Instructions for Tenants
+                </label>
+                <textarea
+                  rows={2}
+                  value={qrPaymentNote}
+                  onChange={(e) => setQrPaymentNote(e.target.value)}
+                  placeholder="e.g. Scan with eSewa, Khalti, or Mobile Banking and upload screenshot."
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQRModal(false);
+                    setQrImageFile(null);
+                    setQrImagePreview(null);
+                  }}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateQRMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-md transition"
+                >
+                  {updateQRMutation.isPending ? 'Saving QR...' : 'Save & Publish QR'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* 2-STEP DANGER CONFIRMATION MODAL FOR DATABASE FACTORY RESET */}

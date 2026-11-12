@@ -1,3 +1,5 @@
+import os
+import json
 import calendar
 from datetime import date
 from decimal import Decimal
@@ -6,6 +8,7 @@ from django.utils import timezone
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
+from django.core.files.storage import default_storage
 from django.conf import settings
 from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
@@ -50,6 +53,130 @@ def add_one_month_safe(orig_date):
         year += 1
     max_day = calendar.monthrange(year, month)[1]
     return date(year, month, min(orig_date.day, max_day))
+
+
+class PaymentQRConfigView(APIView):
+    """
+    Zero-migration Payment QR Code manager:
+    - GET: Returns the current QR image URL, merchant/account name, and note for Tenants & Admin.
+    - POST: Allows Admin to upload/replace the QR code image and payment details.
+    - DELETE: Allows Admin to remove the current QR code.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    CONFIG_DIR = os.path.join(settings.MEDIA_ROOT, 'payment_qr')
+    CONFIG_FILE = os.path.join(settings.MEDIA_ROOT, 'payment_qr', 'qr_metadata.json')
+
+    def _read_config(self):
+        os.makedirs(self.CONFIG_DIR, exist_ok=True)
+        if os.path.exists(self.CONFIG_FILE):
+            try:
+                with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {
+            "qr_path": None,
+            "merchant_name": "SmartRent Official eSewa / Fonepay",
+            "payment_note": "Scan this QR with eSewa, Khalti, or your Mobile Banking app and upload the payment screenshot below.",
+            "updated_at": None,
+        }
+
+    def _write_config(self, data):
+        os.makedirs(self.CONFIG_DIR, exist_ok=True)
+        with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+
+    def _build_response(self, request, cfg):
+        qr_url = None
+        qr_path = cfg.get("qr_path")
+        if qr_path and default_storage.exists(qr_path):
+            qr_url = request.build_absolute_uri(default_storage.url(qr_path))
+        return {
+            "qr_image_url": qr_url,
+            "merchant_name": cfg.get("merchant_name") or "SmartRent Official QR",
+            "payment_note": cfg.get("payment_note") or "Scan to pay your monthly bill.",
+            "updated_at": cfg.get("updated_at"),
+        }
+
+    def get(self, request):
+        cfg = self._read_config()
+        return Response(self._build_response(request, cfg), status=status.HTTP_200_OK)
+
+    def post(self, request):
+        user = request.user
+        if getattr(user, 'role', '') != 'ADMIN' and not user.is_superuser:
+            return Response(
+                {"error": "Only Admin can upload or update the Payment QR code."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        cfg = self._read_config()
+        qr_file = request.FILES.get('qr_image')
+
+        if qr_file:
+            err = validate_uploaded_image(qr_file, "Payment QR Code Image")
+            if err:
+                return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+
+            old_path = cfg.get("qr_path")
+            if old_path and default_storage.exists(old_path):
+                try:
+                    default_storage.delete(old_path)
+                except Exception:
+                    pass
+
+            ext = os.path.splitext(qr_file.name)[1].lower() or '.png'
+            saved_path = default_storage.save(
+                f"payment_qr/smartrent_qr_{int(timezone.now().timestamp())}{ext}",
+                qr_file,
+            )
+            cfg["qr_path"] = saved_path
+
+        if 'merchant_name' in request.data:
+            cfg["merchant_name"] = request.data.get('merchant_name', '').strip() or "SmartRent Official QR"
+        if 'payment_note' in request.data:
+            cfg["payment_note"] = request.data.get('payment_note', '').strip()
+
+        cfg["updated_at"] = timezone.now().isoformat()
+        self._write_config(cfg)
+
+        return Response(
+            {
+                "message": "Official Payment QR Code updated successfully!",
+                **self._build_response(request, cfg),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        user = request.user
+        if getattr(user, 'role', '') != 'ADMIN' and not user.is_superuser:
+            return Response(
+                {"error": "Only Admin can remove the Payment QR code."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        cfg = self._read_config()
+        old_path = cfg.get("qr_path")
+        if old_path and default_storage.exists(old_path):
+            try:
+                default_storage.delete(old_path)
+            except Exception:
+                pass
+
+        cfg["qr_path"] = None
+        cfg["updated_at"] = timezone.now().isoformat()
+        self._write_config(cfg)
+
+        return Response(
+            {
+                "message": "Payment QR code removed.",
+                **self._build_response(request, cfg),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class BillListView(generics.ListAPIView):
@@ -105,7 +232,6 @@ class TenantSubmitOnlineBillView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Validate uploaded Zone 1 & Zone 2 proof files before saving
         meter_file = request.FILES.get('meter_photo_proof')
         payment_file = request.FILES.get('payment_screenshot_proof')
 
@@ -138,7 +264,7 @@ class TenantSubmitOnlineBillView(APIView):
         bill.transaction_reference = serializer.validated_data.get('transaction_reference', '')
         bill.payment_method = 'ONLINE'
         bill.status = 'PENDING_VERIFICATION'
-        bill.save()  # Triggers calculate_totals() automatically!
+        bill.save()
 
         return Response(
             {
@@ -152,8 +278,6 @@ class TenantSubmitOnlineBillView(APIView):
 class AdminAuditBillView(APIView):
     """
     Admin inspects meter photo & payment screenshot and either APPROVES or REJECTS.
-    On APPROVE: locks room meter reading, marks bill APPROVED, emails receipt,
-    and creates next month's bill (only if tenancy is still active!).
     """
     permission_classes = [IsAdminUserRole]
 
@@ -182,16 +306,13 @@ class AdminAuditBillView(APIView):
             bill.paid_at = timezone.now()
             bill.save()
 
-            # Update room's official meter reading
             if bill.current_meter_reading is not None:
                 bill.room.current_meter_reading = bill.current_meter_reading
                 bill.room.save(update_fields=['current_meter_reading', 'updated_at'])
 
-            # Roll forward next month's billing cycle ONLY if tenancy is still active
             if bill.tenancy and bill.tenancy.is_active:
                 create_next_cycle_bill(bill)
 
-            # Notify tenant by email
             try:
                 send_mail(
                     subject=f"SmartRent - Payment Approved for Room {bill.room.room_number} ({bill.billing_month_label})",
@@ -222,7 +343,6 @@ class AdminAuditBillView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        # If REJECTED
         bill.status = 'REJECTED'
         bill.admin_remarks = remarks or "Please upload a clearer meter photo or valid payment screenshot."
         bill.save()
@@ -237,10 +357,6 @@ class AdminAuditBillView(APIView):
 
 
 class AdminCashOverrideView(APIView):
-    """
-    Allows Admin to record a cash payment on behalf of any tenant,
-    calculate the electricity units * 15, update the room meter reading, and roll to next month.
-    """
     permission_classes = [IsAdminUserRole]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -277,13 +393,11 @@ class AdminCashOverrideView(APIView):
         bill.status = 'PAID_CASH'
         bill.transaction_reference = f"CASH-{timezone.now().strftime('%Y%m%d%H%M')}"
         bill.paid_at = timezone.now()
-        bill.save()  # Automatically calculates units * 15 + rent + water + fine
+        bill.save()
 
-        # Update room's current meter reading
         bill.room.current_meter_reading = new_reading
         bill.room.save(update_fields=['current_meter_reading', 'updated_at'])
 
-        # Generate next month's billing cycle ONLY if tenancy is still active
         if bill.tenancy and bill.tenancy.is_active:
             create_next_cycle_bill(bill)
 
@@ -297,11 +411,6 @@ class AdminCashOverrideView(APIView):
 
 
 class BulkGenerateBillsView(APIView):
-    """
-    POST /api/billing/bulk-generate/
-    Scans all active tenancies and ensures every occupied room has an active open bill
-    for the current cycle.
-    """
     permission_classes = [IsAdminUserRole]
 
     @transaction.atomic
@@ -353,7 +462,6 @@ class BulkGenerateBillsView(APIView):
 
 
 class AdminApplyFineView(APIView):
-    """Allows Admin to add a property damage or cleanliness/discipline fine to a tenant's bill."""
     permission_classes = [IsAdminUserRole]
 
     @transaction.atomic
@@ -364,7 +472,7 @@ class AdminApplyFineView(APIView):
 
         bill.damage_fine_amount = serializer.validated_data['damage_fine_amount']
         bill.damage_fine_reason = serializer.validated_data['damage_fine_reason']
-        bill.save()  # Recomputes total_payable automatically
+        bill.save()
 
         return Response(
             {
@@ -376,7 +484,6 @@ class AdminApplyFineView(APIView):
 
 
 class HouseExpenseListCreateView(generics.ListCreateAPIView):
-    """Admin can log and view whole-house electricity, water, and maintenance expenses."""
     permission_classes = [IsAdminUserRole]
     serializer_class = HouseExpenseSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -393,12 +500,6 @@ class HouseExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class AdminAnalyticsDashboardView(APIView):
-    """
-    Powers the Admin Command Center:
-    - KPI Summary Cards (Total Revenue, Total Expenses, Net Profit, Pending Verifications, Occupancy)
-    - Pie / Donut Chart data (Expenses by Category + Income vs Expenses split)
-    - Monthly Bar/Line Chart data (Revenue vs Expenses trend)
-    """
     permission_classes = [IsAdminUserRole]
 
     def get(self, request):
@@ -414,7 +515,6 @@ class AdminAnalyticsDashboardView(APIView):
         total_expenses = expenses.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
         net_profit = total_revenue - total_expenses
 
-        # Pie Chart 1: Expense Breakdown by Category
         category_labels = dict(HouseExpense.CATEGORY_CHOICES)
         expense_by_category = []
         for code, label in category_labels.items():
@@ -425,13 +525,11 @@ class AdminAnalyticsDashboardView(APIView):
                 "value": float(cat_sum),
             })
 
-        # Pie Chart 2: Overall Income vs Expense Ratio
         income_vs_expense_pie = [
             {"name": "Total Rental & Utility Income", "value": float(total_revenue), "color": "#4F46E5"},
             {"name": "Total House Expenses", "value": float(total_expenses), "color": "#EF4444"},
         ]
 
-        # Monthly Trend Bar Chart (Grouped by billing_month_label)
         monthly_revenue_map = {}
         for b in paid_bills:
             label = b.billing_month_label
@@ -478,7 +576,6 @@ class AdminAnalyticsDashboardView(APIView):
 
 
 class TriggerDueRemindersView(APIView):
-    """Manual trigger endpoint for Admin to send due-date reminder emails immediately."""
     permission_classes = [IsAdminUserRole]
 
     def post(self, request):

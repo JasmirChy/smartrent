@@ -17,6 +17,8 @@ import {
   CreditCard,
   X,
   LogOut,
+  QrCode,
+  Maximize2,
 } from 'lucide-react';
 import axiosClient, {
   fetchReservations,
@@ -26,6 +28,8 @@ import axiosClient, {
   acceptDigitalLease,
   fetchMoveOutStatus,
   requestMoveOut,
+  fetchPaymentQRConfig,
+  downloadFileFromUrl,
 } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
 
@@ -45,6 +49,7 @@ export default function TenantDashboard() {
   const [paymentPhoto, setPaymentPhoto] = useState(null);
   const [paymentPreview, setPaymentPreview] = useState(null);
   const [transactionRef, setTransactionRef] = useState('');
+  const [showQRZoomModal, setShowQRZoomModal] = useState(false);
 
   // Modals & KYC States
   const [showLeaseModal, setShowLeaseModal] = useState(false);
@@ -59,10 +64,11 @@ export default function TenantDashboard() {
   const [citFront, setCitFront] = useState(null);
   const [citBack, setCitBack] = useState(null);
 
-  // Queries
+  // Queries (4-second live auto-sync)
   const { data: profileData } = useQuery({
     queryKey: ['tenantMeProfile'],
     queryFn: async () => (await axiosClient.get('/accounts/me/')).data,
+    refetchInterval: 4000,
   });
 
   const { data: rawBills = [] } = useQuery({
@@ -71,21 +77,31 @@ export default function TenantDashboard() {
       const res = await axiosClient.get('/billing/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
+    refetchInterval: 4000,
+  });
+
+  const { data: paymentQR } = useQuery({
+    queryKey: ['paymentQRConfig'],
+    queryFn: fetchPaymentQRConfig,
+    refetchInterval: 4000,
   });
 
   const { data: rawReservations = [] } = useQuery({
     queryKey: ['tenantReservations'],
     queryFn: fetchReservations,
+    refetchInterval: 4000,
   });
 
   const { data: kycProfile } = useQuery({
     queryKey: ['tenantKYC'],
     queryFn: fetchKYCProfile,
+    refetchInterval: 4000,
   });
 
   const { data: moveOutStatus } = useQuery({
     queryKey: ['moveOutStatus'],
     queryFn: fetchMoveOutStatus,
+    refetchInterval: 4000,
   });
 
   const bills = Array.isArray(rawBills) ? rawBills : [];
@@ -452,8 +468,71 @@ export default function TenantDashboard() {
             </div>
           </div>
 
-          <div className="lg:col-span-5 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm">
-            <h2 className="text-lg font-extrabold text-slate-900 mb-6">Verification Desk</h2>
+          <div className="lg:col-span-5 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+            <h2 className="text-lg font-extrabold text-slate-900">Verification & QR Payment Desk</h2>
+
+            {/* SCAN & DOWNLOAD OFFICIAL PAYMENT QR BOX */}
+            <div className="rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/70 to-indigo-50/50 border border-emerald-200 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <QrCode className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">
+                      {paymentQR?.merchant_name || 'SmartRent Official Payment QR'}
+                    </h3>
+                    <p className="text-[11px] text-slate-600">
+                      Scan to pay Rs. {liveGrandTotal.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                {paymentQR?.qr_image_url && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadFileFromUrl(
+                        paymentQR.qr_image_url,
+                        `SmartRent-Payment-QR-${activeBill?.room_number || 'Official'}.png`
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Download QR
+                  </button>
+                )}
+              </div>
+
+              {paymentQR?.qr_image_url ? (
+                <div className="flex flex-col items-center bg-white rounded-2xl p-3.5 border border-emerald-200/80 shadow-2xs">
+                  <div className="relative group">
+                    <img
+                      src={paymentQR.qr_image_url}
+                      alt="Official Payment QR Code"
+                      onClick={() => setShowQRZoomModal(true)}
+                      className="w-44 h-44 object-contain rounded-xl cursor-pointer transition-transform group-hover:scale-[1.02]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowQRZoomModal(true)}
+                      className="mt-2 w-full inline-flex items-center justify-center gap-1 text-[11px] font-extrabold text-indigo-600 hover:text-indigo-800"
+                    >
+                      <Maximize2 className="w-3 h-3" /> Tap to View Fullscreen
+                    </button>
+                  </div>
+                  {paymentQR?.payment_note && (
+                    <p className="text-[11px] text-slate-500 text-center mt-2 leading-relaxed">
+                      {paymentQR.payment_note}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-white/80 border border-dashed border-emerald-300 text-center text-xs text-slate-500">
+                  Official payment QR code has not been uploaded by Admin yet. Please ask Admin or pay via cash/eSewa.
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleSubmitOnlineProof} className="space-y-5">
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
@@ -843,6 +922,71 @@ export default function TenantDashboard() {
           </table>
         </div>
       </div>
+
+      {/* FULLSCREEN QR ZOOM & DOWNLOAD MODAL */}
+      {showQRZoomModal && paymentQR?.qr_image_url && (
+        <div
+          onClick={() => setShowQRZoomModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 text-center space-y-4"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="text-left">
+                <h3 className="text-sm font-black text-slate-900">
+                  {paymentQR.merchant_name || 'Official Payment QR'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Total Payable: Rs. {liveGrandTotal.toLocaleString()}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQRZoomModal(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
+              <img
+                src={paymentQR.qr_image_url}
+                alt="Payment QR Fullscreen"
+                className="w-64 h-64 object-contain rounded-xl"
+              />
+            </div>
+
+            {paymentQR.payment_note && (
+              <p className="text-xs text-slate-600 leading-relaxed">{paymentQR.payment_note}</p>
+            )}
+
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowQRZoomModal(false)}
+                className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadFileFromUrl(
+                    paymentQR.qr_image_url,
+                    `SmartRent-Payment-QR-${activeBill?.room_number || 'Official'}.png`
+                  )
+                }
+                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold inline-flex items-center justify-center gap-1.5 shadow-md"
+              >
+                <Download className="w-4 h-4" /> Download QR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* LEASE MODAL */}
       {showLeaseModal && (

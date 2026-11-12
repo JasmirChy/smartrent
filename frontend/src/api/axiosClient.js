@@ -50,6 +50,51 @@ axiosClient.interceptors.response.use(
   }
 );
 
+// --- PAYMENT QR CODE HELPERS ---
+export const fetchPaymentQRConfig = async () => {
+  try {
+    const res = await axiosClient.get('/billing/payment-qr/');
+    return res.data;
+  } catch {
+    return {
+      qr_image_url: null,
+      merchant_name: 'SmartRent Official QR',
+      payment_note: '',
+    };
+  }
+};
+
+export const updatePaymentQRConfig = async (formData) => {
+  const res = await axiosClient.post('/billing/payment-qr/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+};
+
+export const deletePaymentQRConfig = async () => {
+  const res = await axiosClient.delete('/billing/payment-qr/');
+  return res.data;
+};
+
+export const downloadFileFromUrl = async (fileUrl, defaultFileName = 'SmartRent-Payment-QR.png') => {
+  if (!fileUrl) return;
+  try {
+    const response = await fetch(fileUrl, { mode: 'cors' });
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = defaultFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch {
+    // Fallback if CORS blocks blob fetch
+    window.open(fileUrl, '_blank', 'noopener,noreferrer');
+  }
+};
+
 // --- ROOM RESERVATION API HELPERS ---
 export const fetchReservations = async () => {
   try {

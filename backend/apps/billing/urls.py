@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     BillListView,
+    PaymentQRConfigView,
     TenantSubmitOnlineBillView,
     AdminAuditBillView,
     AdminCashOverrideView,
@@ -14,6 +15,7 @@ from .views import (
 
 urlpatterns = [
     path('', BillListView.as_view(), name='bills_list'),
+    path('payment-qr/', PaymentQRConfigView.as_view(), name='payment_qr_config'),
     path('<int:bill_id>/submit-online/', TenantSubmitOnlineBillView.as_view(), name='submit_online_bill'),
     path('<int:bill_id>/audit/', AdminAuditBillView.as_view(), name='admin_audit_bill'),
     path('<int:bill_id>/apply-fine/', AdminApplyFineView.as_view(), name='admin_apply_fine'),
