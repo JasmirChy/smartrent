@@ -65,6 +65,102 @@ def get_user_cover_urls(request, user_id):
     return None, None
 
 
+def build_enriched_user_dossier(request, u):
+    """
+    Builds a comprehensive profile & telemetry dictionary for both MeProfileView
+    and AdminUserManagementListView so the user's Profile page and Admin Dossier
+    share the exact same rich data structure.
+    """
+    serializer = UserProfileSerializer(u, context={'request': request})
+    base_data = dict(serializer.data)
+
+    active_tenancy = u.tenancies.filter(is_active=True).select_related('room').first()
+    kyc = getattr(u, 'kyc_profile', None)
+    cover_abs_url, cover_rel_path = get_user_cover_urls(request, u.id)
+
+    user_bills = list(u.bills.select_related('room').all().order_by('-due_date', '-created_at'))
+    pending_bills_qs = [
+        b for b in user_bills if b.status in ('UNPAID', 'PENDING_VERIFICATION', 'REJECTED')
+    ]
+    paid_bills_qs = [
+        b for b in user_bills if b.status in ('APPROVED', 'PAID_CASH')
+    ]
+
+    total_pending_amount = sum((b.total_payable or Decimal('0.00')) for b in pending_bills_qs)
+    total_paid_amount = sum((b.total_payable or Decimal('0.00')) for b in paid_bills_qs)
+
+    recent_bills_payload = []
+    for b in user_bills[:6]:
+        recent_bills_payload.append({
+            "id": b.id,
+            "room_number": b.room.room_number if b.room else None,
+            "billing_month_label": b.billing_month_label,
+            "due_date": str(b.due_date) if b.due_date else None,
+            "base_rent": float(b.base_rent or 0),
+            "water_bill": float(b.water_bill or 0),
+            "units_consumed": float(b.units_consumed or 0),
+            "electricity_amount": float(b.electricity_amount or 0),
+            "damage_fine_amount": float(b.damage_fine_amount or 0),
+            "total_payable": float(b.total_payable or 0),
+            "status": b.status,
+            "status_display": b.get_status_display(),
+            "transaction_reference": b.transaction_reference,
+            "meter_photo_url": request.build_absolute_uri(b.meter_photo_proof.url) if b.meter_photo_proof else None,
+            "payment_screenshot_url": request.build_absolute_uri(b.payment_screenshot_proof.url) if b.payment_screenshot_proof else None,
+        })
+
+    room_details = None
+    if active_tenancy and active_tenancy.room:
+        rm = active_tenancy.room
+        room_details = {
+            "id": rm.id,
+            "room_number": rm.room_number,
+            "floor": getattr(rm, 'floor', 'Ground Floor'),
+            "base_rent": float(rm.base_rent or 0),
+            "fixed_water_bill": float(getattr(rm, 'fixed_water_bill', 100) or 100),
+            "electricity_rate": float(getattr(rm, 'electricity_rate_per_unit', 15) or 15),
+            "current_meter_reading": float(rm.current_meter_reading or 0),
+            "entry_date": str(active_tenancy.entry_date) if active_tenancy.entry_date else None,
+            "next_due_date": str(active_tenancy.get_next_due_date()) if hasattr(active_tenancy, 'get_next_due_date') else None,
+        }
+
+    base_data.update({
+        "id": u.id,
+        "full_name": u.full_name,
+        "email": u.email,
+        "phone_number": u.phone_number,
+        "role": u.role,
+        "is_active": u.is_active,
+        "joined_at": u.created_at.strftime("%b %d, %Y") if hasattr(u, 'created_at') and u.created_at else None,
+        "room_number": active_tenancy.room.room_number if active_tenancy else None,
+        "entry_date": str(active_tenancy.entry_date) if active_tenancy else None,
+        "room_details": room_details,
+        # KYC & Legal Details
+        "kyc_id": kyc.id if kyc else None,
+        "kyc_status": kyc.status if kyc else "NOT_SUBMITTED",
+        "full_name_legal": kyc.full_name_legal if kyc and kyc.full_name_legal else u.full_name,
+        "citizenship_number": kyc.citizenship_number if kyc else None,
+        "emergency_contact_name": getattr(kyc, 'emergency_contact_name', None) if kyc else None,
+        "emergency_contact_phone": getattr(kyc, 'emergency_contact_phone', None) if kyc else None,
+        "has_accepted_lease": getattr(kyc, 'has_accepted_lease', False) if kyc else False,
+        "lease_accepted_at": kyc.lease_accepted_at.strftime("%b %d, %Y") if kyc and getattr(kyc, 'lease_accepted_at', None) else None,
+        "citizenship_front_url": request.build_absolute_uri(kyc.citizenship_front.url) if kyc and kyc.citizenship_front else None,
+        "citizenship_back_url": request.build_absolute_uri(kyc.citizenship_back.url) if kyc and kyc.citizenship_back else None,
+        # Profile & Cover Media
+        "profile_picture_url": request.build_absolute_uri(u.profile_picture.url) if u.profile_picture else None,
+        "profile_picture_path": u.profile_picture.url if u.profile_picture else None,
+        "cover_picture_url": cover_abs_url,
+        "cover_picture_path": cover_rel_path,
+        # Financial & Billing Telemetry
+        "pending_bills_count": len(pending_bills_qs),
+        "total_pending_amount": float(total_pending_amount),
+        "paid_bills_count": len(paid_bills_qs),
+        "total_paid_amount": float(total_paid_amount),
+        "recent_bills": recent_bills_payload,
+    })
+    return base_data
+
+
 def generate_and_send_otp(email, purpose='PASSWORD_RESET'):
     EmailOTP.objects.filter(email=email, purpose=purpose, is_used=False).update(is_used=True)
     otp_code = f"{random.randint(100000, 999999)}"
@@ -108,7 +204,7 @@ class SignupView(APIView):
                 {
                     "message": "Account created successfully!",
                     "tokens": tokens,
-                    "user": UserProfileSerializer(user, context={'request': request}).data,
+                    "user": build_enriched_user_dossier(request, user),
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -132,7 +228,7 @@ class LoginView(APIView):
             {
                 "message": "Login successful!",
                 "tokens": tokens,
-                "user": UserProfileSerializer(user, context={'request': request}).data,
+                "user": build_enriched_user_dossier(request, user),
             },
             status=status.HTTP_200_OK,
         )
@@ -174,7 +270,7 @@ class VerifyOTPView(APIView):
             {
                 "message": "OTP verified successfully!",
                 "tokens": tokens,
-                "user": UserProfileSerializer(user, context={'request': request}).data,
+                "user": build_enriched_user_dossier(request, user),
             },
             status=status.HTTP_200_OK,
         )
@@ -200,8 +296,8 @@ class ResendOTPView(APIView):
 
 class MeProfileView(APIView):
     """
-    Handles retrieving and updating the logged-in user's profile, avatar, and cover banner image.
-    Supports any image format (JPG, JPEG, PNG, WEBP, HEIC, AVIF, etc.) up to 5 MB.
+    Handles retrieving and updating the logged-in user's profile, avatar, cover banner,
+    and returns full room, billing, and KYC telemetry for the Profile Settings dashboard.
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -215,22 +311,8 @@ class MeProfileView(APIView):
             return f"Unsupported format for {label}. Please upload a valid image (JPG, JPEG, PNG, WEBP, HEIC, etc.)."
         return None
 
-    def _build_user_payload(self, request, user):
-        serializer = UserProfileSerializer(user, context={'request': request})
-        data = dict(serializer.data)
-        if user.profile_picture:
-            try:
-                data['profile_picture_url'] = request.build_absolute_uri(user.profile_picture.url)
-                data['profile_picture_path'] = user.profile_picture.url
-            except Exception:
-                pass
-        cover_abs_url, cover_rel_path = get_user_cover_urls(request, user.id)
-        data['cover_picture_url'] = cover_abs_url
-        data['cover_picture_path'] = cover_rel_path
-        return data
-
     def get(self, request):
-        return Response(self._build_user_payload(request, request.user), status=status.HTTP_200_OK)
+        return Response(build_enriched_user_dossier(request, request.user), status=status.HTTP_200_OK)
 
     def patch(self, request):
         user = request.user
@@ -302,7 +384,7 @@ class MeProfileView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        payload = self._build_user_payload(request, user)
+        payload = build_enriched_user_dossier(request, user)
         payload['message'] = "Profile, avatar, and cover banner updated successfully!"
         return Response(payload, status=status.HTTP_200_OK)
 
@@ -390,93 +472,7 @@ class AdminUserManagementListView(APIView):
 
     def get(self, request):
         users = User.objects.all().prefetch_related('tenancies__room', 'kyc_profile', 'bills__room').order_by('-created_at')
-        data = []
-        for u in users:
-            active_tenancy = u.tenancies.filter(is_active=True).select_related('room').first()
-            kyc = getattr(u, 'kyc_profile', None)
-            cover_abs_url, cover_rel_path = get_user_cover_urls(request, u.id)
-
-            # Collect user's billing telemetry
-            user_bills = list(u.bills.select_related('room').all().order_by('-due_date', '-created_at'))
-            pending_bills_qs = [
-                b for b in user_bills if b.status in ('UNPAID', 'PENDING_VERIFICATION', 'REJECTED')
-            ]
-            paid_bills_qs = [
-                b for b in user_bills if b.status in ('APPROVED', 'PAID_CASH')
-            ]
-
-            total_pending_amount = sum((b.total_payable or Decimal('0.00')) for b in pending_bills_qs)
-            total_paid_amount = sum((b.total_payable or Decimal('0.00')) for b in paid_bills_qs)
-
-            recent_bills_payload = []
-            for b in user_bills[:6]:
-                recent_bills_payload.append({
-                    "id": b.id,
-                    "room_number": b.room.room_number if b.room else None,
-                    "billing_month_label": b.billing_month_label,
-                    "due_date": str(b.due_date) if b.due_date else None,
-                    "base_rent": float(b.base_rent or 0),
-                    "water_bill": float(b.water_bill or 0),
-                    "units_consumed": float(b.units_consumed or 0),
-                    "electricity_amount": float(b.electricity_amount or 0),
-                    "damage_fine_amount": float(b.damage_fine_amount or 0),
-                    "total_payable": float(b.total_payable or 0),
-                    "status": b.status,
-                    "status_display": b.get_status_display(),
-                    "transaction_reference": b.transaction_reference,
-                    "meter_photo_url": request.build_absolute_uri(b.meter_photo_proof.url) if b.meter_photo_proof else None,
-                    "payment_screenshot_url": request.build_absolute_uri(b.payment_screenshot_proof.url) if b.payment_screenshot_proof else None,
-                })
-
-            room_details = None
-            if active_tenancy and active_tenancy.room:
-                rm = active_tenancy.room
-                room_details = {
-                    "id": rm.id,
-                    "room_number": rm.room_number,
-                    "floor": getattr(rm, 'floor', 'Ground Floor'),
-                    "base_rent": float(rm.base_rent or 0),
-                    "fixed_water_bill": float(getattr(rm, 'fixed_water_bill', 100) or 100),
-                    "electricity_rate": float(getattr(rm, 'electricity_rate_per_unit', 15) or 15),
-                    "current_meter_reading": float(rm.current_meter_reading or 0),
-                    "entry_date": str(active_tenancy.entry_date) if active_tenancy.entry_date else None,
-                    "next_due_date": str(active_tenancy.get_next_due_date()) if hasattr(active_tenancy, 'get_next_due_date') else None,
-                }
-
-            data.append({
-                "id": u.id,
-                "full_name": u.full_name,
-                "email": u.email,
-                "phone_number": u.phone_number,
-                "role": u.role,
-                "is_active": u.is_active,
-                "joined_at": u.created_at.strftime("%b %d, %Y") if hasattr(u, 'created_at') and u.created_at else None,
-                "room_number": active_tenancy.room.room_number if active_tenancy else None,
-                "entry_date": str(active_tenancy.entry_date) if active_tenancy else None,
-                "room_details": room_details,
-                # KYC & Legal Details
-                "kyc_id": kyc.id if kyc else None,
-                "kyc_status": kyc.status if kyc else "NOT_SUBMITTED",
-                "full_name_legal": kyc.full_name_legal if kyc else u.full_name,
-                "citizenship_number": kyc.citizenship_number if kyc else None,
-                "emergency_contact_name": getattr(kyc, 'emergency_contact_name', None) if kyc else None,
-                "emergency_contact_phone": getattr(kyc, 'emergency_contact_phone', None) if kyc else None,
-                "has_accepted_lease": getattr(kyc, 'has_accepted_lease', False) if kyc else False,
-                "lease_accepted_at": kyc.lease_accepted_at.strftime("%b %d, %Y") if kyc and getattr(kyc, 'lease_accepted_at', None) else None,
-                "citizenship_front_url": request.build_absolute_uri(kyc.citizenship_front.url) if kyc and kyc.citizenship_front else None,
-                "citizenship_back_url": request.build_absolute_uri(kyc.citizenship_back.url) if kyc and kyc.citizenship_back else None,
-                # Profile & Cover Media
-                "profile_picture_url": request.build_absolute_uri(u.profile_picture.url) if u.profile_picture else None,
-                "profile_picture_path": u.profile_picture.url if u.profile_picture else None,
-                "cover_picture_url": cover_abs_url,
-                "cover_picture_path": cover_rel_path,
-                # Financial & Billing Telemetry
-                "pending_bills_count": len(pending_bills_qs),
-                "total_pending_amount": float(total_pending_amount),
-                "paid_bills_count": len(paid_bills_qs),
-                "total_paid_amount": float(total_paid_amount),
-                "recent_bills": recent_bills_payload,
-            })
+        data = [build_enriched_user_dossier(request, u) for u in users]
         return Response(data)
 
 
