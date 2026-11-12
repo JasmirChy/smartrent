@@ -19,6 +19,7 @@ import {
   Download,
   Upload,
   Eye,
+  EyeOff,
   ZoomIn,
   ZoomOut,
   ChevronLeft,
@@ -169,6 +170,7 @@ export default function AdminCommandCenter() {
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminPhone, setNewAdminPhone] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
 
   // 2-Step Database Factory Reset Modal States
   const [resetStep, setResetStep] = useState(0);
@@ -749,6 +751,7 @@ export default function AdminCommandCenter() {
       setNewAdminName('');
       setNewAdminPhone('');
       setNewAdminPassword('');
+      setShowNewAdminPassword(false);
       refreshAllAdminData();
     },
     onError: (err) => {
@@ -1168,7 +1171,10 @@ export default function AdminCommandCenter() {
             </div>
             <button
               type="button"
-              onClick={() => setShowAddAdminModal(true)}
+              onClick={() => {
+                setShowNewAdminPassword(false);
+                setShowAddAdminModal(true);
+              }}
               className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition"
             >
               + Add New Administrator
@@ -2996,7 +3002,10 @@ export default function AdminCommandCenter() {
               <h3 className="text-base font-extrabold text-slate-900">Create New Administrator</h3>
               <button
                 type="button"
-                onClick={() => setShowAddAdminModal(false)}
+                onClick={() => {
+                  setShowNewAdminPassword(false);
+                  setShowAddAdminModal(false);
+                }}
                 className="p-1 rounded-full hover:bg-slate-100"
               >
                 <X className="w-5 h-5" />
@@ -3059,21 +3068,39 @@ export default function AdminCommandCenter() {
                 <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
                   Secure Password
                 </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={newAdminPassword}
-                  onChange={(e) => setNewAdminPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-600"
-                />
+                <div className="relative">
+                  <input
+                    type={showNewAdminPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={newAdminPassword}
+                    onChange={(e) => setNewAdminPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-3.5 pr-10 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewAdminPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-indigo-600 transition"
+                    tabIndex={-1}
+                    title={showNewAdminPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showNewAdminPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddAdminModal(false)}
+                  onClick={() => {
+                    setShowNewAdminPassword(false);
+                    setShowAddAdminModal(false);
+                  }}
                   className="flex-1 py-3 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700"
                 >
                   Cancel

@@ -1,5 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mail, Lock, User, Phone, Camera, KeyRound, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  X,
+  Mail,
+  Lock,
+  User,
+  Phone,
+  Camera,
+  KeyRound,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,6 +37,11 @@ export default function AuthModal() {
   const [newPassword, setNewPassword] = useState('');
   const [resetStep, setResetStep] = useState(1); // 1: Request OTP, 2: Enter OTP & New Password
 
+  // Show / Hide Password Toggle States
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -31,6 +49,9 @@ export default function AuthModal() {
   useEffect(() => {
     setError('');
     setSuccessMsg('');
+    setShowLoginPassword(false);
+    setShowSignupPassword(false);
+    setShowResetPassword(false);
   }, [authModalMode, authModalOpen]);
 
   if (!authModalOpen) return null;
@@ -126,6 +147,7 @@ export default function AuthModal() {
       setResetStep(1);
       setOtpCode('');
       setNewPassword('');
+      setShowResetPassword(false);
       setTimeout(() => setAuthModalMode('LOGIN'), 1200);
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid OTP or password.');
@@ -136,6 +158,9 @@ export default function AuthModal() {
 
   const inputClass =
     'w-full pl-10 pr-4 py-2.5 text-sm rounded-xl !bg-white !text-slate-900 placeholder:text-slate-400 border border-slate-300 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 outline-none shadow-2xs transition';
+
+  const passwordInputClass =
+    'w-full pl-10 pr-10 py-2.5 text-sm rounded-xl !bg-white !text-slate-900 placeholder:text-slate-400 border border-slate-300 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 outline-none shadow-2xs transition';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
@@ -217,13 +242,26 @@ export default function AuthModal() {
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
-                  type="password"
+                  type={showLoginPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className={inputClass}
+                  className={passwordInputClass}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
+                  tabIndex={-1}
+                  title={showLoginPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showLoginPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -327,14 +365,27 @@ export default function AuthModal() {
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
-                  type="password"
+                  type={showSignupPassword ? 'text' : 'password'}
                   required
                   minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Minimum 6 characters"
-                  className={inputClass}
+                  className={passwordInputClass}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowSignupPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
+                  tabIndex={-1}
+                  title={showSignupPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showSignupPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -416,14 +467,27 @@ export default function AuthModal() {
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                     <input
-                      type="password"
+                      type={showResetPassword ? 'text' : 'password'}
                       required
                       minLength={6}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Enter new password"
-                      className={inputClass}
+                      className={passwordInputClass}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowResetPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
+                      tabIndex={-1}
+                      title={showResetPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showResetPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
                 </div>
                 <button

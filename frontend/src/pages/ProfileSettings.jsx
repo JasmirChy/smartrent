@@ -124,6 +124,7 @@ export default function ProfileSettings() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Feedback Banner
   const [banner, setBanner] = useState({ type: '', text: '' });
@@ -340,6 +341,8 @@ export default function ProfileSettings() {
       setOtpCode('');
       setNewPassword('');
       setConfirmPassword('');
+      setShowPassword(false);
+      setShowConfirmPassword(false);
       setBanner({
         type: 'success',
         text: data.message || 'Password updated successfully!',
@@ -1127,7 +1130,9 @@ export default function ProfileSettings() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((prev) => !prev)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
+                    tabIndex={-1}
+                    title={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -1138,15 +1143,30 @@ export default function ProfileSettings() {
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
                   Confirm New Password
                 </label>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  minLength={6}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter new password"
-                  className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full pl-4 pr-10 py-3 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
+                    tabIndex={-1}
+                    title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-2.5 pt-2">
@@ -1157,6 +1177,8 @@ export default function ProfileSettings() {
                     setOtpCode('');
                     setNewPassword('');
                     setConfirmPassword('');
+                    setShowPassword(false);
+                    setShowConfirmPassword(false);
                   }}
                   className="py-3 px-4 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-600 hover:bg-slate-50"
                 >
