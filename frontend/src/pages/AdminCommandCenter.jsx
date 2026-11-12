@@ -18,6 +18,19 @@ import {
   QrCode,
   Download,
   Upload,
+  Eye,
+  ZoomIn,
+  ZoomOut,
+  ChevronLeft,
+  ChevronRight,
+  Phone,
+  Mail,
+  Home,
+  FileText,
+  CheckCircle2,
+  Clock,
+  CreditCard,
+  Camera,
 } from 'lucide-react';
 import {
   BarChart,
@@ -46,15 +59,62 @@ import axiosClient, {
   updatePaymentQRConfig,
   deletePaymentQRConfig,
   downloadFileFromUrl,
+  auditKYC,
 } from '../api/axiosClient';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+function getSafeMediaUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
+
+  const currentHost = window.location.hostname;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  let backendOrigin = 'http://localhost:8000';
+  try {
+    backendOrigin = new URL(apiBase).origin;
+  } catch {
+    backendOrigin = `http://${currentHost || 'localhost'}:8000`;
+  }
+
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (backendOrigin.includes('localhost') || backendOrigin.includes('127.0.0.1'))
+  ) {
+    backendOrigin = `http://${currentHost}:8000`;
+  }
+
+  if (rawUrl.startsWith('/')) {
+    return `${backendOrigin}${rawUrl}`;
+  }
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (rawUrl.includes('://localhost:') || rawUrl.includes('://127.0.0.1:'))
+  ) {
+    return rawUrl
+      .replace('://localhost:', `://${currentHost}:`)
+      .replace('://127.0.0.1:', `://${currentHost}:`);
+  }
+  return rawUrl;
+}
 
 export default function AdminCommandCenter() {
   const queryClient = useQueryClient();
 
   const [activeAdminTab, setActiveAdminTab] = useState('OVERVIEW'); // OVERVIEW | USERS | ADMINS
-  const [selectedUserModal, setSelectedUserModal] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(null);
+
+  // Fullscreen Photo Lightbox States
+  const [lightboxState, setLightboxState] = useState({
+    isOpen: false,
+    items: [], // [{ url, title, subtitle }]
+    currentIndex: 0,
+    zoom: 1,
+  });
 
   const [bannerMsg, setBannerMsg] = useState({ type: '', text: '' });
   const [selectedBillForAudit, setSelectedBillForAudit] = useState(null);
@@ -180,6 +240,11 @@ export default function AdminCommandCenter() {
   const tenantUsers = adminUsers.filter((u) => u.role !== 'ADMIN');
   const adminTeamUsers = adminUsers.filter((u) => u.role === 'ADMIN');
 
+  // Keep selected user live-synced with latest query data
+  const selectedUserModal = selectedUserId
+    ? adminUsers.find((u) => u.id === selectedUserId) || null
+    : null;
+
   const pendingQueue = bills.filter((b) => b.status === 'PENDING_VERIFICATION');
   const pendingReservations = reservations.filter((r) => r.status === 'PENDING');
   const unpaidOrPendingBills = bills.filter(
@@ -192,6 +257,86 @@ export default function AdminCommandCenter() {
     : Array.isArray(roomsData?.results)
     ? roomsData.results
     : [];
+
+  const openPhotoLightbox = (itemsList, startIndex = 0) => {
+    const validItems = itemsList.filter((item) => Boolean(item?.url));
+    if (validItems.length === 0) return;
+    setLightboxState({
+      isOpen: true,
+      items: validItems,
+      currentIndex: Math.min(startIndex, validItems.length - 1),
+      zoom: 1,
+    });
+  };
+
+  const closePhotoLightbox = () => {
+    setLightboxState((prev) => ({ ...prev, isOpen: false, zoom: 1 }));
+  };
+
+  const buildUserGalleryItems = (u) => {
+    if (!u) return [];
+    const items = [];
+    const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
+    const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
+    const citFrontUrl = getSafeMediaUrl(u.citizenship_front_url);
+    const citBackUrl = getSafeMediaUrl(u.citizenship_back_url);
+
+    if (avatarUrl) {
+      items.push({
+        key: 'AVATAR',
+        url: avatarUrl,
+        title: `${u.full_name} — Profile Avatar`,
+        subtitle: u.email,
+      });
+    }
+    if (coverUrl) {
+      items.push({
+        key: 'COVER',
+        url: coverUrl,
+        title: `${u.full_name} — Cover Banner`,
+        subtitle: u.email,
+      });
+    }
+    if (citFrontUrl) {
+      items.push({
+        key: 'CIT_FRONT',
+        url: citFrontUrl,
+        title: `${u.full_name} — Citizenship ID (Front Side)`,
+        subtitle: `Citizenship No: ${u.citizenship_number || 'N/A'}`,
+      });
+    }
+    if (citBackUrl) {
+      items.push({
+        key: 'CIT_BACK',
+        url: citBackUrl,
+        title: `${u.full_name} — Citizenship ID (Back Side)`,
+        subtitle: `Citizenship No: ${u.citizenship_number || 'N/A'}`,
+      });
+    }
+    if (Array.isArray(u.recent_bills)) {
+      u.recent_bills.forEach((b) => {
+        const mUrl = getSafeMediaUrl(b.meter_photo_url);
+        const pUrl = getSafeMediaUrl(b.payment_screenshot_url);
+        if (mUrl) {
+          items.push({
+            key: `BILL_METER_${b.id}`,
+            url: mUrl,
+            title: `Meter Photo Proof — ${b.billing_month_label}`,
+            subtitle: `Room ${b.room_number} • ${b.units_consumed} units • Rs. ${b.total_payable}`,
+          });
+        }
+        if (pUrl) {
+          items.push({
+            key: `BILL_PAY_${b.id}`,
+            url: pUrl,
+            title: `Payment Receipt — ${b.billing_month_label}`,
+            subtitle: `Room ${b.room_number} • Ref: ${b.transaction_reference || 'N/A'} • Rs. ${b.total_payable}`,
+          });
+        }
+      });
+    }
+    return items;
+  };
 
   const refreshAllAdminData = () => {
     queryClient.invalidateQueries({ queryKey: ['allBills'] });
@@ -206,6 +351,17 @@ export default function AdminCommandCenter() {
   };
 
   // Mutations
+  const kycAuditMutation = useMutation({
+    mutationFn: ({ kycId, action, notes }) => auditKYC(kycId, action, notes),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message || 'KYC status updated!' });
+      refreshAllAdminData();
+    },
+    onError: () => {
+      setBannerMsg({ type: 'error', text: 'Could not update KYC verification status.' });
+    },
+  });
+
   const updateQRMutation = useMutation({
     mutationFn: (formData) => updatePaymentQRConfig(formData),
     onSuccess: (data) => {
@@ -329,7 +485,7 @@ export default function AdminCommandCenter() {
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
-      setSelectedUserModal(null);
+      setSelectedUserId(null);
     },
   });
 
@@ -530,6 +686,7 @@ export default function AdminCommandCenter() {
         ))}
       </div>
 
+      {/* TAB 2: TENANTS DIRECTORY WITH RICH PREVIEW CARDS */}
       {activeAdminTab === 'USERS' && (
         <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -538,7 +695,7 @@ export default function AdminCommandCenter() {
                 Registered Users & Tenants Directory
               </h3>
               <p className="text-xs text-slate-500">
-                Manage all registered tenant accounts, inspect KYC citizenship documents, and process room terminations.
+                Inspect full tenant profiles, fullscreen photos, KYC citizenship IDs, assigned rooms, and pending bills.
               </p>
             </div>
             {tenantUsers.length > 0 && (
@@ -566,76 +723,175 @@ export default function AdminCommandCenter() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {tenantUsers.map((u) => (
-                <div
-                  key={u.id}
-                  className="p-5 rounded-3xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-md transition-all flex flex-col justify-between space-y-4"
-                >
-                  <div className="flex items-center gap-4">
-                    {u.profile_picture_url ? (
-                      <img
-                        src={u.profile_picture_url}
-                        alt={u.full_name}
-                        className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-200"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white font-extrabold text-lg flex items-center justify-center">
-                        {u.full_name?.charAt(0)?.toUpperCase()}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                        {u.full_name}
-                      </h4>
-                      <p className="text-xs text-slate-500 truncate">{u.email}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-700">
-                          {u.role}
-                        </span>
-                        {u.room_number && (
-                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                            Room {u.room_number}
-                          </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {tenantUsers.map((u) => {
+                const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
+                const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
+                const galleryItems = buildUserGalleryItems(u);
+
+                return (
+                  <div
+                    key={u.id}
+                    className="rounded-3xl border border-slate-200/90 bg-white hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
+                  >
+                    <div>
+                      {/* Mini Cover Banner on Card */}
+                      <div
+                        onClick={() => setSelectedUserId(u.id)}
+                        className="h-24 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative cursor-pointer overflow-hidden"
+                      >
+                        {coverUrl && (
+                          <img
+                            src={coverUrl}
+                            alt="Cover"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
                         )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 to-transparent" />
+
+                        {/* Top Right Room / Status Pill */}
+                        <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                          {u.room_number ? (
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold shadow-sm">
+                              Room {u.room_number}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full bg-slate-900/60 backdrop-blur-xs text-white text-[10px] font-bold">
+                              No Room
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Avatar + Identity */}
+                      <div className="px-5 pb-4">
+                        <div className="flex items-end justify-between -mt-9 mb-3 relative z-10">
+                          <div
+                            onClick={() => {
+                              if (avatarUrl) {
+                                openPhotoLightbox(galleryItems, 0);
+                              } else {
+                                setSelectedUserId(u.id);
+                              }
+                            }}
+                            className="w-16 h-16 rounded-2xl bg-white p-1 shadow-md border border-slate-200 cursor-pointer relative group/avatar"
+                            title={avatarUrl ? 'Click to view photo fullscreen' : 'View Profile'}
+                          >
+                            {avatarUrl ? (
+                              <>
+                                <img
+                                  src={avatarUrl}
+                                  alt={u.full_name}
+                                  className="w-full h-full rounded-xl object-cover"
+                                />
+                                <div className="absolute inset-0 rounded-xl bg-black/35 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center transition">
+                                  <ZoomIn className="w-4 h-4 text-white" />
+                                </div>
+                              </>
+                            ) : (
+                              <div className="w-full h-full rounded-xl bg-indigo-600 text-white font-black text-xl flex items-center justify-center">
+                                {u.full_name?.charAt(0)?.toUpperCase() || 'T'}
+                              </div>
+                            )}
+                          </div>
+
+                          <span
+                            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase ${
+                              u.kyc_status === 'VERIFIED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : u.kyc_status === 'PENDING'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            KYC: {u.kyc_status}
+                          </span>
+                        </div>
+
+                        <h4 className="text-base font-extrabold text-slate-900 truncate">
+                          {u.full_name}
+                        </h4>
+                        <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                        {u.phone_number && (
+                          <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                            📞 {u.phone_number}
+                          </p>
+                        )}
+
+                        {/* Quick Financial & Room Summary Strip */}
+                        <div className="grid grid-cols-2 gap-2 mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                              Pending Dues
+                            </span>
+                            {u.pending_bills_count > 0 ? (
+                              <span className="font-black text-rose-600">
+                                Rs. {Number(u.total_pending_amount || 0).toLocaleString()} (
+                                {u.pending_bills_count})
+                              </span>
+                            ) : (
+                              <span className="font-extrabold text-emerald-600">All Clear ✓</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                              Uploaded Photos
+                            </span>
+                            <span className="font-extrabold text-indigo-600">
+                              {galleryItems.length} Photo(s)
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="pt-3 border-t border-slate-200/60 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedUserModal(u)}
-                      className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition"
-                    >
-                      View Profile & KYC
-                    </button>
-                    {u.room_number && (
+                    {/* Action Footer */}
+                    <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`
-                            )
-                          ) {
-                            evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
-                          }
-                        }}
-                        className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition"
-                        title="Ask to Leave / Vacate Room"
+                        onClick={() => setSelectedUserId(u.id)}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center justify-center gap-1.5"
                       >
-                        Ask to Leave
+                        <Eye className="w-3.5 h-3.5" /> View Full Dossier
                       </button>
-                    )}
+                      {galleryItems.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openPhotoLightbox(galleryItems, 0)}
+                          className="py-2.5 px-3 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                          title="Open Photo Viewer"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {u.room_number && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`
+                              )
+                            ) {
+                              evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
+                            }
+                          }}
+                          className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold transition"
+                          title="Vacate Room"
+                        >
+                          Vacate
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
+      {/* TAB 3: ADMIN TEAM */}
       {activeAdminTab === 'ADMINS' && (
         <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -657,58 +913,82 @@ export default function AdminCommandCenter() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {adminTeamUsers.map((adm) => (
-              <div
-                key={adm.id}
-                className="p-5 rounded-3xl border border-indigo-100 bg-indigo-50/30 flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  {adm.profile_picture_url ? (
-                    <img
-                      src={adm.profile_picture_url}
-                      alt={adm.full_name}
-                      className="w-12 h-12 rounded-2xl object-cover border"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-extrabold text-base flex items-center justify-center shrink-0">
-                      {adm.full_name?.charAt(0)?.toUpperCase()}
+            {adminTeamUsers.map((adm) => {
+              const admAvatar = getSafeMediaUrl(
+                adm.profile_picture_path || adm.profile_picture_url
+              );
+              const admGallery = buildUserGalleryItems(adm);
+              return (
+                <div
+                  key={adm.id}
+                  className="p-5 rounded-3xl border border-indigo-100 bg-indigo-50/30 flex items-center justify-between gap-4"
+                >
+                  <div
+                    onClick={() => setSelectedUserId(adm.id)}
+                    className="flex items-center gap-3.5 min-w-0 cursor-pointer"
+                  >
+                    {admAvatar ? (
+                      <img
+                        src={admAvatar}
+                        alt={adm.full_name}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openPhotoLightbox(admGallery, 0);
+                        }}
+                        className="w-12 h-12 rounded-2xl object-cover border border-indigo-200"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-extrabold text-base flex items-center justify-center shrink-0">
+                        {adm.full_name?.charAt(0)?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-extrabold text-slate-900 truncate">
+                        {adm.full_name}
+                      </h4>
+                      <p className="text-xs text-slate-500 truncate">{adm.email}</p>
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-extrabold uppercase">
+                        Landlord Admin
+                      </span>
                     </div>
-                  )}
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                      {adm.full_name}
-                    </h4>
-                    <p className="text-xs text-slate-500 truncate">{adm.email}</p>
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-extrabold uppercase">
-                      Landlord Admin
-                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUserId(adm.id)}
+                      className="p-2 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition"
+                      title="View Admin Profile"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    {adminTeamUsers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Are you sure you want to revoke admin privileges from ${adm.full_name}?`
+                            )
+                          ) {
+                            manageAdminMutation.mutate({ action: 'REMOVE', user_id: adm.id });
+                          }
+                        }}
+                        className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition"
+                        title="Remove Admin Access"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {adminTeamUsers.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Are you sure you want to revoke admin privileges from ${adm.full_name}?`
-                        )
-                      ) {
-                        manageAdminMutation.mutate({ action: 'REMOVE', user_id: adm.id });
-                      }
-                    }}
-                    className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition shrink-0"
-                    title="Remove Admin Access"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
+      {/* TAB 1: OVERVIEW */}
       {activeAdminTab === 'OVERVIEW' && (
         <>
           {/* TOP KPI CARDS */}
@@ -1010,7 +1290,16 @@ export default function AdminCommandCenter() {
                         )}
                       </div>
                     </div>
-                    <div className="pt-3 border-t border-slate-100 flex justify-end">
+                    <div className="pt-3 border-t border-slate-100 flex justify-between items-center gap-2">
+                      {occupied && tenant?.tenant_id && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserId(tenant.tenant_id)}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold"
+                        >
+                          Inspect Tenant
+                        </button>
+                      )}
                       {occupied ? (
                         <button
                           onClick={() => {
@@ -1020,7 +1309,7 @@ export default function AdminCommandCenter() {
                               });
                             }
                           }}
-                          className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold"
+                          className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold ml-auto"
                         >
                           Vacate Room
                         </button>
@@ -1030,7 +1319,7 @@ export default function AdminCommandCenter() {
                             setAssignModalRoom(room);
                             setStartingMeter(String(room.current_meter_reading || 0));
                           }}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold ml-auto"
                         >
                           <UserPlus className="w-3.5 h-3.5" /> Assign Tenant
                         </button>
@@ -1105,19 +1394,26 @@ export default function AdminCommandCenter() {
                         <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
                           Zone 1: Sub-Meter
                         </p>
-                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border">
-                          {activeAuditBill.meter_photo_url && (
-                            <a
-                              href={activeAuditBill.meter_photo_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <img
-                                src={activeAuditBill.meter_photo_url}
-                                alt="Meter"
-                                className="w-full h-full object-cover"
-                              />
-                            </a>
+                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                          {activeAuditBill.meter_photo_url ? (
+                            <img
+                              src={getSafeMediaUrl(activeAuditBill.meter_photo_url)}
+                              alt="Meter"
+                              onClick={() =>
+                                openPhotoLightbox([
+                                  {
+                                    url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
+                                    title: `Room ${activeAuditBill.room_number} — Meter Photo`,
+                                    subtitle: activeAuditBill.billing_month_label,
+                                  },
+                                ])
+                              }
+                              className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                              No Meter Photo
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1125,19 +1421,26 @@ export default function AdminCommandCenter() {
                         <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
                           Zone 2: Payment Receipt
                         </p>
-                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border">
-                          {activeAuditBill.payment_screenshot_url && (
-                            <a
-                              href={activeAuditBill.payment_screenshot_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <img
-                                src={activeAuditBill.payment_screenshot_url}
-                                alt="Payment"
-                                className="w-full h-full object-cover"
-                              />
-                            </a>
+                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                          {activeAuditBill.payment_screenshot_url ? (
+                            <img
+                              src={getSafeMediaUrl(activeAuditBill.payment_screenshot_url)}
+                              alt="Payment"
+                              onClick={() =>
+                                openPhotoLightbox([
+                                  {
+                                    url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
+                                    title: `Room ${activeAuditBill.room_number} — Payment Screenshot`,
+                                    subtitle: activeAuditBill.billing_month_label,
+                                  },
+                                ])
+                              }
+                              className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                              No Payment Slip
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1304,6 +1607,719 @@ export default function AdminCommandCenter() {
         </>
       )}
 
+      {/* ========================================================================= */}
+      {/* EXECUTIVE USER DOSSIER & PHOTO INSPECTION MODAL                           */}
+      {/* ========================================================================= */}
+      {selectedUserModal && (() => {
+        const u = selectedUserModal;
+        const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
+        const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
+        const citFrontUrl = getSafeMediaUrl(u.citizenship_front_url);
+        const citBackUrl = getSafeMediaUrl(u.citizenship_back_url);
+        const galleryItems = buildUserGalleryItems(u);
+        const userBills = Array.isArray(u.recent_bills) ? u.recent_bills : [];
+
+        return (
+          <div
+            onClick={() => setSelectedUserId(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-4xl rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col"
+            >
+              {/* Scrollable Modal Body */}
+              <div className="overflow-y-auto flex-1">
+                {/* 1. Hero Cover Banner */}
+                <div className="h-36 sm:h-48 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative overflow-hidden group">
+                  {coverUrl ? (
+                    <img
+                      src={coverUrl}
+                      alt="Cover Banner"
+                      onClick={() => {
+                        const idx = galleryItems.findIndex((item) => item.key === 'COVER');
+                        openPhotoLightbox(galleryItems, idx >= 0 ? idx : 0);
+                      }}
+                      className="w-full h-full object-cover cursor-pointer group-hover:scale-[1.02] transition duration-500"
+                    />
+                  ) : (
+                    <div
+                      className="absolute inset-0 opacity-20"
+                      style={{
+                        backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)',
+                        backgroundSize: '18px 18px',
+                      }}
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-slate-900/20 to-transparent pointer-events-none" />
+
+                  {/* Top Action Bar on Cover */}
+                  <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+                    <span className="px-3 py-1 rounded-full bg-slate-900/60 backdrop-blur-md text-white text-[11px] font-extrabold border border-white/20">
+                      Tenant Inspection Dossier #{u.id}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {galleryItems.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openPhotoLightbox(galleryItems, 0)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/95 hover:bg-white text-slate-900 text-xs font-extrabold shadow-md transition"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5 text-indigo-600" />
+                          Photo Mode ({galleryItems.length})
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserId(null)}
+                        className="p-2 rounded-full bg-slate-900/60 hover:bg-slate-900 text-white transition"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Profile Avatar & Identity Strip */}
+                <div className="px-6 sm:px-8 pb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-14 relative z-10 mb-6">
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                      <div
+                        onClick={() => {
+                          if (avatarUrl) {
+                            const idx = galleryItems.findIndex((item) => item.key === 'AVATAR');
+                            openPhotoLightbox(galleryItems, idx >= 0 ? idx : 0);
+                          }
+                        }}
+                        className={`w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-white p-1.5 shadow-xl border border-slate-200 shrink-0 relative group/av ${
+                          avatarUrl ? 'cursor-pointer' : ''
+                        }`}
+                      >
+                        {avatarUrl ? (
+                          <>
+                            <img
+                              src={avatarUrl}
+                              alt={u.full_name}
+                              className="w-full h-full rounded-2xl object-cover"
+                            />
+                            <div className="absolute inset-1.5 rounded-2xl bg-black/40 opacity-0 group-hover/av:opacity-100 flex items-center justify-center transition">
+                              <ZoomIn className="w-6 h-6 text-white" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white font-black text-3xl flex items-center justify-center">
+                            {u.full_name?.charAt(0)?.toUpperCase() || 'T'}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                            {u.full_name}
+                          </h2>
+                          <span className="px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-700 text-[10px] font-extrabold uppercase">
+                            {u.role}
+                          </span>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase ${
+                              u.kyc_status === 'VERIFIED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : u.kyc_status === 'REJECTED'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            KYC: {u.kyc_status}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
+                          <span className="inline-flex items-center gap-1">
+                            <Mail className="w-3.5 h-3.5 text-indigo-600" /> {u.email}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5 text-emerald-600" />{' '}
+                            {u.phone_number || 'No Phone'}
+                          </span>
+                          {u.joined_at && <span>Joined: {u.joined_at}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick KYC Verify / Reject Buttons */}
+                    {u.kyc_id && (
+                      <div className="flex items-center gap-2">
+                        {u.kyc_status !== 'VERIFIED' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              kycAuditMutation.mutate({
+                                kycId: u.kyc_id,
+                                action: 'VERIFY',
+                                notes: 'Verified by Admin',
+                              })
+                            }
+                            disabled={kycAuditMutation.isPending}
+                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition"
+                          >
+                            ✓ Verify KYC
+                          </button>
+                        )}
+                        {u.kyc_status !== 'REJECTED' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              kycAuditMutation.mutate({
+                                kycId: u.kyc_id,
+                                action: 'REJECT',
+                                notes: 'Please re-upload clearer citizenship photos.',
+                              })
+                            }
+                            disabled={kycAuditMutation.isPending}
+                            className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition"
+                          >
+                            Reject KYC
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. 4-Card Telemetry Summary Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mb-6">
+                    <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 block">
+                        Assigned Room
+                      </span>
+                      <p className="text-base font-black text-slate-900 mt-1">
+                        {u.room_details
+                          ? `Room ${u.room_details.room_number}`
+                          : u.room_number
+                          ? `Room ${u.room_number}`
+                          : 'Unassigned'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {u.room_details
+                          ? `${u.room_details.floor} • Rs. ${u.room_details.base_rent}/mo`
+                          : 'No active unit'}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`p-4 rounded-2xl border ${
+                        u.pending_bills_count > 0
+                          ? 'bg-rose-50/80 border-rose-200'
+                          : 'bg-emerald-50/70 border-emerald-200'
+                      }`}
+                    >
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
+                        Pending / Unpaid Bills
+                      </span>
+                      <p
+                        className={`text-base font-black mt-1 ${
+                          u.pending_bills_count > 0 ? 'text-rose-600' : 'text-emerald-700'
+                        }`}
+                      >
+                        Rs. {Number(u.total_pending_amount || 0).toLocaleString()}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {u.pending_bills_count > 0
+                          ? `${u.pending_bills_count} open bill(s)`
+                          : 'No pending dues'}
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                        Total Paid History
+                      </span>
+                      <p className="text-base font-black text-slate-900 mt-1">
+                        Rs. {Number(u.total_paid_amount || 0).toLocaleString()}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {u.paid_bills_count || 0} settled invoice(s)
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                        Digital Lease & ID
+                      </span>
+                      <p className="text-base font-black text-slate-900 mt-1 truncate">
+                        {u.citizenship_number || 'No ID No.'}
+                      </p>
+                      <p className="text-[11px] text-emerald-600 font-bold mt-0.5">
+                        {u.has_accepted_lease ? '✓ Lease Signed' : 'Lease Pending'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 4. Assigned Room Telemetry + Emergency & Legal Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                      <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                        <Home className="w-4 h-4 text-indigo-600" /> Room & Utility Telemetry
+                      </h4>
+                      {u.room_details ? (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div>
+                            <span className="text-slate-400 block">Move-In Date</span>
+                            <strong>{u.room_details.entry_date || 'N/A'}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block">Next Due Date</span>
+                            <strong className="text-amber-700">
+                              {u.room_details.next_due_date || 'N/A'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block">Sub-Meter Reading</span>
+                            <strong className="text-indigo-600">
+                              {u.room_details.current_meter_reading} units
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block">Utility Rates</span>
+                            <strong>
+                              Water Rs. {u.room_details.fixed_water_bill} • Elec Rs.{' '}
+                              {u.room_details.electricity_rate}/u
+                            </strong>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-slate-400 py-2">
+                          This user is not currently assigned to an active room.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                      <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" /> Legal & Emergency
+                        Contact
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <div>
+                          <span className="text-slate-400 block">Legal Full Name</span>
+                          <strong>{u.full_name_legal || u.full_name}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">Citizenship No.</span>
+                          <strong>{u.citizenship_number || 'Not submitted'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">Emergency Contact</span>
+                          <strong>{u.emergency_contact_name || 'Not provided'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">Emergency Phone</span>
+                          <strong>{u.emergency_contact_phone || 'Not provided'}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 5. Interactive Photo Gallery (Profile, Cover, KYC Front & Back) */}
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Camera className="w-4 h-4 text-indigo-600" /> Uploaded Identity & Profile
+                        Photos (Click Any Photo for Fullscreen View)
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                      {[
+                        {
+                          label: 'Profile Avatar',
+                          url: avatarUrl,
+                          key: 'AVATAR',
+                        },
+                        {
+                          label: 'Cover Banner',
+                          url: coverUrl,
+                          key: 'COVER',
+                        },
+                        {
+                          label: 'Citizenship Front',
+                          url: citFrontUrl,
+                          key: 'CIT_FRONT',
+                        },
+                        {
+                          label: 'Citizenship Back',
+                          url: citBackUrl,
+                          key: 'CIT_BACK',
+                        },
+                      ].map((photoItem) => {
+                        const galleryIdx = galleryItems.findIndex(
+                          (g) => g.key === photoItem.key
+                        );
+                        return (
+                          <div
+                            key={photoItem.key}
+                            onClick={() => {
+                              if (photoItem.url) {
+                                openPhotoLightbox(
+                                  galleryItems,
+                                  galleryIdx >= 0 ? galleryIdx : 0
+                                );
+                              }
+                            }}
+                            className={`rounded-2xl border overflow-hidden bg-slate-50 flex flex-col justify-between ${
+                              photoItem.url
+                                ? 'border-slate-200 cursor-pointer group hover:border-indigo-400 hover:shadow-md transition'
+                                : 'border-dashed border-slate-200 opacity-75'
+                            }`}
+                          >
+                            <div className="h-32 w-full bg-slate-900/5 relative overflow-hidden flex items-center justify-center">
+                              {photoItem.url ? (
+                                <>
+                                  <img
+                                    src={photoItem.url}
+                                    alt={photoItem.label}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 text-white text-xs font-extrabold transition">
+                                    <ZoomIn className="w-4 h-4" /> View Photo
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-[11px] font-bold text-slate-400">
+                                  Not Uploaded
+                                </span>
+                              )}
+                            </div>
+                            <div className="px-3 py-2 bg-white border-t border-slate-100 flex items-center justify-between">
+                              <span className="text-[11px] font-extrabold text-slate-700 truncate">
+                                {photoItem.label}
+                              </span>
+                              {photoItem.url && (
+                                <ZoomIn className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 6. Tenant Billing & Proof History Table */}
+                  <div>
+                    <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-indigo-600" /> Billing & Payment Proof
+                      History ({userBills.length})
+                    </h4>
+                    {userBills.length === 0 ? (
+                      <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 text-center text-xs text-slate-400">
+                        No bills recorded for this user yet.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                          <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
+                            <tr>
+                              <th className="py-3 px-4">Cycle / Room</th>
+                              <th className="py-3 px-4">Total Payable</th>
+                              <th className="py-3 px-4">Status</th>
+                              <th className="py-3 px-4">Proof Photos</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {userBills.map((b) => {
+                              const mUrl = getSafeMediaUrl(b.meter_photo_url);
+                              const pUrl = getSafeMediaUrl(b.payment_screenshot_url);
+                              return (
+                                <tr key={b.id} className="hover:bg-slate-50/80">
+                                  <td className="py-3 px-4">
+                                    <p className="font-extrabold text-slate-900">
+                                      {b.billing_month_label}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">
+                                      Room {b.room_number} • Due: {b.due_date}
+                                    </p>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <p className="font-black text-slate-900">
+                                      Rs. {Number(b.total_payable).toLocaleString()}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500">
+                                      {b.units_consumed} units elec
+                                    </p>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <span
+                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold ${
+                                        b.status === 'APPROVED' || b.status === 'PAID_CASH'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : b.status === 'PENDING_VERIFICATION'
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-rose-100 text-rose-700'
+                                      }`}
+                                    >
+                                      {b.status_display}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2">
+                                      {mUrl ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openPhotoLightbox([
+                                              {
+                                                url: mUrl,
+                                                title: `Meter Photo — ${b.billing_month_label}`,
+                                                subtitle: `Room ${b.room_number} • ${u.full_name}`,
+                                              },
+                                            ])
+                                          }
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px]"
+                                        >
+                                          <Camera className="w-3 h-3" /> Meter
+                                        </button>
+                                      ) : (
+                                        <span className="text-[11px] text-slate-400">No Meter</span>
+                                      )}
+                                      {pUrl ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openPhotoLightbox([
+                                              {
+                                                url: pUrl,
+                                                title: `Payment Slip — ${b.billing_month_label}`,
+                                                subtitle: `Room ${b.room_number} • Rs. ${b.total_payable}`,
+                                              },
+                                            ])
+                                          }
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px]"
+                                        >
+                                          <CreditCard className="w-3 h-3" /> Receipt
+                                        </button>
+                                      ) : (
+                                        <span className="text-[11px] text-slate-400">No Slip</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Sticky Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  {u.room_number && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Are you sure you want to ask ${u.full_name} to leave Room ${u.room_number}?`
+                          )
+                        ) {
+                          evictMutation.mutate({
+                            userId: u.id,
+                            actionType: 'VACATE',
+                          });
+                        }
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-sm transition"
+                    >
+                      Ask Tenant to Leave / Vacate Room {u.room_number}
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedUserId(null)}
+                  className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition ml-auto"
+                >
+                  Close Dossier
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* FULLSCREEN PHOTO LIGHTBOX MODAL (ZOOM, NEXT/PREV, DOWNLOAD)               */}
+      {/* ========================================================================= */}
+      {lightboxState.isOpen && lightboxState.items.length > 0 && (() => {
+        const currentPhoto =
+          lightboxState.items[lightboxState.currentIndex] || lightboxState.items[0];
+        const totalPhotos = lightboxState.items.length;
+
+        return (
+          <div
+            onClick={closePhotoLightbox}
+            className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 select-none"
+          >
+            {/* Top Toolbar */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10 text-white"
+            >
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold">{currentPhoto.title}</h3>
+                {currentPhoto.subtitle && (
+                  <p className="text-xs text-slate-400">{currentPhoto.subtitle}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-white/10 text-xs font-bold">
+                  {lightboxState.currentIndex + 1} / {totalPhotos}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: Math.max(0.5, Number((prev.zoom - 0.25).toFixed(2))),
+                    }))
+                  }
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                    }))
+                  }
+                  className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-extrabold text-white transition"
+                  title="Reset Zoom"
+                >
+                  {Math.round(lightboxState.zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: Math.min(2.5, Number((prev.zoom + 0.25).toFixed(2))),
+                    }))
+                  }
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadFileFromUrl(
+                      currentPhoto.url,
+                      `${(currentPhoto.title || 'SmartRent-Photo').replace(/\s+/g, '-')}.jpg`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download
+                </button>
+                <button
+                  type="button"
+                  onClick={closePhotoLightbox}
+                  className="p-2 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white transition"
+                  title="Close Photo Viewer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Center Image Canvas */}
+            <div className="relative flex-1 flex items-center justify-center overflow-hidden my-4">
+              {totalPhotos > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                      currentIndex:
+                        (prev.currentIndex - 1 + prev.items.length) % prev.items.length,
+                    }));
+                  }}
+                  className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+                  title="Previous Photo"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              )}
+
+              <img
+                src={currentPhoto.url}
+                alt={currentPhoto.title}
+                onClick={(e) => e.stopPropagation()}
+                style={{ transform: `scale(${lightboxState.zoom})` }}
+                className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl transition-transform duration-200"
+              />
+
+              {totalPhotos > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                      currentIndex: (prev.currentIndex + 1) % prev.items.length,
+                    }));
+                  }}
+                  className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+                  title="Next Photo"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+
+            {/* Bottom Thumbnail Strip */}
+            {totalPhotos > 1 && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center justify-center gap-2.5 overflow-x-auto py-2"
+              >
+                {lightboxState.items.map((item, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() =>
+                      setLightboxState((prev) => ({
+                        ...prev,
+                        currentIndex: idx,
+                        zoom: 1,
+                      }))
+                    }
+                    className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition shrink-0 ${
+                      lightboxState.currentIndex === idx
+                        ? 'border-indigo-400 scale-105 shadow-lg'
+                        : 'border-white/20 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={item.url} alt={item.title} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ADMIN PAYMENT QR CODE UPLOAD & MANAGEMENT MODAL */}
       {showQRModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4">
@@ -1336,12 +2352,11 @@ export default function AdminCommandCenter() {
             </div>
 
             <form onSubmit={handleSaveQRConfig} className="space-y-4">
-              {/* Current or Preview QR Display */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center space-y-3">
                 {qrImagePreview || paymentQR?.qr_image_url ? (
                   <>
                     <img
-                      src={qrImagePreview || paymentQR.qr_image_url}
+                      src={qrImagePreview || getSafeMediaUrl(paymentQR.qr_image_url)}
                       alt="Payment QR Preview"
                       className="w-48 h-48 object-contain rounded-xl bg-white p-2 border border-slate-200 shadow-xs"
                     />
@@ -1352,7 +2367,7 @@ export default function AdminCommandCenter() {
                             type="button"
                             onClick={() =>
                               downloadFileFromUrl(
-                                paymentQR.qr_image_url,
+                                getSafeMediaUrl(paymentQR.qr_image_url),
                                 'SmartRent-Official-Payment-QR.png'
                               )
                             }
@@ -1509,7 +2524,7 @@ export default function AdminCommandCenter() {
                 <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900">
                   <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
                   <span>
-                    <strong>Safe Protected:</strong> Your Landlord Admin account(s) and room structure will NOT be deleted.
+                    <strong>Safe Protected:</strong> Your logged-in Landlord Admin account and room structure will NOT be deleted.
                   </span>
                 </div>
 
@@ -1589,135 +2604,6 @@ export default function AdminCommandCenter() {
                 </div>
               </form>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* USER PROFILE & KYC INSPECTION MODAL */}
-      {selectedUserModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="relative w-full max-w-xl rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-extrabold text-xl flex items-center justify-center">
-                  {selectedUserModal.full_name?.charAt(0)?.toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">{selectedUserModal.full_name}</h3>
-                  <p className="text-xs text-slate-500">
-                    {selectedUserModal.email} • {selectedUserModal.phone_number || 'No Phone'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedUserModal(null)}
-                className="p-2 hover:bg-slate-100 rounded-full"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <div>
-                <span className="text-slate-400 block">Role</span>
-                <strong>{selectedUserModal.role}</strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block">Assigned Room</span>
-                <strong>
-                  {selectedUserModal.room_number ? `Room ${selectedUserModal.room_number}` : 'None'}
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block">KYC Status</span>
-                <strong className="text-emerald-600">{selectedUserModal.kyc_status}</strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block">Citizenship No.</span>
-                <strong>{selectedUserModal.citizenship_number || 'Not provided'}</strong>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-3">
-                Citizenship ID Documents (KYC)
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500">Front Side</span>
-                  {selectedUserModal.citizenship_front_url ? (
-                    <a
-                      href={selectedUserModal.citizenship_front_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block rounded-2xl overflow-hidden border border-slate-200"
-                    >
-                      <img
-                        src={selectedUserModal.citizenship_front_url}
-                        alt="Citizenship Front"
-                        className="w-full h-40 object-cover hover:scale-105 transition-transform"
-                      />
-                    </a>
-                  ) : (
-                    <div className="h-40 rounded-2xl bg-slate-100 flex items-center justify-center text-xs text-slate-400 border border-slate-200">
-                      Not Uploaded
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500">Back Side</span>
-                  {selectedUserModal.citizenship_back_url ? (
-                    <a
-                      href={selectedUserModal.citizenship_back_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block rounded-2xl overflow-hidden border border-slate-200"
-                    >
-                      <img
-                        src={selectedUserModal.citizenship_back_url}
-                        alt="Citizenship Back"
-                        className="w-full h-40 object-cover hover:scale-105 transition-transform"
-                      />
-                    </a>
-                  ) : (
-                    <div className="h-40 rounded-2xl bg-slate-100 flex items-center justify-center text-xs text-slate-400 border border-slate-200">
-                      Not Uploaded
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 flex gap-3">
-              {selectedUserModal.room_number && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Are you sure you want to ask ${selectedUserModal.full_name} to leave Room ${selectedUserModal.room_number}?`
-                      )
-                    ) {
-                      evictMutation.mutate({
-                        userId: selectedUserModal.id,
-                        actionType: 'VACATE',
-                      });
-                    }
-                  }}
-                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-md transition"
-                >
-                  Ask Tenant to Leave / Vacate Room
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setSelectedUserModal(null)}
-                className="py-3 px-5 border rounded-xl text-xs font-bold text-slate-700"
-              >
-                Close
-              </button>
-            </div>
           </div>
         </div>
       )}

@@ -6,7 +6,7 @@ from django.core.mail import send_mail
 from django.core.files.storage import default_storage
 from django.conf import settings
 from django.db import transaction, connection, IntegrityError
-from django.db.models import Q
+from django.db.models import Q, Sum
 from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -245,7 +245,7 @@ class MeProfileView(APIView):
                 return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
             user.profile_picture = uploaded_avatar
 
-        # 2. Validate & save Cover / Banner Image (Zero-migration storage)
+        # 2. Validate & save Cover / Banner Image
         if uploaded_cover:
             err = self._validate_image_file(uploaded_cover, "Cover banner image")
             if err:
@@ -282,7 +282,7 @@ class MeProfileView(APIView):
             if new_name:
                 user.full_name = new_name
 
-        # 4. Safely handle phone_number (prevent PostgreSQL UniqueViolation crash)
+        # 4. Safely handle phone_number
         if 'phone_number' in request.data:
             new_phone = str(request.data.get('phone_number') or '').strip()
             if new_phone and new_phone != user.phone_number:
@@ -381,16 +381,68 @@ class AdminTenantListView(generics.ListAPIView):
 
 
 class AdminUserManagementListView(APIView):
-    """Returns all registered users with room assignments, role, and full KYC details for Admin management."""
+    """
+    Returns all registered users with complete profile photos, cover banners,
+    assigned room telemetry, KYC citizenship documents, emergency contacts,
+    and pending/paid billing history for the Admin User Inspection Dossier.
+    """
     permission_classes = [IsAdminUserRole]
 
     def get(self, request):
-        users = User.objects.all().prefetch_related('tenancies__room', 'kyc_profile')
+        users = User.objects.all().prefetch_related('tenancies__room', 'kyc_profile', 'bills__room').order_by('-created_at')
         data = []
         for u in users:
             active_tenancy = u.tenancies.filter(is_active=True).select_related('room').first()
             kyc = getattr(u, 'kyc_profile', None)
-            cover_abs_url, _ = get_user_cover_urls(request, u.id)
+            cover_abs_url, cover_rel_path = get_user_cover_urls(request, u.id)
+
+            # Collect user's billing telemetry
+            user_bills = list(u.bills.select_related('room').all().order_by('-due_date', '-created_at'))
+            pending_bills_qs = [
+                b for b in user_bills if b.status in ('UNPAID', 'PENDING_VERIFICATION', 'REJECTED')
+            ]
+            paid_bills_qs = [
+                b for b in user_bills if b.status in ('APPROVED', 'PAID_CASH')
+            ]
+
+            total_pending_amount = sum((b.total_payable or Decimal('0.00')) for b in pending_bills_qs)
+            total_paid_amount = sum((b.total_payable or Decimal('0.00')) for b in paid_bills_qs)
+
+            recent_bills_payload = []
+            for b in user_bills[:6]:
+                recent_bills_payload.append({
+                    "id": b.id,
+                    "room_number": b.room.room_number if b.room else None,
+                    "billing_month_label": b.billing_month_label,
+                    "due_date": str(b.due_date) if b.due_date else None,
+                    "base_rent": float(b.base_rent or 0),
+                    "water_bill": float(b.water_bill or 0),
+                    "units_consumed": float(b.units_consumed or 0),
+                    "electricity_amount": float(b.electricity_amount or 0),
+                    "damage_fine_amount": float(b.damage_fine_amount or 0),
+                    "total_payable": float(b.total_payable or 0),
+                    "status": b.status,
+                    "status_display": b.get_status_display(),
+                    "transaction_reference": b.transaction_reference,
+                    "meter_photo_url": request.build_absolute_uri(b.meter_photo_proof.url) if b.meter_photo_proof else None,
+                    "payment_screenshot_url": request.build_absolute_uri(b.payment_screenshot_proof.url) if b.payment_screenshot_proof else None,
+                })
+
+            room_details = None
+            if active_tenancy and active_tenancy.room:
+                rm = active_tenancy.room
+                room_details = {
+                    "id": rm.id,
+                    "room_number": rm.room_number,
+                    "floor": getattr(rm, 'floor', 'Ground Floor'),
+                    "base_rent": float(rm.base_rent or 0),
+                    "fixed_water_bill": float(getattr(rm, 'fixed_water_bill', 100) or 100),
+                    "electricity_rate": float(getattr(rm, 'electricity_rate_per_unit', 15) or 15),
+                    "current_meter_reading": float(rm.current_meter_reading or 0),
+                    "entry_date": str(active_tenancy.entry_date) if active_tenancy.entry_date else None,
+                    "next_due_date": str(active_tenancy.get_next_due_date()) if hasattr(active_tenancy, 'get_next_due_date') else None,
+                }
+
             data.append({
                 "id": u.id,
                 "full_name": u.full_name,
@@ -398,14 +450,32 @@ class AdminUserManagementListView(APIView):
                 "phone_number": u.phone_number,
                 "role": u.role,
                 "is_active": u.is_active,
+                "joined_at": u.created_at.strftime("%b %d, %Y") if hasattr(u, 'created_at') and u.created_at else None,
                 "room_number": active_tenancy.room.room_number if active_tenancy else None,
                 "entry_date": str(active_tenancy.entry_date) if active_tenancy else None,
+                "room_details": room_details,
+                # KYC & Legal Details
+                "kyc_id": kyc.id if kyc else None,
                 "kyc_status": kyc.status if kyc else "NOT_SUBMITTED",
+                "full_name_legal": kyc.full_name_legal if kyc else u.full_name,
                 "citizenship_number": kyc.citizenship_number if kyc else None,
+                "emergency_contact_name": getattr(kyc, 'emergency_contact_name', None) if kyc else None,
+                "emergency_contact_phone": getattr(kyc, 'emergency_contact_phone', None) if kyc else None,
+                "has_accepted_lease": getattr(kyc, 'has_accepted_lease', False) if kyc else False,
+                "lease_accepted_at": kyc.lease_accepted_at.strftime("%b %d, %Y") if kyc and getattr(kyc, 'lease_accepted_at', None) else None,
                 "citizenship_front_url": request.build_absolute_uri(kyc.citizenship_front.url) if kyc and kyc.citizenship_front else None,
                 "citizenship_back_url": request.build_absolute_uri(kyc.citizenship_back.url) if kyc and kyc.citizenship_back else None,
+                # Profile & Cover Media
                 "profile_picture_url": request.build_absolute_uri(u.profile_picture.url) if u.profile_picture else None,
+                "profile_picture_path": u.profile_picture.url if u.profile_picture else None,
                 "cover_picture_url": cover_abs_url,
+                "cover_picture_path": cover_rel_path,
+                # Financial & Billing Telemetry
+                "pending_bills_count": len(pending_bills_qs),
+                "total_pending_amount": float(total_pending_amount),
+                "paid_bills_count": len(paid_bills_qs),
+                "total_paid_amount": float(total_paid_amount),
+                "recent_bills": recent_bills_payload,
             })
         return Response(data)
 
@@ -626,7 +696,7 @@ class AcceptDigitalLeaseView(APIView):
     def post(self, request):
         profile, created = KYCProfile.objects.get_or_create(
             user=request.user,
-            defaults={'full_name_legal': getattr(self.request.user, 'full_name', '') or request.user.email}
+            defaults={'full_name_legal': getattr(request.user, 'full_name', '') or request.user.email}
         )
         profile.has_accepted_lease = True
         profile.lease_accepted_at = timezone.now()
