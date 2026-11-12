@@ -19,6 +19,11 @@ import {
   LogOut,
   QrCode,
   Maximize2,
+  ZoomIn,
+  ZoomOut,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
 } from 'lucide-react';
 import axiosClient, {
   fetchReservations,
@@ -32,6 +37,44 @@ import axiosClient, {
   downloadFileFromUrl,
 } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+
+function getSafeMediaUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
+
+  const currentHost = window.location.hostname;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  let backendOrigin = 'http://localhost:8000';
+  try {
+    backendOrigin = new URL(apiBase).origin;
+  } catch {
+    backendOrigin = `http://${currentHost || 'localhost'}:8000`;
+  }
+
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (backendOrigin.includes('localhost') || backendOrigin.includes('127.0.0.1'))
+  ) {
+    backendOrigin = `http://${currentHost}:8000`;
+  }
+
+  if (rawUrl.startsWith('/')) {
+    return `${backendOrigin}${rawUrl}`;
+  }
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (rawUrl.includes('://localhost:') || rawUrl.includes('://127.0.0.1:'))
+  ) {
+    return rawUrl
+      .replace('://localhost:', `://${currentHost}:`)
+      .replace('://127.0.0.1:', `://${currentHost}:`);
+  }
+  return rawUrl;
+}
 
 export default function TenantDashboard() {
   const { user, refreshProfile } = useAuth();
@@ -50,6 +93,14 @@ export default function TenantDashboard() {
   const [paymentPreview, setPaymentPreview] = useState(null);
   const [transactionRef, setTransactionRef] = useState('');
   const [showQRZoomModal, setShowQRZoomModal] = useState(false);
+
+  // Fullscreen Photo Lightbox States (For Fine Evidence, Meter & Receipt Photos)
+  const [lightboxState, setLightboxState] = useState({
+    isOpen: false,
+    items: [],
+    currentIndex: 0,
+    zoom: 1,
+  });
 
   // Modals & KYC States
   const [showLeaseModal, setShowLeaseModal] = useState(false);
@@ -123,18 +174,30 @@ export default function TenantDashboard() {
     }
   }, [kycProfile, user]);
 
-  const assignedRoom = profileData?.assigned_room || user?.assigned_room || null;
+  const assignedRoom =
+    profileData?.room_details || profileData?.assigned_room || user?.assigned_room || null;
+
   const activeBill =
-    bills.find((b) => b.id === selectedBillId) ||
+    bills.find((b) => String(b.id) === String(selectedBillId)) ||
     bills.find((b) => ['UNPAID', 'PENDING_VERIFICATION', 'REJECTED'].includes(b.status)) ||
     bills[0] ||
     null;
 
   useEffect(() => {
-    if (activeBill && activeBill.current_meter_reading && !meterInput) {
+    if (
+      activeBill &&
+      activeBill.current_meter_reading !== null &&
+      activeBill.current_meter_reading !== undefined &&
+      !meterInput
+    ) {
       setMeterInput(String(activeBill.current_meter_reading));
     }
   }, [activeBill, meterInput]);
+
+  // True only when the selected bill is still open/unpaid (hides fine banner once paid)
+  const isBillOpen = activeBill
+    ? ['UNPAID', 'PENDING_VERIFICATION', 'REJECTED'].includes(activeBill.status)
+    : false;
 
   const prevReading = Number(
     activeBill?.previous_meter_reading ?? assignedRoom?.current_meter_reading ?? 0
@@ -145,11 +208,31 @@ export default function TenantDashboard() {
     activeBill?.electricity_rate ?? assignedRoom?.electricity_rate_per_unit ?? 15
   );
   const fineAmount = Number(activeBill?.damage_fine_amount ?? 0);
+  const fineReason = activeBill?.damage_fine_reason || '';
+  const fineAppliedAt = activeBill?.fine_applied_at || null;
+  const fineEvidenceUrls = Array.isArray(activeBill?.fine_evidence_urls)
+    ? activeBill.fine_evidence_urls.map((u) => getSafeMediaUrl(u)).filter(Boolean)
+    : [];
 
   const numericCurrentReading = meterInput !== '' ? Number(meterInput) : prevReading;
   const unitsConsumed = Math.max(0, numericCurrentReading - prevReading);
   const liveElectricityCost = unitsConsumed * elecRate;
   const liveGrandTotal = baseRent + waterBill + liveElectricityCost + fineAmount;
+
+  const openPhotoLightbox = (itemsList, startIndex = 0) => {
+    const valid = itemsList.filter((i) => Boolean(i?.url));
+    if (valid.length === 0) return;
+    setLightboxState({
+      isOpen: true,
+      items: valid,
+      currentIndex: Math.min(startIndex, valid.length - 1),
+      zoom: 1,
+    });
+  };
+
+  const closePhotoLightbox = () => {
+    setLightboxState((prev) => ({ ...prev, isOpen: false, zoom: 1 }));
+  };
 
   // Mutations
   const submitBillMutation = useMutation({
@@ -271,7 +354,7 @@ export default function TenantDashboard() {
             <div class="row"><span>Base Room Rent</span><span>Rs. ${bill.base_rent}</span></div>
             <div class="row"><span>Fixed Water Supply</span><span>Rs. ${bill.water_bill}</span></div>
             <div class="row"><span>Electricity (${bill.previous_meter_reading} → ${bill.current_meter_reading} = ${bill.units_consumed} units × Rs. 15)</span><span>Rs. ${bill.electricity_amount}</span></div>
-            <div class="row"><span>Property Damage / Rule Fine</span><span>Rs. ${bill.damage_fine_amount}</span></div>
+            <div class="row"><span>Property Damage / Rule Fine ${bill.damage_fine_reason ? `(${bill.damage_fine_reason})` : ''}</span><span>Rs. ${bill.damage_fine_amount}</span></div>
             <div class="row total"><span>Total Paid</span><span>Rs. ${bill.total_payable}</span></div>
             <p style="margin-top:20px;font-size:12px;color:#64748b;">Ref: ${bill.transaction_reference || 'Verified'} • Paid At: ${bill.paid_at || 'Verified by Admin'}</p>
           </div>
@@ -282,17 +365,33 @@ export default function TenantDashboard() {
     win.document.close();
   };
 
+  const userAvatarUrl = getSafeMediaUrl(
+    profileData?.profile_picture_path ||
+      profileData?.profile_picture_url ||
+      user?.profile_picture_url
+  );
+  const qrSafeUrl = getSafeMediaUrl(paymentQR?.qr_image_url);
+
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
       {/* 1. TOP TENANT PROFILE & BILLING CYCLE BANNER */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <div className="lg:col-span-8 rounded-3xl bg-white p-6 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-5">
-            {user?.profile_picture_url ? (
+            {userAvatarUrl ? (
               <img
-                src={user.profile_picture_url}
-                alt={user.full_name}
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-100 shadow-sm"
+                src={userAvatarUrl}
+                alt={user?.full_name}
+                onClick={() =>
+                  openPhotoLightbox([
+                    {
+                      url: userAvatarUrl,
+                      title: `${user?.full_name || 'Tenant'} — Profile Photo`,
+                      subtitle: user?.email,
+                    },
+                  ])
+                }
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-100 shadow-sm cursor-pointer hover:scale-105 transition"
               />
             ) : (
               <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white font-extrabold text-2xl flex items-center justify-center shadow-md">
@@ -309,7 +408,7 @@ export default function TenantDashboard() {
               <p className="text-sm text-slate-500 flex items-center gap-1.5 font-medium">
                 <Home className="w-4 h-4 text-indigo-600" />
                 {assignedRoom
-                  ? `Room ${assignedRoom.room_number} • ${assignedRoom.floor}`
+                  ? `Room ${assignedRoom.room_number} • ${assignedRoom.floor || 'Active Unit'}`
                   : 'No Room Assigned Yet'}
               </p>
             </div>
@@ -389,7 +488,26 @@ export default function TenantDashboard() {
       {activeTab === 'BILLING' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-7 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-            <h2 className="text-lg font-extrabold text-slate-900">Monthly Bill Telemetry</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h2 className="text-lg font-extrabold text-slate-900">Monthly Bill Telemetry</h2>
+              {bills.length > 1 && (
+                <select
+                  value={activeBill?.id || ''}
+                  onChange={(e) => {
+                    setSelectedBillId(Number(e.target.value));
+                    setMeterInput('');
+                  }}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-extrabold text-slate-800 outline-none focus:border-indigo-600"
+                >
+                  {bills.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.billing_month_label} — Rs. {Number(b.total_payable).toLocaleString()} (
+                      {b.status_display})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
@@ -411,6 +529,78 @@ export default function TenantDashboard() {
                 </span>
               </div>
             </div>
+
+            {/* PROPERTY DAMAGE / VIOLATION FINE ALERT CARD (AUTO-HIDES WHEN PAID OR UNDONE) */}
+            {fineAmount > 0 && isBillOpen && (
+              <div className="rounded-2xl bg-rose-50 border-2 border-rose-200 p-5 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-rose-950">
+                        Property Damage / Rule Violation Fine
+                      </h3>
+                      {fineAppliedAt && (
+                        <p className="text-[11px] text-rose-600 font-semibold">
+                          Issued on {fineAppliedAt}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-lg font-black text-rose-600">
+                    + Rs. {fineAmount.toLocaleString()}
+                  </span>
+                </div>
+
+                {fineReason && (
+                  <div className="p-3 rounded-xl bg-white/90 border border-rose-200/80 text-xs text-rose-950">
+                    <span className="font-extrabold uppercase text-[10px] text-rose-500 block mb-0.5">
+                      Official Admin Reason / Remarks:
+                    </span>
+                    <p className="font-semibold leading-relaxed">{fineReason}</p>
+                  </div>
+                )}
+
+                {fineEvidenceUrls.length > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-rose-800 flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5 text-rose-600" /> Attached Inspection Evidence (
+                      {fineEvidenceUrls.length} Photo{fineEvidenceUrls.length > 1 ? 's' : ''} — Tap
+                      to Zoom)
+                    </p>
+                    <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+                      {fineEvidenceUrls.map((evUrl, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() =>
+                            openPhotoLightbox(
+                              fineEvidenceUrls.map((u, i) => ({
+                                url: u,
+                                title: `Fine Evidence Photo #${i + 1}`,
+                                subtitle: `Fine: Rs. ${fineAmount} • Reason: ${fineReason}`,
+                              })),
+                              idx
+                            )
+                          }
+                          className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-rose-300 bg-white shrink-0 cursor-pointer group"
+                        >
+                          <img
+                            src={evUrl}
+                            alt={`Fine Evidence ${idx + 1}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition"
+                          />
+                          <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                            <ZoomIn className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="rounded-2xl bg-indigo-50 border border-indigo-100 p-5 space-y-5">
               <div className="flex items-center justify-between">
@@ -445,7 +635,8 @@ export default function TenantDashboard() {
               </div>
               <div className="bg-white rounded-xl p-3.5 border border-indigo-100 text-sm flex justify-between items-center">
                 <span className="font-medium text-slate-600">
-                  Consumed: <strong className="text-slate-900">{unitsConsumed.toFixed(2)} units</strong>
+                  Consumed:{' '}
+                  <strong className="text-slate-900">{unitsConsumed.toFixed(2)} units</strong>
                 </span>
                 <strong className="text-indigo-700">
                   Rs. {liveElectricityCost.toLocaleString()}
@@ -461,6 +652,11 @@ export default function TenantDashboard() {
                 <p className="text-4xl font-black mt-2 text-white">
                   Rs. {liveGrandTotal.toLocaleString()}
                 </p>
+                {fineAmount > 0 && isBillOpen && (
+                  <p className="text-xs font-bold text-rose-400 mt-1">
+                    Includes Rs. {fineAmount.toLocaleString()} violation/damage fine
+                  </p>
+                )}
               </div>
               <span className="px-4 py-2 rounded-xl text-xs font-extrabold bg-white/20 text-white">
                 {activeBill?.status_display || 'Awaiting Submission'}
@@ -487,12 +683,12 @@ export default function TenantDashboard() {
                     </p>
                   </div>
                 </div>
-                {paymentQR?.qr_image_url && (
+                {qrSafeUrl && (
                   <button
                     type="button"
                     onClick={() =>
                       downloadFileFromUrl(
-                        paymentQR.qr_image_url,
+                        qrSafeUrl,
                         `SmartRent-Payment-QR-${activeBill?.room_number || 'Official'}.png`
                       )
                     }
@@ -503,11 +699,11 @@ export default function TenantDashboard() {
                 )}
               </div>
 
-              {paymentQR?.qr_image_url ? (
+              {qrSafeUrl ? (
                 <div className="flex flex-col items-center bg-white rounded-2xl p-3.5 border border-emerald-200/80 shadow-2xs">
                   <div className="relative group">
                     <img
-                      src={paymentQR.qr_image_url}
+                      src={qrSafeUrl}
                       alt="Official Payment QR Code"
                       onClick={() => setShowQRZoomModal(true)}
                       className="w-44 h-44 object-contain rounded-xl cursor-pointer transition-transform group-hover:scale-[1.02]"
@@ -528,7 +724,8 @@ export default function TenantDashboard() {
                 </div>
               ) : (
                 <div className="p-4 rounded-xl bg-white/80 border border-dashed border-emerald-300 text-center text-xs text-slate-500">
-                  Official payment QR code has not been uploaded by Admin yet. Please ask Admin or pay via cash/eSewa.
+                  Official payment QR code has not been uploaded by Admin yet. Please ask Admin or
+                  pay via cash/eSewa.
                 </div>
               )}
             </div>
@@ -541,7 +738,7 @@ export default function TenantDashboard() {
                 <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 cursor-pointer overflow-hidden">
                   {meterPreview || activeBill?.meter_photo_url ? (
                     <img
-                      src={meterPreview || activeBill.meter_photo_url}
+                      src={meterPreview || getSafeMediaUrl(activeBill.meter_photo_url)}
                       alt="Meter"
                       className="w-full h-full object-cover"
                     />
@@ -574,7 +771,7 @@ export default function TenantDashboard() {
                 <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 cursor-pointer overflow-hidden">
                   {paymentPreview || activeBill?.payment_screenshot_url ? (
                     <img
-                      src={paymentPreview || activeBill.payment_screenshot_url}
+                      src={paymentPreview || getSafeMediaUrl(activeBill.payment_screenshot_url)}
                       alt="Payment"
                       className="w-full h-full object-cover"
                     />
@@ -615,10 +812,14 @@ export default function TenantDashboard() {
 
               <button
                 type="submit"
-                disabled={!activeBill || submitBillMutation.isPending}
+                disabled={!activeBill || !isBillOpen || submitBillMutation.isPending}
                 className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-2xl shadow-lg disabled:opacity-50"
               >
-                {submitBillMutation.isPending ? 'Submitting...' : 'Submit Proofs for Approval'}
+                {submitBillMutation.isPending
+                  ? 'Submitting...'
+                  : isBillOpen
+                  ? 'Submit Proofs for Approval'
+                  : 'Bill Already Settled ✓'}
               </button>
             </form>
           </div>
@@ -884,47 +1085,274 @@ export default function TenantDashboard() {
               <tr className="bg-white text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
                 <th className="py-4 px-6">Billing Cycle</th>
                 <th className="py-4 px-6">Rent + Water</th>
-                <th className="py-4 px-6">Telemetry</th>
+                <th className="py-4 px-6">Telemetry & Fines</th>
                 <th className="py-4 px-6">Total Payable</th>
                 <th className="py-4 px-6">Status</th>
-                <th className="py-4 px-6 text-right">Receipt</th>
+                <th className="py-4 px-6 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="text-sm divide-y divide-slate-100">
-              {bills.map((b) => (
-                <tr key={b.id} className="hover:bg-slate-50">
-                  <td className="py-4 px-6 font-bold text-slate-900">{b.billing_month_label}</td>
-                  <td className="py-4 px-6 text-slate-600">
-                    Rs. {b.base_rent} + {b.water_bill}
-                  </td>
-                  <td className="py-4 px-6 text-slate-600">
-                    <strong className="text-indigo-600">{b.units_consumed} units</strong>
-                  </td>
-                  <td className="py-4 px-6 font-black text-slate-900">
-                    Rs. {Number(b.total_payable).toLocaleString()}
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs rounded-lg font-bold">
-                      {b.status_display}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <button
-                      onClick={() => handlePrintReceipt(b)}
-                      className="p-2 hover:bg-slate-200 rounded-lg"
-                    >
-                      <FileText className="w-5 h-5 text-slate-500" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {bills.map((b) => {
+                const rowFineEv = Array.isArray(b.fine_evidence_urls)
+                  ? b.fine_evidence_urls.map((u) => getSafeMediaUrl(u)).filter(Boolean)
+                  : [];
+                const isRowPaid = ['APPROVED', 'PAID_CASH'].includes(b.status);
+
+                return (
+                  <tr
+                    key={b.id}
+                    onClick={() => setSelectedBillId(b.id)}
+                    className={`cursor-pointer transition ${
+                      activeBill?.id === b.id ? 'bg-indigo-50/40' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <td className="py-4 px-6 font-bold text-slate-900">
+                      {b.billing_month_label}
+                      <span className="block text-[11px] font-normal text-slate-500">
+                        Room {b.room_number} • Due {b.due_date}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-slate-600">
+                      Rs. {b.base_rent} + {b.water_bill}
+                    </td>
+                    <td className="py-4 px-6 text-slate-600">
+                      <strong className="text-indigo-600">{b.units_consumed} units</strong>
+                      {Number(b.damage_fine_amount || 0) > 0 && !isRowPaid && (
+                        <div className="mt-1">
+                          <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 text-[11px] font-extrabold">
+                            Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
+                          </span>
+                          {b.damage_fine_reason && (
+                            <span className="block text-[11px] text-rose-600 truncate max-w-[200px]">
+                              {b.damage_fine_reason}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-4 px-6 font-black text-slate-900">
+                      Rs. {Number(b.total_payable).toLocaleString()}
+                    </td>
+                    <td className="py-4 px-6">
+                      <span
+                        className={`px-3 py-1 text-xs rounded-lg font-bold ${
+                          isRowPaid
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : b.status === 'PENDING_VERIFICATION'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {b.status_display}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1.5"
+                      >
+                        {rowFineEv.length > 0 && !isRowPaid && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openPhotoLightbox(
+                                rowFineEv.map((u, i) => ({
+                                  url: u,
+                                  title: `Fine Evidence #${i + 1} — ${b.billing_month_label}`,
+                                  subtitle: b.damage_fine_reason,
+                                }))
+                              )
+                            }
+                            className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg"
+                            title="View Fine Evidence Photos"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handlePrintReceipt(b)}
+                          className="p-2 hover:bg-slate-200 rounded-lg"
+                          title="Print Official Receipt"
+                        >
+                          <FileText className="w-5 h-5 text-slate-500" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* FULLSCREEN QR ZOOM & DOWNLOAD MODAL */}
-      {showQRZoomModal && paymentQR?.qr_image_url && (
+      {/* ========================================================================= */}
+      {/* MODAL 1: FULLSCREEN PHOTO LIGHTBOX MODAL                                  */}
+      {/* ========================================================================= */}
+      {lightboxState.isOpen && lightboxState.items.length > 0 && (() => {
+        const currentPhoto =
+          lightboxState.items[lightboxState.currentIndex] || lightboxState.items[0];
+        const totalPhotos = lightboxState.items.length;
+
+        return (
+          <div
+            onClick={closePhotoLightbox}
+            className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 select-none"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10 text-white"
+            >
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold">{currentPhoto.title}</h3>
+                {currentPhoto.subtitle && (
+                  <p className="text-xs text-slate-400">{currentPhoto.subtitle}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-white/10 text-xs font-bold">
+                  {lightboxState.currentIndex + 1} / {totalPhotos}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: Math.max(0.5, Number((prev.zoom - 0.25).toFixed(2))),
+                    }))
+                  }
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                    }))
+                  }
+                  className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-extrabold text-white transition"
+                >
+                  {Math.round(lightboxState.zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: Math.min(2.5, Number((prev.zoom + 0.25).toFixed(2))),
+                    }))
+                  }
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadFileFromUrl(
+                      currentPhoto.url,
+                      `${(currentPhoto.title || 'SmartRent-Photo').replace(/\s+/g, '-')}.jpg`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download
+                </button>
+                <button
+                  type="button"
+                  onClick={closePhotoLightbox}
+                  className="p-2 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="relative flex-1 flex items-center justify-center overflow-hidden my-4">
+              {totalPhotos > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                      currentIndex:
+                        (prev.currentIndex - 1 + prev.items.length) % prev.items.length,
+                    }));
+                  }}
+                  className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              )}
+
+              <img
+                src={currentPhoto.url}
+                alt={currentPhoto.title}
+                onClick={(e) => e.stopPropagation()}
+                style={{ transform: `scale(${lightboxState.zoom})` }}
+                className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl transition-transform duration-200"
+              />
+
+              {totalPhotos > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                      currentIndex: (prev.currentIndex + 1) % prev.items.length,
+                    }));
+                  }}
+                  className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+
+            {totalPhotos > 1 && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center justify-center gap-2.5 overflow-x-auto py-2"
+              >
+                {lightboxState.items.map((item, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() =>
+                      setLightboxState((prev) => ({
+                        ...prev,
+                        currentIndex: idx,
+                        zoom: 1,
+                      }))
+                    }
+                    className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition shrink-0 ${
+                      lightboxState.currentIndex === idx
+                        ? 'border-indigo-400 scale-105 shadow-lg'
+                        : 'border-white/20 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={item.url} alt={item.title} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: FULLSCREEN QR ZOOM & DOWNLOAD MODAL                              */}
+      {/* ========================================================================= */}
+      {showQRZoomModal && qrSafeUrl && (
         <div
           onClick={() => setShowQRZoomModal(false)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-4"
@@ -936,7 +1364,7 @@ export default function TenantDashboard() {
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="text-left">
                 <h3 className="text-sm font-black text-slate-900">
-                  {paymentQR.merchant_name || 'Official Payment QR'}
+                  {paymentQR?.merchant_name || 'Official Payment QR'}
                 </h3>
                 <p className="text-[11px] text-slate-500">
                   Total Payable: Rs. {liveGrandTotal.toLocaleString()}
@@ -953,13 +1381,13 @@ export default function TenantDashboard() {
 
             <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
               <img
-                src={paymentQR.qr_image_url}
+                src={qrSafeUrl}
                 alt="Payment QR Fullscreen"
                 className="w-64 h-64 object-contain rounded-xl"
               />
             </div>
 
-            {paymentQR.payment_note && (
+            {paymentQR?.payment_note && (
               <p className="text-xs text-slate-600 leading-relaxed">{paymentQR.payment_note}</p>
             )}
 
@@ -975,7 +1403,7 @@ export default function TenantDashboard() {
                 type="button"
                 onClick={() =>
                   downloadFileFromUrl(
-                    paymentQR.qr_image_url,
+                    qrSafeUrl,
                     `SmartRent-Payment-QR-${activeBill?.room_number || 'Official'}.png`
                   )
                 }
@@ -988,7 +1416,9 @@ export default function TenantDashboard() {
         </div>
       )}
 
-      {/* LEASE MODAL */}
+      {/* ========================================================================= */}
+      {/* MODAL 3: LEASE MODAL                                                      */}
+      {/* ========================================================================= */}
       {showLeaseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl p-8 shadow-2xl">
@@ -1026,7 +1456,9 @@ export default function TenantDashboard() {
         </div>
       )}
 
-      {/* MOVE-OUT MODAL */}
+      {/* ========================================================================= */}
+      {/* MODAL 4: MOVE-OUT MODAL                                                   */}
+      {/* ========================================================================= */}
       {showMoveOutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl">

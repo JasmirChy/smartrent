@@ -31,6 +31,8 @@ import {
   Clock,
   CreditCard,
   Camera,
+  Loader2,
+  ImagePlus,
 } from 'lucide-react';
 import {
   BarChart,
@@ -63,6 +65,14 @@ import axiosClient, {
 } from '../api/axiosClient';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+const MAX_EVIDENCE_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+const FINE_REASON_PRESETS = [
+  'Unclean surroundings / corridor dirt violation',
+  'Broken room fixture / property damage',
+  'Late night noise / discipline rule violation',
+  'Improper waste disposal / sanitation fine',
+];
 
 function getSafeMediaUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
@@ -124,6 +134,7 @@ export default function AdminCommandCenter() {
 
   // Overrides & Modals
   const [showCashModal, setShowCashModal] = useState(false);
+  const [cashTenantId, setCashTenantId] = useState('');
   const [cashBillId, setCashBillId] = useState('');
   const [cashMeterReading, setCashMeterReading] = useState('');
   const [cashFine, setCashFine] = useState('0');
@@ -134,10 +145,16 @@ export default function AdminCommandCenter() {
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [startingMeter, setStartingMeter] = useState('0');
 
+  // Upgraded Fine Management & Evidence Upload States
   const [showFineModal, setShowFineModal] = useState(false);
+  const [fineTenantId, setFineTenantId] = useState('');
   const [fineBillId, setFineBillId] = useState('');
+  const [fineMode, setFineMode] = useState('SET'); // SET replaces fine so 600 stays 600; ADD adds to existing
   const [fineAmount, setFineAmount] = useState('');
   const [fineReason, setFineReason] = useState('');
+  const [fineEvidenceFiles, setFineEvidenceFiles] = useState([]);
+  const [fineEvidencePreviews, setFineEvidencePreviews] = useState([]);
+  const [fineModalError, setFineModalError] = useState('');
 
   // Payment QR Setup Modal States
   const [showQRModal, setShowQRModal] = useState(false);
@@ -233,6 +250,14 @@ export default function AdminCommandCenter() {
     }
   }, [paymentQR]);
 
+  useEffect(() => {
+    return () => {
+      fineEvidencePreviews.forEach((p) => {
+        if (p.url?.startsWith('blob:')) URL.revokeObjectURL(p.url);
+      });
+    };
+  }, [fineEvidencePreviews]);
+
   const bills = Array.isArray(rawBills) ? rawBills : [];
   const reservations = Array.isArray(rawReservations) ? rawReservations : [];
   const notices = Array.isArray(rawNotices) ? rawNotices : [];
@@ -250,6 +275,25 @@ export default function AdminCommandCenter() {
   const unpaidOrPendingBills = bills.filter(
     (b) => b.status !== 'APPROVED' && b.status !== 'PAID_CASH'
   );
+  const selectableBillsForDropdown =
+    unpaidOrPendingBills.length > 0 ? unpaidOrPendingBills : bills;
+
+  const filteredBillsForFine = fineTenantId
+    ? bills.filter(
+        (b) =>
+          String(b.tenant) === String(fineTenantId) ||
+          String(b.tenant_id) === String(fineTenantId)
+      )
+    : selectableBillsForDropdown;
+
+  const selectedFineTenantObj = fineTenantId
+    ? adminUsers.find((u) => String(u.id) === String(fineTenantId))
+    : null;
+
+  const selectedFineBillObj = fineBillId
+    ? bills.find((b) => String(b.id) === String(fineBillId))
+    : null;
+
   const roomsList = Array.isArray(roomsData)
     ? roomsData
     : Array.isArray(roomsData?.rooms)
@@ -257,6 +301,119 @@ export default function AdminCommandCenter() {
     : Array.isArray(roomsData?.results)
     ? roomsData.results
     : [];
+
+  const openFineModalForUser = (userObj = null, billObj = null) => {
+    setFineModalError('');
+    setFineAmount('');
+    setFineReason('');
+    setFineMode('SET');
+    setFineEvidenceFiles([]);
+    setFineEvidencePreviews([]);
+
+    if (billObj) {
+      setFineBillId(String(billObj.id));
+      setFineTenantId(String(billObj.tenant || billObj.tenant_id || ''));
+    } else if (userObj) {
+      setFineTenantId(String(userObj.id));
+      const userOpenBill = bills.find(
+        (b) =>
+          (String(b.tenant) === String(userObj.id) ||
+            String(b.tenant_id) === String(userObj.id)) &&
+          b.status !== 'APPROVED' &&
+          b.status !== 'PAID_CASH'
+      );
+      const userAnyBill = bills.find(
+        (b) =>
+          String(b.tenant) === String(userObj.id) ||
+          String(b.tenant_id) === String(userObj.id)
+      );
+      setFineBillId(
+        userOpenBill ? String(userOpenBill.id) : userAnyBill ? String(userAnyBill.id) : ''
+      );
+    } else {
+      setFineTenantId('');
+      setFineBillId('');
+    }
+    setShowFineModal(true);
+  };
+
+  const handleSelectFineTenant = (tenantIdVal) => {
+    setFineTenantId(tenantIdVal);
+    setFineModalError('');
+    if (!tenantIdVal) {
+      setFineBillId('');
+      return;
+    }
+    const matchingOpenBill = bills.find(
+      (b) =>
+        (String(b.tenant) === String(tenantIdVal) ||
+          String(b.tenant_id) === String(tenantIdVal)) &&
+        b.status !== 'APPROVED' &&
+        b.status !== 'PAID_CASH'
+    );
+    const matchingAnyBill = bills.find(
+      (b) =>
+        String(b.tenant) === String(tenantIdVal) ||
+        String(b.tenant_id) === String(tenantIdVal)
+    );
+    if (matchingOpenBill) {
+      setFineBillId(String(matchingOpenBill.id));
+    } else if (matchingAnyBill) {
+      setFineBillId(String(matchingAnyBill.id));
+    } else {
+      setFineBillId('');
+    }
+  };
+
+  const handleSelectFineBill = (billIdVal) => {
+    setFineBillId(billIdVal);
+    setFineModalError('');
+    if (billIdVal) {
+      const foundBill = bills.find((b) => String(b.id) === String(billIdVal));
+      if (foundBill && (foundBill.tenant || foundBill.tenant_id)) {
+        setFineTenantId(String(foundBill.tenant || foundBill.tenant_id));
+      }
+    }
+  };
+
+  const handleFineEvidenceSelect = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setFineModalError('');
+
+    const validFiles = [];
+    const previews = [];
+
+    for (const file of files) {
+      if (file.size > MAX_EVIDENCE_FILE_SIZE) {
+        setFineModalError(
+          `"${file.name}" exceeds the 5 MB limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`
+        );
+        continue;
+      }
+      validFiles.push(file);
+      previews.push({
+        name: file.name,
+        url: URL.createObjectURL(file),
+        sizeMB: (file.size / (1024 * 1024)).toFixed(2),
+      });
+    }
+
+    if (validFiles.length > 0) {
+      setFineEvidenceFiles((prev) => [...prev, ...validFiles]);
+      setFineEvidencePreviews((prev) => [...prev, ...previews]);
+    }
+    e.target.value = '';
+  };
+
+  const removeFineEvidenceFile = (idxToRemove) => {
+    setFineEvidenceFiles((prev) => prev.filter((_, idx) => idx !== idxToRemove));
+    setFineEvidencePreviews((prev) => {
+      const target = prev[idxToRemove];
+      if (target?.url?.startsWith('blob:')) URL.revokeObjectURL(target.url);
+      return prev.filter((_, idx) => idx !== idxToRemove);
+    });
+  };
 
   const openPhotoLightbox = (itemsList, startIndex = 0) => {
     const validItems = itemsList.filter((item) => Boolean(item?.url));
@@ -335,6 +492,24 @@ export default function AdminCommandCenter() {
         }
       });
     }
+    const userFullBills = bills.filter(
+      (b) => String(b.tenant) === String(u.id) || String(b.tenant_id) === String(u.id)
+    );
+    userFullBills.forEach((b) => {
+      if (Array.isArray(b.fine_evidence_urls)) {
+        b.fine_evidence_urls.forEach((evUrl, evIdx) => {
+          const safeEv = getSafeMediaUrl(evUrl);
+          if (safeEv) {
+            items.push({
+              key: `BILL_FINE_${b.id}_${evIdx}`,
+              url: safeEv,
+              title: `Fine Evidence Photo #${evIdx + 1} — ${b.billing_month_label}`,
+              subtitle: `Fine: Rs. ${b.damage_fine_amount} • Reason: ${b.damage_fine_reason || 'Violation'}`,
+            });
+          }
+        });
+      }
+    });
     return items;
   };
 
@@ -417,6 +592,12 @@ export default function AdminCommandCenter() {
       refreshAllAdminData();
       setShowCashModal(false);
     },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text: err.response?.data?.error || 'Failed to record cash payment.',
+      });
+    },
   });
 
   const assignTenantMutation = useMutation({
@@ -430,14 +611,84 @@ export default function AdminCommandCenter() {
   });
 
   const applyFineMutation = useMutation({
-    mutationFn: async ({ billId, payload }) =>
-      (await axiosClient.post(`/billing/${billId}/apply-fine/`, payload)).data,
+    mutationFn: async ({ billId, formData }) => {
+      const endpoint =
+        billId && Number(billId) > 0
+          ? `/billing/${billId}/apply-fine/`
+          : '/billing/apply-fine/';
+      const res = await axiosClient.post(endpoint, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data;
+    },
     onSuccess: (data) => {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
       setShowFineModal(false);
+      setFineTenantId('');
+      setFineBillId('');
+      setFineAmount('');
+      setFineReason('');
+      setFineEvidenceFiles([]);
+      setFineEvidencePreviews([]);
+      setFineModalError('');
+    },
+    onError: (err) => {
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        'Could not apply fine. Please make sure backend views.py and urls.py are updated.';
+      setFineModalError(msg);
+      setBannerMsg({ type: 'error', text: msg });
     },
   });
+
+  const handleApplyFineSubmit = (e) => {
+    e.preventDefault();
+    setFineModalError('');
+
+    if (!fineTenantId && !fineBillId) {
+      setFineModalError('Please select a Tenant (or a specific Bill) to apply the fine.');
+      return;
+    }
+    if (!fineAmount || Number(fineAmount) <= 0) {
+      setFineModalError('Please enter a valid fine amount greater than Rs. 0.');
+      return;
+    }
+    if (!fineReason.trim()) {
+      setFineModalError('Please enter the violation or damage reason.');
+      return;
+    }
+
+    const fd = new FormData();
+    if (fineBillId) fd.append('bill_id', fineBillId);
+    if (fineTenantId) fd.append('tenant_id', fineTenantId);
+    fd.append('fine_mode', fineMode);
+    fd.append('damage_fine_amount', fineAmount);
+    fd.append('damage_fine_reason', fineReason.trim());
+
+    fineEvidenceFiles.forEach((file) => {
+      fd.append('evidence_images', file);
+    });
+
+    applyFineMutation.mutate({
+      billId: fineBillId ? Number(fineBillId) : 0,
+      formData: fd,
+    });
+  };
+
+  const handleUndoFine = (billId) => {
+    if (!billId) return;
+    if (window.confirm('Are you sure you want to undo and remove this fine from the tenant?')) {
+      const fd = new FormData();
+      fd.append('bill_id', String(billId));
+      fd.append('fine_mode', 'UNDO');
+      applyFineMutation.mutate({
+        billId: Number(billId),
+        formData: fd,
+      });
+    }
+  };
 
   const expenseMutation = useMutation({
     mutationFn: async (formData) =>
@@ -602,6 +853,7 @@ export default function AdminCommandCenter() {
             <QrCode className="w-3.5 h-3.5" /> Payment QR Setup
           </button>
           <button
+            type="button"
             onClick={() => {
               triggerBulkGenerateBills()
                 .then((res) => {
@@ -617,6 +869,7 @@ export default function AdminCommandCenter() {
             <Zap className="w-3.5 h-3.5" /> Auto-Generate Bills
           </button>
           <button
+            type="button"
             onClick={() => reminderMutation.mutate()}
             disabled={reminderMutation.isPending}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold border border-indigo-400 transition"
@@ -624,12 +877,14 @@ export default function AdminCommandCenter() {
             <BellRing className="w-3.5 h-3.5" /> Send Alerts
           </button>
           <button
-            onClick={() => setShowFineModal(true)}
+            type="button"
+            onClick={() => openFineModalForUser(null, null)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-sm transition"
           >
             <AlertTriangle className="w-3.5 h-3.5" /> + Apply Fine
           </button>
           <button
+            type="button"
             onClick={() => setShowCashModal(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white text-indigo-600 hover:bg-indigo-50 text-xs font-bold shadow-md transition"
           >
@@ -852,7 +1107,15 @@ export default function AdminCommandCenter() {
                         onClick={() => setSelectedUserId(u.id)}
                         className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center justify-center gap-1.5"
                       >
-                        <Eye className="w-3.5 h-3.5" /> View Full Dossier
+                        <Eye className="w-3.5 h-3.5" /> Dossier
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openFineModalForUser(u, null)}
+                        className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                        title="Apply Fine to Tenant"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" /> Fine
                       </button>
                       {galleryItems.length > 0 && (
                         <button
@@ -876,7 +1139,7 @@ export default function AdminCommandCenter() {
                               evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
                             }
                           }}
-                          className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold transition"
+                          className="py-2.5 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold transition"
                           title="Vacate Room"
                         >
                           Vacate
@@ -1130,6 +1393,7 @@ export default function AdminCommandCenter() {
                           {n.category_display || n.category}
                         </span>
                         <button
+                          type="button"
                           onClick={() => deleteNoticeMutation.mutate(n.id)}
                           className="text-slate-400 hover:text-rose-600 transition"
                           title="Delete Notice"
@@ -1209,6 +1473,7 @@ export default function AdminCommandCenter() {
                         />
                         <div className="flex gap-3">
                           <button
+                            type="button"
                             onClick={() =>
                               reservationActionMutation.mutate({
                                 id: activeReviewReservation.id,
@@ -1220,6 +1485,7 @@ export default function AdminCommandCenter() {
                             Reject
                           </button>
                           <button
+                            type="button"
                             onClick={() =>
                               reservationActionMutation.mutate({
                                 id: activeReviewReservation.id,
@@ -1302,6 +1568,7 @@ export default function AdminCommandCenter() {
                       )}
                       {occupied ? (
                         <button
+                          type="button"
                           onClick={() => {
                             if (window.confirm(`Mark Room ${room.room_number} as vacant?`)) {
                               axiosClient.post(`/rooms/${room.id}/vacate/`).then(() => {
@@ -1315,6 +1582,7 @@ export default function AdminCommandCenter() {
                         </button>
                       ) : (
                         <button
+                          type="button"
                           onClick={() => {
                             setAssignModalRoom(room);
                             setStartingMeter(String(room.current_meter_reading || 0));
@@ -1369,6 +1637,11 @@ export default function AdminCommandCenter() {
                       </div>
                       <div className="flex items-center justify-between text-[11px] text-slate-500">
                         <span>Rs. {Number(b.total_payable).toLocaleString()}</span>
+                        {Number(b.damage_fine_amount || 0) > 0 && (
+                          <span className="text-rose-600 font-bold">
+                            Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1385,10 +1658,76 @@ export default function AdminCommandCenter() {
                           Cycle: {activeAuditBill.billing_month_label}
                         </p>
                       </div>
-                      <span className="text-sm font-extrabold text-indigo-600">
-                        Total: Rs. {Number(activeAuditBill.total_payable).toLocaleString()}
-                      </span>
+                      <div className="text-right">
+                        <span className="text-sm font-extrabold text-indigo-600 block">
+                          Total: Rs. {Number(activeAuditBill.total_payable).toLocaleString()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openFineModalForUser(null, activeAuditBill)}
+                          className="text-[11px] font-extrabold text-rose-600 hover:underline"
+                        >
+                          + Add / Edit Fine
+                        </button>
+                      </div>
                     </div>
+
+                    {Number(activeAuditBill.damage_fine_amount || 0) > 0 && (
+                      <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-extrabold text-rose-800 flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-rose-600" />
+                            Applied Fine: Rs.{' '}
+                            {Number(activeAuditBill.damage_fine_amount).toLocaleString()}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {activeAuditBill.fine_applied_at && (
+                              <span className="text-[10px] text-rose-600 font-semibold">
+                                {activeAuditBill.fine_applied_at}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleUndoFine(activeAuditBill.id)}
+                              disabled={applyFineMutation.isPending}
+                              className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition text-[10px] font-extrabold shadow-xs"
+                            >
+                              Undo Fine
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-rose-700 font-medium">
+                          Reason: {activeAuditBill.damage_fine_reason || 'Rule / damage violation'}
+                        </p>
+                        {Array.isArray(activeAuditBill.fine_evidence_urls) &&
+                          activeAuditBill.fine_evidence_urls.length > 0 && (
+                            <div className="flex items-center gap-2 pt-1 overflow-x-auto">
+                              {activeAuditBill.fine_evidence_urls.map((evUrl, idx) => {
+                                const safeEv = getSafeMediaUrl(evUrl);
+                                return (
+                                  <img
+                                    key={idx}
+                                    src={safeEv}
+                                    alt="Fine Evidence"
+                                    onClick={() =>
+                                      openPhotoLightbox(
+                                        activeAuditBill.fine_evidence_urls.map((u, i) => ({
+                                          url: getSafeMediaUrl(u),
+                                          title: `Fine Evidence #${i + 1} — Room ${activeAuditBill.room_number}`,
+                                          subtitle: activeAuditBill.damage_fine_reason,
+                                        })),
+                                        idx
+                                      )
+                                    }
+                                    className="w-14 h-14 rounded-xl object-cover border border-rose-300 cursor-pointer hover:scale-105 transition"
+                                  />
+                                );
+                              })}
+                            </div>
+                          )}
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
@@ -1454,6 +1793,7 @@ export default function AdminCommandCenter() {
                     />
                     <div className="flex items-center gap-3 pt-2">
                       <button
+                        type="button"
                         onClick={() =>
                           auditMutation.mutate({
                             billId: activeAuditBill.id,
@@ -1466,6 +1806,7 @@ export default function AdminCommandCenter() {
                         Reject
                       </button>
                       <button
+                        type="button"
                         onClick={() =>
                           auditMutation.mutate({
                             billId: activeAuditBill.id,
@@ -1608,7 +1949,7 @@ export default function AdminCommandCenter() {
       )}
 
       {/* ========================================================================= */}
-      {/* EXECUTIVE USER DOSSIER & PHOTO INSPECTION MODAL                           */}
+      {/* MODAL 1: EXECUTIVE USER DOSSIER & PHOTO INSPECTION MODAL                  */}
       {/* ========================================================================= */}
       {selectedUserModal && (() => {
         const u = selectedUserModal;
@@ -1746,43 +2087,48 @@ export default function AdminCommandCenter() {
                       </div>
                     </div>
 
-                    {/* Quick KYC Verify / Reject Buttons */}
-                    {u.kyc_id && (
-                      <div className="flex items-center gap-2">
-                        {u.kyc_status !== 'VERIFIED' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              kycAuditMutation.mutate({
-                                kycId: u.kyc_id,
-                                action: 'VERIFY',
-                                notes: 'Verified by Admin',
-                              })
-                            }
-                            disabled={kycAuditMutation.isPending}
-                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition"
-                          >
-                            ✓ Verify KYC
-                          </button>
-                        )}
-                        {u.kyc_status !== 'REJECTED' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              kycAuditMutation.mutate({
-                                kycId: u.kyc_id,
-                                action: 'REJECT',
-                                notes: 'Please re-upload clearer citizenship photos.',
-                              })
-                            }
-                            disabled={kycAuditMutation.isPending}
-                            className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition"
-                          >
-                            Reject KYC
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    {/* Quick KYC Verify / Reject + Fine Buttons */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openFineModalForUser(u, null)}
+                        className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" /> + Apply Fine
+                      </button>
+                      {u.kyc_id && u.kyc_status !== 'VERIFIED' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            kycAuditMutation.mutate({
+                              kycId: u.kyc_id,
+                              action: 'VERIFY',
+                              notes: 'Verified by Admin',
+                            })
+                          }
+                          disabled={kycAuditMutation.isPending}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition"
+                        >
+                          ✓ Verify KYC
+                        </button>
+                      )}
+                      {u.kyc_id && u.kyc_status !== 'REJECTED' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            kycAuditMutation.mutate({
+                              kycId: u.kyc_id,
+                              action: 'REJECT',
+                              notes: 'Please re-upload clearer citizenship photos.',
+                            })
+                          }
+                          disabled={kycAuditMutation.isPending}
+                          className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition"
+                        >
+                          Reject KYC
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* 3. 4-Card Telemetry Summary Grid */}
@@ -2028,6 +2374,11 @@ export default function AdminCommandCenter() {
                             {userBills.map((b) => {
                               const mUrl = getSafeMediaUrl(b.meter_photo_url);
                               const pUrl = getSafeMediaUrl(b.payment_screenshot_url);
+                              const fullBillObj = bills.find((item) => item.id === b.id);
+                              const fineEvUrls = Array.isArray(fullBillObj?.fine_evidence_urls)
+                                ? fullBillObj.fine_evidence_urls
+                                : [];
+
                               return (
                                 <tr key={b.id} className="hover:bg-slate-50/80">
                                   <td className="py-3 px-4">
@@ -2044,6 +2395,11 @@ export default function AdminCommandCenter() {
                                     </p>
                                     <p className="text-[10px] text-slate-500">
                                       {b.units_consumed} units elec
+                                      {Number(b.damage_fine_amount || 0) > 0 && (
+                                        <span className="text-rose-600 font-bold ml-1">
+                                          • Fine: Rs. {b.damage_fine_amount}
+                                        </span>
+                                      )}
                                     </p>
                                   </td>
                                   <td className="py-3 px-4">
@@ -2099,6 +2455,24 @@ export default function AdminCommandCenter() {
                                       ) : (
                                         <span className="text-[11px] text-slate-400">No Slip</span>
                                       )}
+                                      {fineEvUrls.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openPhotoLightbox(
+                                              fineEvUrls.map((ev, i) => ({
+                                                url: getSafeMediaUrl(ev),
+                                                title: `Fine Evidence #${i + 1} — ${b.billing_month_label}`,
+                                                subtitle: fullBillObj?.damage_fine_reason,
+                                              }))
+                                            )
+                                          }
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px]"
+                                        >
+                                          <AlertTriangle className="w-3 h-3" /> Fine Proof (
+                                          {fineEvUrls.length})
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -2150,7 +2524,7 @@ export default function AdminCommandCenter() {
       })()}
 
       {/* ========================================================================= */}
-      {/* FULLSCREEN PHOTO LIGHTBOX MODAL (ZOOM, NEXT/PREV, DOWNLOAD)               */}
+      {/* MODAL 2: FULLSCREEN PHOTO LIGHTBOX MODAL (ZOOM, NEXT/PREV, DOWNLOAD)      */}
       {/* ========================================================================= */}
       {lightboxState.isOpen && lightboxState.items.length > 0 && (() => {
         const currentPhoto =
@@ -2320,7 +2694,9 @@ export default function AdminCommandCenter() {
         );
       })()}
 
-      {/* ADMIN PAYMENT QR CODE UPLOAD & MANAGEMENT MODAL */}
+      {/* ========================================================================= */}
+      {/* MODAL 3: ADMIN PAYMENT QR CODE UPLOAD & MANAGEMENT MODAL                  */}
+      {/* ========================================================================= */}
       {showQRModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4">
           <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 max-h-[92vh] overflow-y-auto">
@@ -2470,7 +2846,9 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* 2-STEP DANGER CONFIRMATION MODAL FOR DATABASE FACTORY RESET */}
+      {/* ========================================================================= */}
+      {/* MODAL 4: 2-STEP DANGER CONFIRMATION MODAL FOR DATABASE FACTORY RESET      */}
+      {/* ========================================================================= */}
       {resetStep > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 animate-in fade-in">
           <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border-2 border-rose-200 space-y-5">
@@ -2608,7 +2986,9 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* ADD ADMIN MODAL */}
+      {/* ========================================================================= */}
+      {/* MODAL 5: ADD ADMIN MODAL                                                  */}
+      {/* ========================================================================= */}
       {showAddAdminModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-4">
@@ -2711,7 +3091,9 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* ASSIGN TENANT MODAL */}
+      {/* ========================================================================= */}
+      {/* MODAL 6: ASSIGN TENANT MODAL                                              */}
+      {/* ========================================================================= */}
       {assignModalRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
@@ -2752,6 +3134,7 @@ export default function AdminCommandCenter() {
               />
               <input
                 type="number"
+                step="0.01"
                 required
                 value={startingMeter}
                 onChange={(e) => setStartingMeter(e.target.value)}
@@ -2774,7 +3157,9 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* CASH OVERRIDE MODAL */}
+      {/* ========================================================================= */}
+      {/* MODAL 7: CASH OVERRIDE MODAL                                              */}
+      {/* ========================================================================= */}
       {showCashModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
@@ -2783,7 +3168,8 @@ export default function AdminCommandCenter() {
               onSubmit={(e) => {
                 e.preventDefault();
                 cashOverrideMutation.mutate({
-                  bill_id: Number(cashBillId),
+                  bill_id: cashBillId ? Number(cashBillId) : undefined,
+                  tenant_id: cashTenantId ? Number(cashTenantId) : undefined,
                   current_meter_reading: cashMeterReading,
                   damage_fine_amount: cashFine || '0',
                   damage_fine_reason: cashReason,
@@ -2793,15 +3179,16 @@ export default function AdminCommandCenter() {
               className="space-y-4"
             >
               <select
-                required
+                required={!cashTenantId}
                 value={cashBillId}
                 onChange={(e) => setCashBillId(e.target.value)}
                 className="w-full px-3 py-2 border rounded-xl"
               >
                 <option value="">Choose Bill</option>
-                {unpaidOrPendingBills.map((b) => (
+                {selectableBillsForDropdown.map((b) => (
                   <option key={b.id} value={b.id}>
-                    Room {b.room_number} — {b.tenant_name}
+                    Room {b.room_number} — {b.tenant_name} ({b.billing_month_label}) • Rs.{' '}
+                    {b.total_payable}
                   </option>
                 ))}
               </select>
@@ -2831,64 +3218,286 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* APPLY FINE MODAL */}
+      {/* ========================================================================= */}
+      {/* MODAL 8: UPGRADED APPLY FINE MODAL (TENANT + BILL + EVIDENCE + UNDO)      */}
+      {/* ========================================================================= */}
       {showFineModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-lg font-bold mb-4">Apply Fine</h3>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                applyFineMutation.mutate({
-                  billId: Number(fineBillId),
-                  payload: {
-                    damage_fine_amount: fineAmount,
-                    damage_fine_reason: fineReason,
-                  },
-                });
-              }}
-              className="space-y-4"
-            >
-              <select
-                required
-                value={fineBillId}
-                onChange={(e) => setFineBillId(e.target.value)}
-                className="w-full px-3 py-2 border rounded-xl"
+        <div
+          onClick={() => setShowFineModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 my-auto max-h-[92vh] overflow-y-auto"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Apply Property Damage / Rule Violation Fine
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Select a tenant or bill, attach evidence photos, and send an automated email notice
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFineModal(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
               >
-                <option value="">Choose Bill</option>
-                {unpaidOrPendingBills.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    Room {b.room_number}
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {fineModalError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{fineModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleApplyFineSubmit} className="space-y-4">
+              {/* Step 1: Select Tenant / User */}
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  1. Select Tenant / Registered User *
+                </label>
+                <select
+                  value={fineTenantId}
+                  onChange={(e) => handleSelectFineTenant(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none transition"
+                >
+                  <option value="">-- Choose Tenant / User ({tenantUsers.length} Registered) --</option>
+                  {tenantUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name} ({u.email}){' '}
+                      {u.room_number ? `• Room ${u.room_number}` : '• No Room Assigned'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Step 2: Select Target Bill (Auto-populated or auto-created) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
+                    2. Choose Bill
+                  </label>
+                  {fineTenantId && filteredBillsForFine.length === 0 && (
+                    <span className="text-[10px] font-extrabold text-emerald-600">
+                      ✨ New invoice will be auto-created for this tenant
+                    </span>
+                  )}
+                </div>
+                <select
+                  value={fineBillId}
+                  onChange={(e) => handleSelectFineBill(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none transition"
+                >
+                  <option value="">
+                    {fineTenantId && filteredBillsForFine.length === 0
+                      ? 'Auto-Create Fresh Invoice for Selected Tenant'
+                      : '-- Choose Existing Bill (or leave blank to auto-select) --'}
                   </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={fineAmount}
-                onChange={(e) => setFineAmount(e.target.value)}
-                placeholder="Fine Amount"
-                className="w-full px-3 py-2 border rounded-xl"
-              />
-              <input
-                type="text"
-                required
-                value={fineReason}
-                onChange={(e) => setFineReason(e.target.value)}
-                placeholder="Reason"
-                className="w-full px-3 py-2 border rounded-xl"
-              />
-              <div className="flex gap-2">
+                  {filteredBillsForFine.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      Room {b.room_number} — {b.tenant_name || 'Tenant'} ({b.billing_month_label}) •
+                      Total: Rs. {Number(b.total_payable || 0).toLocaleString()} [{b.status_display}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selected Tenant / Bill Live Preview Banner + Quick Undo Fine if already fined */}
+              {(selectedFineTenantObj || selectedFineBillObj) && (
+                <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div>
+                    <p className="font-extrabold text-slate-900">
+                      {selectedFineTenantObj?.full_name || selectedFineBillObj?.tenant_name}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Email: {selectedFineTenantObj?.email || 'Will notify registered email'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedFineBillObj && Number(selectedFineBillObj.damage_fine_amount || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleUndoFine(selectedFineBillObj.id)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] shadow-xs transition"
+                      >
+                        Undo Current Fine (Rs. {selectedFineBillObj.damage_fine_amount})
+                      </button>
+                    )}
+                    <span className="px-2.5 py-1 rounded-lg bg-white text-indigo-700 font-extrabold text-[11px] border border-indigo-200">
+                      {selectedFineBillObj
+                        ? `Room ${selectedFineBillObj.room_number} • Rs. ${Number(
+                            selectedFineBillObj.total_payable
+                          ).toLocaleString()}`
+                        : selectedFineTenantObj?.room_number
+                        ? `Room ${selectedFineTenantObj.room_number}`
+                        : 'Direct Fine Invoice'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Fine Mode & Amount */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                    3. Fine Amount (NPR) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    required
+                    value={fineAmount}
+                    onChange={(e) => setFineAmount(e.target.value)}
+                    placeholder="e.g. 600"
+                    className="w-full px-3.5 py-2.5 text-sm font-black text-rose-600 rounded-xl border border-slate-200 outline-none focus:border-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Calculation Mode
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setFineMode('SET')}
+                      className={`py-2 rounded-lg text-[11px] font-extrabold transition ${
+                        fineMode === 'SET'
+                          ? 'bg-white text-indigo-600 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Set Exact Fine
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFineMode('ADD')}
+                      className={`py-2 rounded-lg text-[11px] font-extrabold transition ${
+                        fineMode === 'ADD'
+                          ? 'bg-white text-rose-600 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      + Add to Fine
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 4: Violation / Damage Reason + Quick Presets */}
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  4. Violation / Damage Reason (Included in Email) *
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={fineReason}
+                  onChange={(e) => setFineReason(e.target.value)}
+                  placeholder="Describe the damage, dirt, broken item, or rule violation..."
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-rose-500 resize-none"
+                />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {FINE_REASON_PRESETS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setFineReason(preset)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-[10px] font-bold transition"
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 5: Evidence Photo Upload (Dirt, Broken Items, Violation Proof) */}
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  5. Attach Evidence Photos (Optional • Up to 5 MB each)
+                </label>
+                <label className="flex flex-col items-center justify-center p-4 rounded-2xl border-2 border-dashed border-rose-200 hover:border-rose-500 bg-rose-50/30 cursor-pointer transition text-center">
+                  <ImagePlus className="w-6 h-6 text-rose-500 mb-1" />
+                  <span className="text-xs font-extrabold text-slate-800">
+                    Upload Photos of Damage, Dirt, or Broken Items
+                  </span>
+                  <span className="text-[10px] text-slate-500 mt-0.5">
+                    Supports JPG, PNG, WEBP, HEIC • Stored with bill & sent in tenant email
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.avif"
+                    multiple
+                    onChange={handleFineEvidenceSelect}
+                    className="hidden"
+                  />
+                </label>
+
+                {fineEvidencePreviews.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2.5 mt-3">
+                    {fineEvidencePreviews.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="relative h-16 rounded-xl overflow-hidden border border-rose-200 bg-slate-100"
+                      >
+                        <img
+                          src={item.url}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeFineEvidenceFile(idx)}
+                          className="absolute top-1 right-1 p-0.5 rounded-full bg-slate-900/80 text-white hover:bg-rose-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                        <span className="absolute bottom-0.5 left-1 px-1 rounded bg-black/60 text-white text-[9px] font-bold">
+                          {item.sizeMB}M
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Submit & Cancel Buttons */}
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowFineModal(false)}
-                  className="flex-1 py-2 border rounded-xl"
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="flex-1 py-2 bg-rose-600 text-white rounded-xl">
-                  Apply Fine
+                <button
+                  type="submit"
+                  disabled={applyFineMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-rose-600/20 transition inline-flex items-center justify-center gap-1.5"
+                >
+                  {applyFineMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Applying & Emailing...
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-4 h-4" />
+                      Apply Fine & Notify Tenant
+                    </>
+                  )}
                 </button>
               </div>
             </form>

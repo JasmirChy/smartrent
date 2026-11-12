@@ -1,6 +1,7 @@
 import os
 import json
 import calendar
+import urllib.request
 from datetime import date
 from decimal import Decimal
 from django.db import transaction
@@ -15,6 +16,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
+from apps.accounts.models import User
 from apps.rooms.models import Room, Tenancy
 from apps.rooms.views import IsAdminUserRole
 from .models import MonthlyBill, HouseExpense
@@ -30,18 +32,107 @@ from .tasks import create_next_cycle_bill, dispatch_due_rent_email_reminders
 
 
 MAX_PROOF_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
-ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/jpg'}
+ALLOWED_IMAGE_EXTENSIONS = {
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg', '.heic', '.heif', '.avif', '.jfif'
+}
+
+FINE_PROOFS_DIR = os.path.join(settings.MEDIA_ROOT, 'fine_proofs')
+FINE_METADATA_FILE = os.path.join(FINE_PROOFS_DIR, 'fine_evidence_metadata.json')
+
+
+def _read_fine_metadata():
+    os.makedirs(FINE_PROOFS_DIR, exist_ok=True)
+    if os.path.exists(FINE_METADATA_FILE):
+        try:
+            with open(FINE_METADATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _write_fine_metadata(data):
+    os.makedirs(FINE_PROOFS_DIR, exist_ok=True)
+    with open(FINE_METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+def enrich_bill_with_fine_evidence(request, bill_dict):
+    """Attaches fine_evidence_urls and fine_applied_at to serialized bill dictionaries."""
+    meta_map = _read_fine_metadata()
+    bill_id_str = str(bill_dict.get('id'))
+    entry = meta_map.get(bill_id_str, {})
+    rel_paths = entry.get('paths', [])
+    urls = []
+    for p in rel_paths:
+        if p and default_storage.exists(p):
+            try:
+                urls.append(request.build_absolute_uri(default_storage.url(p)))
+            except Exception:
+                urls.append(default_storage.url(p))
+    bill_dict['fine_evidence_urls'] = urls
+    bill_dict['fine_applied_at'] = entry.get('applied_at')
+    return bill_dict
+
+
+def send_billing_notification_email(recipient_email, subject, message_body):
+    """
+    Sends billing/fine emails via:
+    1) Standard Django SMTP (if configured)
+    2) Google Apps Script HTTPS Webhook (Port 443 — works on Render Free Tier)
+    """
+    if not recipient_email:
+        return False
+
+    if getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
+        try:
+            send_mail(
+                subject=subject,
+                message=message_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient_email],
+                fail_silently=False,
+            )
+            return True
+        except Exception as smtp_err:
+            print(f"[SmartRent Billing SMTP Notice]: {smtp_err}")
+
+    webhook_url = getattr(settings, 'GOOGLE_SCRIPT_WEBHOOK_URL', '').strip()
+    webhook_secret = getattr(settings, 'GOOGLE_SCRIPT_SECRET', 'SMARTRENT_SECRET_2026').strip()
+    if webhook_url:
+        try:
+            payload = json.dumps({
+                "secret": webhook_secret,
+                "to": recipient_email,
+                "subject": subject,
+                "message": message_body,
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                webhook_url,
+                data=payload,
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                body = resp.read().decode('utf-8', errors='ignore')
+                if resp.status in (200, 302) and 'Unauthorized' not in body:
+                    return True
+        except Exception as wh_err:
+            print(f"[SmartRent Billing Webhook Notice]: {wh_err}")
+
+    return False
 
 
 def validate_uploaded_image(file_obj, label):
-    """Validates image size and content type for Zone 1 & Zone 2 proof uploads."""
+    """Validates image size (up to 5 MB) and allows all standard mobile/desktop image formats."""
     if not file_obj:
         return f"{label} is required."
     if hasattr(file_obj, 'size') and file_obj.size > MAX_PROOF_FILE_SIZE:
-        return f"{label} exceeds the 5MB size limit."
-    content_type = getattr(file_obj, 'content_type', '')
-    if content_type and content_type.lower() not in ALLOWED_IMAGE_TYPES:
-        return f"{label} must be a valid JPG, PNG, or WEBP image."
+        return f"{label} exceeds the 5 MB size limit."
+    ext = os.path.splitext(getattr(file_obj, 'name', '') or '')[1].lower()
+    content_type = (getattr(file_obj, 'content_type', '') or '').lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS and not content_type.startswith('image/'):
+        return f"{label} must be a valid image file (JPG, JPEG, PNG, WEBP, HEIC, etc.)."
     return None
 
 
@@ -181,8 +272,8 @@ class PaymentQRConfigView(APIView):
 
 class BillListView(generics.ListAPIView):
     """
-    Returns all bills for Admin, or only the logged-in Tenant's bills.
-    Also runs a lightweight check to send due-date reminder emails automatically!
+    Returns all bills for Admin, or only the logged-in Tenant's bills,
+    enriched with any attached fine evidence photo URLs.
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = MonthlyBillSerializer
@@ -203,12 +294,16 @@ class BillListView(generics.ListAPIView):
             return qs
         return qs.filter(tenant=user)
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True, context={'request': request})
+        enriched = [enrich_bill_with_fine_evidence(request, dict(item)) for item in serializer.data]
+        return Response(enriched)
+
 
 class TenantSubmitOnlineBillView(APIView):
     """
     Tenant enters new meter reading + uploads meter image + payment screenshot.
-    System subtracts old reading from new reading, multiplies units by Rs. 15,
-    adds base rent + Rs. 100 water + fines, and sets status to PENDING_VERIFICATION.
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -266,10 +361,13 @@ class TenantSubmitOnlineBillView(APIView):
         bill.status = 'PENDING_VERIFICATION'
         bill.save()
 
+        bill_data = enrich_bill_with_fine_evidence(
+            request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
+        )
         return Response(
             {
                 "message": "Meter reading and payment proof submitted for Admin verification!",
-                "bill": MonthlyBillSerializer(bill, context={'request': request}).data,
+                "bill": bill_data,
             },
             status=status.HTTP_200_OK,
         )
@@ -290,7 +388,12 @@ class AdminAuditBillView(APIView):
 
         if bill.status in ['APPROVED', 'PAID_CASH'] and request.data.get('action') == 'APPROVE':
             return Response(
-                {"message": "This bill is already approved.", "bill": MonthlyBillSerializer(bill, context={'request': request}).data},
+                {
+                    "message": "This bill is already approved.",
+                    "bill": enrich_bill_with_fine_evidence(
+                        request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
+                    ),
+                },
                 status=status.HTTP_200_OK,
             )
 
@@ -313,32 +416,29 @@ class AdminAuditBillView(APIView):
             if bill.tenancy and bill.tenancy.is_active:
                 create_next_cycle_bill(bill)
 
-            try:
-                send_mail(
-                    subject=f"SmartRent - Payment Approved for Room {bill.room.room_number} ({bill.billing_month_label})",
-                    message=(
-                        f"Namaste {bill.tenant.full_name},\n\n"
-                        f"Your payment of Rs. {bill.total_payable} for Room {bill.room.room_number} "
-                        f"({bill.billing_month_label}) has been verified and approved!\n\n"
-                        f"Breakdown:\n"
-                        f"• Room Rent: Rs. {bill.base_rent}\n"
-                        f"• Water Bill: Rs. {bill.water_bill}\n"
-                        f"• Electricity: {bill.units_consumed} units × Rs. {bill.electricity_rate} = Rs. {bill.electricity_amount}\n"
-                        f"• Damage Fine: Rs. {bill.damage_fine_amount}\n"
-                        f"• Total Paid: Rs. {bill.total_payable}\n\n"
-                        f"Thank you!\n— SmartRent House Management"
-                    ),
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[bill.tenant.email],
-                    fail_silently=True,
-                )
-            except Exception:
-                pass
+            send_billing_notification_email(
+                recipient_email=bill.tenant.email,
+                subject=f"SmartRent - Payment Approved for Room {bill.room.room_number} ({bill.billing_month_label})",
+                message_body=(
+                    f"Namaste {bill.tenant.full_name},\n\n"
+                    f"Your payment of Rs. {bill.total_payable} for Room {bill.room.room_number} "
+                    f"({bill.billing_month_label}) has been verified and approved!\n\n"
+                    f"Breakdown:\n"
+                    f"• Room Rent: Rs. {bill.base_rent}\n"
+                    f"• Water Bill: Rs. {bill.water_bill}\n"
+                    f"• Electricity: {bill.units_consumed} units × Rs. {bill.electricity_rate} = Rs. {bill.electricity_amount}\n"
+                    f"• Damage / Rule Fine: Rs. {bill.damage_fine_amount}\n"
+                    f"• Total Paid: Rs. {bill.total_payable}\n\n"
+                    f"Thank you!\n— SmartRent House Management"
+                ),
+            )
 
             return Response(
                 {
                     "message": f"Bill for Room {bill.room.room_number} approved and receipt issued!",
-                    "bill": MonthlyBillSerializer(bill, context={'request': request}).data,
+                    "bill": enrich_bill_with_fine_evidence(
+                        request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
+                    ),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -350,26 +450,123 @@ class AdminAuditBillView(APIView):
         return Response(
             {
                 "message": f"Bill for Room {bill.room.room_number} rejected. Tenant notified to re-upload.",
-                "bill": MonthlyBillSerializer(bill, context={'request': request}).data,
+                "bill": enrich_bill_with_fine_evidence(
+                    request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
+                ),
             },
             status=status.HTTP_200_OK,
         )
 
 
+def _get_or_create_open_bill_for_tenant(target_user):
+    """
+    Finds an existing open bill for target_user, or automatically creates one
+    so Admin can apply a fine or cash override even if the user hasn't had a bill generated yet!
+    """
+    open_bill = (
+        MonthlyBill.objects.select_for_update()
+        .select_related('room', 'tenant', 'tenancy')
+        .filter(tenant=target_user, status__in=['UNPAID', 'PENDING_VERIFICATION', 'REJECTED'])
+        .order_by('-due_date', '-created_at')
+        .first()
+    )
+    if open_bill:
+        return open_bill
+
+    tenancy = (
+        Tenancy.objects.filter(tenant=target_user, is_active=True)
+        .select_related('room')
+        .first()
+    )
+    today = timezone.localdate()
+
+    if tenancy:
+        room = tenancy.room
+        due_date = (
+            tenancy.get_next_due_date()
+            if hasattr(tenancy, 'get_next_due_date')
+            else add_one_month_safe(today)
+        )
+        base_rent = room.base_rent
+        water_bill = room.fixed_water_bill
+        elec_rate = room.electricity_rate_per_unit
+        prev_meter = room.current_meter_reading
+    else:
+        room = Room.objects.first()
+        if not room:
+            room = Room.objects.create(
+                room_number='A1',
+                floor='GROUND',
+                room_type='STANDARD',
+                title='Ground Floor Unit A1',
+                base_rent=Decimal('3800.00'),
+                fixed_water_bill=Decimal('100.00'),
+                electricity_rate_per_unit=Decimal('15.00'),
+            )
+        tenancy = Tenancy.objects.filter(tenant=target_user).order_by('-id').first()
+        if not tenancy:
+            tenancy = Tenancy.objects.create(
+                room=room,
+                tenant=target_user,
+                entry_date=today,
+                starting_meter_reading=room.current_meter_reading,
+                is_active=False,
+                move_out_date=today,
+            )
+        due_date = add_one_month_safe(today)
+        base_rent = Decimal('0.00')
+        water_bill = Decimal('0.00')
+        elec_rate = room.electricity_rate_per_unit
+        prev_meter = room.current_meter_reading
+
+    return MonthlyBill.objects.create(
+        tenancy=tenancy,
+        room=room,
+        tenant=target_user,
+        billing_month_label=due_date.strftime("%B %Y"),
+        cycle_start_date=today,
+        cycle_end_date=due_date,
+        due_date=due_date,
+        base_rent=base_rent,
+        water_bill=water_bill,
+        electricity_rate=elec_rate,
+        previous_meter_reading=prev_meter,
+        status='UNPAID',
+    )
+
+
 class AdminCashOverrideView(APIView):
+    """
+    Allows Admin to record a cash payment by selecting either an existing bill_id OR a tenant_id.
+    """
     permission_classes = [IsAdminUserRole]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @transaction.atomic
     def post(self, request):
-        serializer = AdminCashOverrideSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        bill_id = request.data.get('bill_id')
+        tenant_id = request.data.get('tenant_id')
 
-        bill = get_object_or_404(
-            MonthlyBill.objects.select_for_update().select_related('room', 'tenant', 'tenancy'),
-            id=serializer.validated_data['bill_id'],
+        if bill_id and str(bill_id).isdigit() and int(bill_id) > 0:
+            bill = get_object_or_404(
+                MonthlyBill.objects.select_for_update().select_related('room', 'tenant', 'tenancy'),
+                id=int(bill_id),
+            )
+        elif tenant_id and str(tenant_id).isdigit() and int(tenant_id) > 0:
+            target_user = get_object_or_404(User, id=int(tenant_id))
+            bill = _get_or_create_open_bill_for_tenant(target_user)
+        else:
+            return Response(
+                {"error": "Please select a valid bill or tenant to record cash payment."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_reading = request.data.get('current_meter_reading')
+        new_reading = (
+            Decimal(str(raw_reading))
+            if raw_reading not in (None, '')
+            else bill.previous_meter_reading
         )
-        new_reading = serializer.validated_data['current_meter_reading']
 
         if new_reading < bill.previous_meter_reading:
             return Response(
@@ -383,11 +580,14 @@ class AdminCashOverrideView(APIView):
             )
 
         bill.current_meter_reading = new_reading
-        bill.damage_fine_amount = serializer.validated_data.get('damage_fine_amount', Decimal('0.00'))
-        bill.damage_fine_reason = serializer.validated_data.get('damage_fine_reason', '')
-        bill.admin_remarks = serializer.validated_data.get('admin_remarks', 'Paid via Cash directly to Admin')
-        if serializer.validated_data.get('meter_photo_proof'):
-            bill.meter_photo_proof = serializer.validated_data['meter_photo_proof']
+        if request.data.get('damage_fine_amount') not in (None, ''):
+            bill.damage_fine_amount = Decimal(str(request.data.get('damage_fine_amount')))
+        if request.data.get('damage_fine_reason'):
+            bill.damage_fine_reason = str(request.data.get('damage_fine_reason')).strip()
+        bill.admin_remarks = request.data.get('admin_remarks', 'Paid via Cash directly to Admin')
+
+        if request.FILES.get('meter_photo_proof'):
+            bill.meter_photo_proof = request.FILES['meter_photo_proof']
 
         bill.payment_method = 'CASH'
         bill.status = 'PAID_CASH'
@@ -403,8 +603,13 @@ class AdminCashOverrideView(APIView):
 
         return Response(
             {
-                "message": f"Cash payment of Rs. {bill.total_payable} recorded for Room {bill.room.room_number}!",
-                "bill": MonthlyBillSerializer(bill, context={'request': request}).data,
+                "message": (
+                    f"Cash payment of Rs. {bill.total_payable} recorded for "
+                    f"{bill.tenant.full_name} (Room {bill.room.room_number})!"
+                ),
+                "bill": enrich_bill_with_fine_evidence(
+                    request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
+                ),
             },
             status=status.HTTP_200_OK,
         )
@@ -462,22 +667,206 @@ class BulkGenerateBillsView(APIView):
 
 
 class AdminApplyFineView(APIView):
+    """
+    Allows Admin to apply a fine (SET or ADD mode) OR completely UNDO/REMOVE a fine.
+    Supports selecting either bill_id or tenant_id, uploading evidence photos,
+    and sending automated email notifications to the tenant.
+    """
     permission_classes = [IsAdminUserRole]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @transaction.atomic
-    def post(self, request, bill_id):
-        bill = get_object_or_404(MonthlyBill.objects.select_for_update(), id=bill_id)
-        serializer = AdminApplyFineSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+    def post(self, request, bill_id=0):
+        target_bill_id = bill_id or request.data.get('bill_id')
+        target_tenant_id = request.data.get('tenant_id')
 
-        bill.damage_fine_amount = serializer.validated_data['damage_fine_amount']
-        bill.damage_fine_reason = serializer.validated_data['damage_fine_reason']
+        if target_bill_id and str(target_bill_id).isdigit() and int(target_bill_id) > 0:
+            bill = get_object_or_404(
+                MonthlyBill.objects.select_for_update().select_related('room', 'tenant', 'tenancy'),
+                id=int(target_bill_id),
+            )
+        elif target_tenant_id and str(target_tenant_id).isdigit() and int(target_tenant_id) > 0:
+            target_user = get_object_or_404(User, id=int(target_tenant_id))
+            bill = _get_or_create_open_bill_for_tenant(target_user)
+        else:
+            return Response(
+                {"error": "Please select a Tenant or an active Bill to apply the fine."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        mode = str(request.data.get('fine_mode') or 'SET').upper()
+
+        # -------------------------------------------------------------
+        # UNDO / REMOVE FINE LOGIC
+        # -------------------------------------------------------------
+        if mode == 'UNDO':
+            bill.damage_fine_amount = Decimal('0.00')
+            bill.damage_fine_reason = ''
+            bill.save()
+
+            meta_map = _read_fine_metadata()
+            bill_key = str(bill.id)
+            if bill_key in meta_map:
+                for p in meta_map[bill_key].get("paths", []):
+                    if p and default_storage.exists(p):
+                        try:
+                            default_storage.delete(p)
+                        except Exception:
+                            pass
+                del meta_map[bill_key]
+                _write_fine_metadata(meta_map)
+
+            email_subject = f"✅ SmartRent Notice — Fine Removed (Room {bill.room.room_number})"
+            email_body = (
+                f"Namaste {bill.tenant.full_name},\n\n"
+                f"The property damage / rule violation fine previously applied to your account "
+                f"for Room {bill.room.room_number} ({bill.billing_month_label}) has been "
+                f"successfully REMOVED by the Admin.\n\n"
+                f"Your updated Grand Total Payable is: Rs. {bill.total_payable}.\n\n"
+                f"Thank you,\n— SmartRent House Management"
+            )
+            email_sent = send_billing_notification_email(
+                bill.tenant.email, email_subject, email_body
+            )
+
+            serialized_bill = enrich_bill_with_fine_evidence(
+                request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
+            )
+            return Response(
+                {
+                    "message": f"Fine successfully removed from {bill.tenant.full_name}'s bill.",
+                    "email_sent": email_sent,
+                    "bill": serialized_bill,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # -------------------------------------------------------------
+        # SET / ADD FINE LOGIC
+        # -------------------------------------------------------------
+        raw_amount = request.data.get('damage_fine_amount')
+        reason = str(request.data.get('damage_fine_reason') or '').strip()
+
+        if raw_amount in (None, '') or Decimal(str(raw_amount)) <= Decimal('0.00'):
+            return Response(
+                {"error": "Please enter a valid fine amount greater than Rs. 0."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not reason:
+            return Response(
+                {"error": "Please enter a clear reason for the fine."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        fine_amount = Decimal(str(raw_amount))
+        if mode == 'ADD':
+            bill.damage_fine_amount = (bill.damage_fine_amount or Decimal('0.00')) + fine_amount
+            if bill.damage_fine_reason:
+                bill.damage_fine_reason = f"{bill.damage_fine_reason} | {reason}"
+            else:
+                bill.damage_fine_reason = reason
+        else:
+            # Default 'SET': replaces fine amount directly so 600 stays 600
+            bill.damage_fine_amount = fine_amount
+            bill.damage_fine_reason = reason
+
         bill.save()
+
+        # Process optional uploaded evidence images
+        evidence_files = (
+            request.FILES.getlist('evidence_images')
+            or request.FILES.getlist('evidence_image')
+            or ([request.FILES['evidence_image']] if 'evidence_image' in request.FILES else [])
+        )
+
+        meta_map = _read_fine_metadata()
+        bill_key = str(bill.id)
+        existing_entry = meta_map.get(bill_key, {"paths": []})
+        saved_paths = list(existing_entry.get("paths", [])) if mode == 'ADD' else []
+
+        # If replacing fine (SET) and new files are uploaded, clean up old evidence files
+        if mode == 'SET' and evidence_files:
+            for old_p in existing_entry.get("paths", []):
+                if old_p and default_storage.exists(old_p):
+                    try:
+                        default_storage.delete(old_p)
+                    except Exception:
+                        pass
+        elif mode == 'SET' and not evidence_files:
+            saved_paths = list(existing_entry.get("paths", []))
+
+        for idx, img_file in enumerate(evidence_files):
+            err = validate_uploaded_image(img_file, f"Evidence Image #{idx + 1}")
+            if err:
+                return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+            ext = os.path.splitext(img_file.name)[1].lower() or '.jpg'
+            rel_path = default_storage.save(
+                f"fine_proofs/bill_{bill.id}_fine_{int(timezone.now().timestamp())}_{idx}{ext}",
+                img_file,
+            )
+            saved_paths.append(rel_path)
+
+        meta_map[bill_key] = {
+            "paths": saved_paths,
+            "applied_at": timezone.now().strftime("%b %d, %Y %I:%M %p"),
+            "reason": bill.damage_fine_reason,
+            "amount": float(bill.damage_fine_amount),
+        }
+        _write_fine_metadata(meta_map)
+
+        evidence_urls = []
+        for p in saved_paths:
+            if default_storage.exists(p):
+                try:
+                    evidence_urls.append(request.build_absolute_uri(default_storage.url(p)))
+                except Exception:
+                    pass
+
+        evidence_email_section = ""
+        if evidence_urls:
+            links_formatted = "\n".join(
+                [f"• Photo {i + 1}: {u}" for i, u in enumerate(evidence_urls)]
+            )
+            evidence_email_section = f"\nAttached Evidence Photo(s):\n{links_formatted}\n"
+
+        email_subject = (
+            f"⚠️ SmartRent Official Fine Notice — Rs. {bill.damage_fine_amount} "
+            f"({bill.billing_month_label})"
+        )
+        email_body = (
+            f"Namaste {bill.tenant.full_name},\n\n"
+            f"An official property damage / rule violation fine has been applied to your SmartRent account.\n\n"
+            f"Fine Details:\n"
+            f"• Tenant Name: {bill.tenant.full_name}\n"
+            f"• Room / Unit: Room {bill.room.room_number} ({bill.billing_month_label})\n"
+            f"• Fine Amount: Rs. {bill.damage_fine_amount}\n"
+            f"• Reason / Violation: {bill.damage_fine_reason}\n"
+            f"• Updated Grand Total Payable: Rs. {bill.total_payable}\n"
+            f"{evidence_email_section}\n"
+            f"You can view the full breakdown and attached inspection photos in your SmartRent Tenant Dashboard.\n\n"
+            f"— SmartRent House Management"
+        )
+        email_sent = send_billing_notification_email(
+            bill.tenant.email, email_subject, email_body
+        )
+
+        serialized_bill = enrich_bill_with_fine_evidence(
+            request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
+        )
 
         return Response(
             {
-                "message": f"Damage fine of Rs. {bill.damage_fine_amount} applied to Room {bill.room.room_number}.",
-                "bill": MonthlyBillSerializer(bill, context={'request': request}).data,
+                "message": (
+                    f"Fine of Rs. {bill.damage_fine_amount} applied to {bill.tenant.full_name} "
+                    f"(Room {bill.room.room_number})"
+                    + (
+                        f" and email notification sent to {bill.tenant.email}!"
+                        if email_sent
+                        else "!"
+                    )
+                ),
+                "email_sent": email_sent,
+                "bill": serialized_bill,
             },
             status=status.HTTP_200_OK,
         )
