@@ -14,7 +14,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com').split(',')
+    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,*,.onrender.com').split(',')
     if host.strip()
 ]
 
@@ -97,11 +97,17 @@ DATABASES = {
 }
 
 if os.getenv('DATABASE_URL'):
+    # conn_max_age=60 reuses the connection during active clicks so requests never fail,
+    # and closes it 60 seconds after the user stops so Neon DB still sleeps!
     DATABASES['default'] = dj_database_url.config(
         default=os.getenv('DATABASE_URL'),
-        conn_max_age=600,
+        conn_max_age=60,
         ssl_require=True,
     )
+
+# Allow uploads up to 10 MB in memory/multipart
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 # Django REST Framework & JWT
 REST_FRAMEWORK = {
@@ -155,7 +161,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Backend (Gmail SMTP)
+# Google Apps Script Webhook URL (For Render HTTPS Email Relay)
+GOOGLE_SCRIPT_WEBHOOK_URL = os.getenv(
+    'GOOGLE_SCRIPT_WEBHOOK_URL',
+    'https://script.google.com/macros/s/AKfycbyR-zrqDMh9Oq8yUdUxoa1VtAIw7FfMjwsIJdOMVVRrhx-tOfm5zCpEP16X_Vkv_X4C/exec'
+)
+GOOGLE_SCRIPT_SECRET = os.getenv('GOOGLE_SCRIPT_SECRET', 'SMARTRENT_SECRET_2026')
+
+# Standard SMTP Email Backend
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
