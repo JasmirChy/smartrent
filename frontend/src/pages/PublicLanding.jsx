@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,6 +20,10 @@ import {
   Loader2,
   X,
   BellRing,
+  Play,
+  Pause,
+  ZoomIn,
+  Layers,
 } from 'lucide-react';
 import axiosClient, { createReservation } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
@@ -27,15 +31,58 @@ import { useAuth } from '../context/AuthContext';
 const DEFAULT_HERO_IMAGE =
   'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=85';
 
+const MAX_BANNER_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+function getSafeMediaUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
+
+  const currentHost = window.location.hostname;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  let backendOrigin = 'http://localhost:8000';
+  try {
+    backendOrigin = new URL(apiBase).origin;
+  } catch {
+    backendOrigin = `http://${currentHost || 'localhost'}:8000`;
+  }
+
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (backendOrigin.includes('localhost') || backendOrigin.includes('127.0.0.1'))
+  ) {
+    backendOrigin = `http://${currentHost}:8000`;
+  }
+
+  if (rawUrl.startsWith('/')) {
+    return `${backendOrigin}${rawUrl}`;
+  }
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (rawUrl.includes('://localhost:') || rawUrl.includes('://127.0.0.1:'))
+  ) {
+    return rawUrl
+      .replace('://localhost:', `://${currentHost}:`)
+      .replace('://127.0.0.1:', `://${currentHost}:`);
+  }
+  return rawUrl;
+}
+
 export default function PublicLanding() {
   const { user, isAdmin, openAuthModal } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // UI Filter & Accordion States
+  // UI Filter & Slideshow States
   const [floorFilter, setFloorFilter] = useState('ALL'); // ALL | GROUND | FIRST
   const [availableOnly, setAvailableOnly] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const [isHoveringHero, setIsHoveringHero] = useState(false);
+  const [showLightbox, setShowLightbox] = useState(false);
   const [openRuleIndex, setOpenRuleIndex] = useState(0);
 
   // Reservation Modal States
@@ -51,23 +98,70 @@ export default function PublicLanding() {
   const [citizenshipDoc, setCitizenshipDoc] = useState(null);
   const [reservationMsg, setReservationMsg] = useState({ type: '', text: '' });
 
-  // Admin Hero Banner Manager States
+  // Admin Multi-Image Hero Banner Manager States
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [bannerTitle, setBannerTitle] = useState('Studio B2 • Balcony Suite');
-  const [bannerSubtitle, setBannerSubtitle] = useState('Sub-meter #M-202 • Digital Telemetry Active');
+  const [bannerSubtitle, setBannerSubtitle] = useState(
+    'Sub-meter #M-202 • Digital Telemetry Active'
+  );
   const [bannerBadge, setBannerBadge] = useState('Physical Inspection Passed');
-  const [bannerFile, setBannerFile] = useState(null);
+  const [bannerFiles, setBannerFiles] = useState([]); // Array of File objects
+  const [bannerPreviews, setBannerPreviews] = useState([]); // Array of { name, url, sizeMB }
+  const [bannerFeedback, setBannerFeedback] = useState({ type: '', text: '' });
 
-  // Fetch live Landing Data (Now includes active notices!)
+  // Fetch live Landing Data
   const { data, isLoading } = useQuery({
     queryKey: ['publicLandingData'],
     queryFn: async () => {
       const res = await axiosClient.get('/rooms/landing/');
       return res.data;
     },
+    refetchInterval: 4000,
   });
 
-  // Admin Mutation: Upload New Hero Image
+  const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
+  const rawBanners = Array.isArray(data?.banners) ? data.banners : [];
+  const rules = Array.isArray(data?.rules) ? data.rules : [];
+  const notices = Array.isArray(data?.notices) ? data.notices : [];
+  const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
+
+  // Normalize banner image URLs for both laptop and mobile
+  const banners = rawBanners.map((b) => ({
+    ...b,
+    resolved_url:
+      getSafeMediaUrl(b.image_path || b.image_url || b.image) || DEFAULT_HERO_IMAGE,
+  }));
+
+  // Keep activeSlide in bounds when banners array changes
+  useEffect(() => {
+    if (banners.length > 0 && activeSlide >= banners.length) {
+      setActiveSlide(0);
+    }
+  }, [banners.length, activeSlide]);
+
+  // Auto-advance slideshow timer (every 4.5 seconds unless paused or hovered)
+  useEffect(() => {
+    if (!isAutoPlaying || isHoveringHero || showLightbox || banners.length <= 1) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % banners.length);
+    }, 4500);
+    return () => clearInterval(timer);
+  }, [isAutoPlaying, isHoveringHero, showLightbox, banners.length]);
+
+  // Clean up object URLs
+  useEffect(() => {
+    return () => {
+      bannerPreviews.forEach((p) => {
+        if (p.url && p.url.startsWith('blob:')) {
+          URL.revokeObjectURL(p.url);
+        }
+      });
+    };
+  }, [bannerPreviews]);
+
+  // Admin Mutation: Upload Multiple Hero Images at once
   const uploadBannerMutation = useMutation({
     mutationFn: async (formData) => {
       const res = await axiosClient.post('/rooms/banners/', formData, {
@@ -75,10 +169,24 @@ export default function PublicLanding() {
       });
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (resData) => {
       queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
-      setBannerFile(null);
-      setShowBannerEditor(false);
+      setBannerFiles([]);
+      setBannerPreviews([]);
+      setActiveSlide(0);
+      setBannerFeedback({
+        type: 'success',
+        text: resData?.message || 'Hero slideshow images uploaded successfully!',
+      });
+    },
+    onError: (err) => {
+      setBannerFeedback({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          'Failed to upload banner image(s). Make sure each image is under 5 MB.',
+      });
     },
   });
 
@@ -88,8 +196,12 @@ export default function PublicLanding() {
       await axiosClient.delete(`/rooms/banners/${bannerId}/`);
     },
     onSuccess: () => {
-      setActiveSlide(0);
+      setActiveSlide((prev) => Math.max(0, prev - 1));
       queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
+      setBannerFeedback({
+        type: 'success',
+        text: 'Slide removed from hero slideshow.',
+      });
     },
   });
 
@@ -120,15 +232,70 @@ export default function PublicLanding() {
     },
   });
 
+  const handleSelectMultipleBannerFiles = (e) => {
+    const selectedList = Array.from(e.target.files || []);
+    if (selectedList.length === 0) return;
+
+    const validFiles = [];
+    const newPreviews = [];
+
+    for (const file of selectedList) {
+      if (file.size > MAX_BANNER_SIZE_BYTES) {
+        setBannerFeedback({
+          type: 'error',
+          text: `"${file.name}" exceeds the 5 MB limit (${(file.size / 1024 / 1024).toFixed(
+            2
+          )} MB).`,
+        });
+        continue;
+      }
+      validFiles.push(file);
+      newPreviews.push({
+        name: file.name,
+        url: URL.createObjectURL(file),
+        sizeMB: (file.size / (1024 * 1024)).toFixed(2),
+      });
+    }
+
+    if (validFiles.length > 0) {
+      setBannerFiles((prev) => [...prev, ...validFiles]);
+      setBannerPreviews((prev) => [...prev, ...newPreviews]);
+      setBannerFeedback({
+        type: 'info',
+        text: `${validFiles.length} image(s) queued for slideshow upload. Click "Upload to Slideshow" below.`,
+      });
+    }
+    e.target.value = '';
+  };
+
+  const removeQueuedBannerFile = (indexToRemove) => {
+    setBannerFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    setBannerPreviews((prev) => {
+      const target = prev[indexToRemove];
+      if (target?.url?.startsWith('blob:')) {
+        URL.revokeObjectURL(target.url);
+      }
+      return prev.filter((_, idx) => idx !== indexToRemove);
+    });
+  };
+
   const handleBannerUpload = (e) => {
     e.preventDefault();
-    if (!bannerFile) return;
+    if (bannerFiles.length === 0) {
+      setBannerFeedback({
+        type: 'error',
+        text: 'Please select one or more images first.',
+      });
+      return;
+    }
     const formData = new FormData();
     formData.append('title', bannerTitle);
     formData.append('subtitle', bannerSubtitle);
     formData.append('badge_text', bannerBadge);
-    formData.append('image', bannerFile);
-    formData.append('is_active', true);
+    formData.append('is_active', 'true');
+    bannerFiles.forEach((file) => {
+      formData.append('images', file);
+    });
     uploadBannerMutation.mutate(formData);
   };
 
@@ -151,21 +318,14 @@ export default function PublicLanding() {
     reserveMutation.mutate(formData);
   };
 
-  const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
-  const banners = Array.isArray(data?.banners) ? data.banners : [];
-  const rules = Array.isArray(data?.rules) ? data.rules : [];
-  const notices = Array.isArray(data?.notices) ? data.notices : [];
-  const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
-
   const currentBanner = banners[activeSlide] || {
     id: null,
     title: 'Smart House Rental • Ground & 1st Floor',
     subtitle: 'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
     badge_text: 'Verified Direct-Landlord Listing',
-    image_url: DEFAULT_HERO_IMAGE,
+    resolved_url: DEFAULT_HERO_IMAGE,
   };
 
-  // Foolproof floor filter: matches both DB floor value AND room_number prefix (A1-A4 vs B1-B5)
   const filterRoomList = (floorCode) => {
     return rooms.filter((r) => {
       const roomNo = String(r.room_number || '').trim().toUpperCase();
@@ -198,7 +358,8 @@ export default function PublicLanding() {
             LIVE TELEMETRY
           </span>
           <span>
-            Automated Digital Sub-Metering Active • Transparent Utility Billing (Electricity Rs. 15/unit • Water Rs. 100/room)
+            Automated Digital Sub-Metering Active • Transparent Utility Billing (Electricity Rs.
+            15/unit • Water Rs. 100/room)
           </span>
         </div>
       </div>
@@ -212,9 +373,18 @@ export default function PublicLanding() {
               Official House Announcements
             </div>
             {notices.map((notice) => (
-              <div key={notice.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-white/10 p-2.5 rounded-xl backdrop-blur-xs">
+              <div
+                key={notice.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-white/10 p-2.5 rounded-xl backdrop-blur-xs"
+              >
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${notice.category === 'URGENT' ? 'bg-rose-600 text-white animate-pulse' : 'bg-indigo-500 text-white'}`}>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                      notice.category === 'URGENT'
+                        ? 'bg-rose-600 text-white animate-pulse'
+                        : 'bg-indigo-500 text-white'
+                    }`}
+                  >
                     {notice.category_display || notice.category}
                   </span>
                   <span className="font-bold">{notice.title}:</span>
@@ -229,10 +399,11 @@ export default function PublicLanding() {
         </div>
       )}
 
-      {/* HERO SECTION */}
+      {/* HERO SECTION WITH MULTI-IMAGE SLIDESHOW CAROUSEL */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-14 lg:py-16">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-          <div className="lg:col-span-6 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+          {/* Left Column: Headline & CTA */}
+          <div className="lg:col-span-6 space-y-6 lg:pt-4">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-200/60 text-indigo-700 text-xs font-semibold">
               <ShieldCheck className="w-4 h-4 text-indigo-600" />
               Verified Direct-Landlord Rental Portal
@@ -244,7 +415,9 @@ export default function PublicLanding() {
             </h1>
 
             <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl">
-              Zero utility squabbles, transparent digital electricity and water calculation, and instant online/cash rent receipts. Designed for disciplined students, professionals, and peaceful living.
+              Zero utility squabbles, transparent digital electricity and water calculation, and
+              instant online/cash rent receipts. Designed for disciplined students, professionals,
+              and peaceful living.
             </p>
 
             <div className="rounded-2xl bg-white p-4 border border-slate-200/80 shadow-sm flex items-center justify-between max-w-lg">
@@ -304,62 +477,119 @@ export default function PublicLanding() {
             </div>
           </div>
 
+          {/* Right Column: Interactive Multi-Image Slideshow Card */}
           <div className="lg:col-span-6">
-            <div className="relative rounded-3xl bg-white p-2.5 sm:p-3.5 shadow-2xl shadow-indigo-950/10 border border-slate-200/80">
-              <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] rounded-2xl overflow-hidden bg-slate-900">
+            <div
+              onMouseEnter={() => setIsHoveringHero(true)}
+              onMouseLeave={() => setIsHoveringHero(false)}
+              className="relative rounded-3xl bg-white p-2.5 sm:p-3.5 shadow-2xl shadow-indigo-950/10 border border-slate-200/80"
+            >
+              {/* Main Slideshow Viewport */}
+              <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] rounded-2xl overflow-hidden bg-slate-900 group">
                 <img
-                  src={currentBanner.image_url || DEFAULT_HERO_IMAGE}
+                  key={currentBanner.id || activeSlide}
+                  src={currentBanner.resolved_url}
                   alt={currentBanner.title}
-                  className="w-full h-full object-cover transition-all duration-500"
+                  onClick={() => setShowLightbox(true)}
+                  className="w-full h-full object-cover transition-all duration-700 cursor-pointer group-hover:scale-[1.02]"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-slate-950/20" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/15 to-slate-950/30 pointer-events-none" />
 
-                <div className="absolute top-3.5 left-3.5 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-xs font-bold shadow-md">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  {currentBanner.badge_text || 'Verified House Inspection'}
+                {/* Top Left Badge + Slide Counter */}
+                <div className="absolute top-3.5 left-3.5 flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-xs font-bold shadow-md">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    {currentBanner.badge_text || 'Verified House Inspection'}
+                  </div>
+
+                  {banners.length > 1 && (
+                    <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white text-[11px] font-extrabold border border-white/15">
+                      {activeSlide + 1} / {banners.length}
+                    </span>
+                  )}
                 </div>
 
-                {isAdmin && (
-                  <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
+                {/* Top Right Controls: Fullscreen Zoom, Auto-Play Toggle & Admin Manager */}
+                <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
+                  {banners.length > 1 && (
                     <button
-                      onClick={() => setShowBannerEditor(!showBannerEditor)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg transition"
+                      type="button"
+                      onClick={() => setIsAutoPlaying((prev) => !prev)}
+                      className="p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
+                      title={isAutoPlaying ? 'Pause Slideshow' : 'Play Slideshow'}
                     >
-                      <ImagePlus className="w-3.5 h-3.5" />
-                      {showBannerEditor ? 'Close Editor' : 'Manage Viewer Image'}
+                      {isAutoPlaying ? (
+                        <Pause className="w-3.5 h-3.5" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5" />
+                      )}
                     </button>
-                    {currentBanner.id && (
-                      <button
-                        onClick={() => deleteBannerMutation.mutate(currentBanner.id)}
-                        className="p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                )}
+                  )}
 
+                  <button
+                    type="button"
+                    onClick={() => setShowLightbox(true)}
+                    className="p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
+                    title="View Fullscreen Slideshow"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+
+                  {isAdmin && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowBannerEditor(!showBannerEditor)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-lg transition"
+                      >
+                        <ImagePlus className="w-3.5 h-3.5" />
+                        {showBannerEditor ? 'Close Manager' : 'Manage Slideshow'}
+                      </button>
+                      {currentBanner.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Delete this slide from the homepage slideshow?')) {
+                              deleteBannerMutation.mutate(currentBanner.id);
+                            }
+                          }}
+                          className="p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
+                          title="Delete Current Slide"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Left / Right Carousel Arrows */}
                 {banners.length > 1 && (
                   <>
                     <button
+                      type="button"
                       onClick={() =>
                         setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1))
                       }
-                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 hover:bg-white text-slate-900 shadow-md transition"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-lg transition transform hover:scale-105"
+                      title="Previous Slide"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
                     <button
+                      type="button"
                       onClick={() =>
                         setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1))
                       }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 hover:bg-white text-slate-900 shadow-md transition"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-lg transition transform hover:scale-105"
+                      title="Next Slide"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </>
                 )}
 
+                {/* Bottom Caption Card */}
                 <div className="absolute bottom-3.5 inset-x-3.5 rounded-2xl bg-white/95 backdrop-blur-md p-3.5 sm:p-4 shadow-lg flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
@@ -382,74 +612,242 @@ export default function PublicLanding() {
                 </div>
               </div>
 
+              {/* Interactive Thumbnail Filmstrip & Dots */}
               {banners.length > 1 && (
-                <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
-                  {banners.map((b, idx) => (
-                    <button
-                      key={b.id}
-                      onClick={() => setActiveSlide(idx)}
-                      className={`h-1.5 rounded-full transition-all ${
-                        idx === activeSlide ? 'w-6 bg-indigo-600' : 'w-1.5 bg-slate-300'
-                      }`}
-                    />
-                  ))}
+                <div className="pt-3 px-1 space-y-2">
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {banners.map((b, idx) => (
+                      <button
+                        key={b.id || idx}
+                        type="button"
+                        onClick={() => setActiveSlide(idx)}
+                        className={`relative w-16 h-11 rounded-xl overflow-hidden shrink-0 border-2 transition-all ${
+                          idx === activeSlide
+                            ? 'border-indigo-600 ring-2 ring-indigo-600/25 scale-[1.03]'
+                            : 'border-slate-200 opacity-65 hover:opacity-100'
+                        }`}
+                      >
+                        <img
+                          src={b.resolved_url}
+                          alt={b.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-center gap-1.5">
+                    {banners.map((b, idx) => (
+                      <button
+                        key={b.id || idx}
+                        type="button"
+                        onClick={() => setActiveSlide(idx)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          idx === activeSlide ? 'w-6 bg-indigo-600' : 'w-1.5 bg-slate-300'
+                        }`}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
 
+              {/* ADMIN MULTI-IMAGE SLIDESHOW MANAGER PANEL */}
               {isAdmin && showBannerEditor && (
-                <form
-                  onSubmit={handleBannerUpload}
-                  className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3"
-                >
-                  <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider">
-                    Admin: Upload New Homepage Viewer Image
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <input
-                      type="text"
-                      value={bannerTitle}
-                      onChange={(e) => setBannerTitle(e.target.value)}
-                      placeholder="Image Title"
-                      className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                      required
-                    />
-                    <input
-                      type="text"
-                      value={bannerBadge}
-                      onChange={(e) => setBannerBadge(e.target.value)}
-                      placeholder="Top Badge Text"
-                      className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                    />
-                  </div>
-                  <input
-                    type="text"
-                    value={bannerSubtitle}
-                    onChange={(e) => setBannerSubtitle(e.target.value)}
-                    placeholder="Subtitle description"
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setBannerFile(e.target.files?.[0] || null)}
-                      className="text-xs text-slate-600"
-                      required
-                    />
+                <div className="mt-3 p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-indigo-600" />
+                      <p className="text-xs font-extrabold text-indigo-900 uppercase tracking-wider">
+                        Admin: Multi-Image Hero Slideshow Manager ({banners.length} Active Slides)
+                      </p>
+                    </div>
                     <button
-                      type="submit"
-                      disabled={uploadBannerMutation.isPending}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"
+                      type="button"
+                      onClick={() => setShowBannerEditor(false)}
+                      className="text-slate-400 hover:text-slate-600"
                     >
-                      {uploadBannerMutation.isPending ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Upload className="w-3.5 h-3.5" />
-                      )}
-                      Save Hero Image
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
-                </form>
+
+                  {bannerFeedback.text && (
+                    <div
+                      className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
+                        bannerFeedback.type === 'error'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : bannerFeedback.type === 'info'
+                          ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                          : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      }`}
+                    >
+                      <span>{bannerFeedback.text}</span>
+                      <button
+                        type="button"
+                        onClick={() => setBannerFeedback({ type: '', text: '' })}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Existing Slides Strip with Quick Delete */}
+                  {banners.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">
+                        Current Published Slides (Click Trash to Remove)
+                      </p>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-36 overflow-y-auto pr-1">
+                        {banners.map((b, idx) => (
+                          <div
+                            key={b.id || idx}
+                            onClick={() => setActiveSlide(idx)}
+                            className={`relative h-16 rounded-xl overflow-hidden border cursor-pointer group ${
+                              idx === activeSlide
+                                ? 'border-indigo-600 ring-2 ring-indigo-600/20'
+                                : 'border-slate-200'
+                            }`}
+                          >
+                            <img
+                              src={b.resolved_url}
+                              alt={b.title}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-between px-2">
+                              <span className="text-[10px] font-extrabold text-white">
+                                #{idx + 1}
+                              </span>
+                              {b.id && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteBannerMutation.mutate(b.id);
+                                  }}
+                                  className="p-1 rounded-lg bg-rose-600 text-white hover:bg-rose-700"
+                                  title="Delete Slide"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upload New Single or Multiple Slides Form */}
+                  <form onSubmit={handleBannerUpload} className="space-y-3 pt-2 border-t border-slate-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input
+                        type="text"
+                        value={bannerTitle}
+                        onChange={(e) => setBannerTitle(e.target.value)}
+                        placeholder="Slide Title (e.g. Studio B2 • Balcony)"
+                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                        required
+                      />
+                      <input
+                        type="text"
+                        value={bannerBadge}
+                        onChange={(e) => setBannerBadge(e.target.value)}
+                        placeholder="Top Badge Text"
+                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={bannerSubtitle}
+                      onChange={(e) => setBannerSubtitle(e.target.value)}
+                      placeholder="Subtitle description"
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                    />
+
+                    {/* Multi-file Dropzone */}
+                    <label className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-indigo-300 hover:border-indigo-600 bg-white cursor-pointer transition text-center">
+                      <Upload className="w-5 h-5 text-indigo-600 mb-1" />
+                      <span className="text-xs font-extrabold text-slate-800">
+                        Select Multiple Hero Banner Images
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        You can select 1 or multiple photos at once (JPG, PNG, WEBP, HEIC up to 5 MB each)
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.avif"
+                        multiple
+                        onChange={handleSelectMultipleBannerFiles}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {/* Preview Queued Files Before Upload */}
+                    {bannerPreviews.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-bold text-indigo-700">
+                          Ready to Upload ({bannerPreviews.length} selected):
+                        </p>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {bannerPreviews.map((item, idx) => (
+                            <div
+                              key={idx}
+                              className="relative h-16 rounded-xl overflow-hidden border border-indigo-200 bg-white"
+                            >
+                              <img
+                                src={item.url}
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeQueuedBannerFile(idx)}
+                                className="absolute top-1 right-1 p-1 rounded-full bg-slate-900/75 text-white hover:bg-rose-600"
+                                title="Remove from queue"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                              <span className="absolute bottom-0.5 left-1 px-1.5 py-0.2 rounded bg-black/60 text-white text-[9px] font-bold">
+                                {item.sizeMB} MB
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      {bannerFiles.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBannerFiles([]);
+                            setBannerPreviews([]);
+                          }}
+                          className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                        >
+                          Clear Queue
+                        </button>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={uploadBannerMutation.isPending || bannerFiles.length === 0}
+                        className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-md transition"
+                      >
+                        {uploadBannerMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Uploading Slides...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-3.5 h-3.5" />
+                            Upload {bannerFiles.length > 0 ? `${bannerFiles.length} Slide(s)` : 'to Slideshow'}
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               )}
             </div>
           </div>
@@ -650,6 +1048,95 @@ export default function PublicLanding() {
           })}
         </div>
       </section>
+
+      {/* FULLSCREEN HERO SLIDESHOW LIGHTBOX MODAL */}
+      {showLightbox && (
+        <div
+          onClick={() => setShowLightbox(false)}
+          className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 select-none"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center justify-between text-white pb-3 border-b border-white/10"
+          >
+            <div>
+              <h3 className="text-sm sm:text-base font-extrabold">{currentBanner.title}</h3>
+              <p className="text-xs text-slate-400">{currentBanner.subtitle}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {banners.length > 1 && (
+                <span className="px-3 py-1 rounded-full bg-white/10 text-xs font-bold">
+                  {activeSlide + 1} / {banners.length}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowLightbox(false)}
+                className="p-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="relative flex-1 flex items-center justify-center my-4 overflow-hidden">
+            {banners.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1));
+                }}
+                className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            <img
+              src={currentBanner.resolved_url}
+              alt={currentBanner.title}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl"
+            />
+
+            {banners.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1));
+                }}
+                className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          {banners.length > 1 && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-center gap-2 overflow-x-auto py-2"
+            >
+              {banners.map((b, idx) => (
+                <button
+                  key={b.id || idx}
+                  type="button"
+                  onClick={() => setActiveSlide(idx)}
+                  className={`w-16 h-12 rounded-xl overflow-hidden border-2 transition shrink-0 ${
+                    idx === activeSlide
+                      ? 'border-indigo-400 scale-105'
+                      : 'border-white/20 opacity-60 hover:opacity-100'
+                  }`}
+                >
+                  <img src={b.resolved_url} alt={b.title} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ROOM RESERVATION & VISIT BOOKING MODAL */}
       {reservingRoom && (

@@ -1,3 +1,4 @@
+import os
 import calendar
 from datetime import date, datetime
 from decimal import Decimal
@@ -21,6 +22,11 @@ from .serializers import (
     AssignTenantSerializer,
     RoomReservationSerializer,
 )
+
+MAX_BANNER_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_BANNER_EXTENSIONS = {
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg', '.heic', '.heif', '.avif', '.jfif'
+}
 
 
 class IsAdminUserRole(permissions.BasePermission):
@@ -56,7 +62,7 @@ class PublicLandingDataView(APIView):
         Room.objects.filter(room_number__istartswith='A').exclude(floor='GROUND').update(floor='GROUND')
 
         rooms = Room.objects.all().prefetch_related('tenancies__tenant', 'reservations')
-        banners = HeroBanner.objects.filter(is_active=True)
+        banners = HeroBanner.objects.filter(is_active=True).order_by('-id')
         rules = HouseRule.objects.filter(is_active=True)
         notices = Notice.objects.filter(is_active=True).order_by('-created_at')[:5]
 
@@ -64,13 +70,23 @@ class PublicLandingDataView(APIView):
         occupied_rooms = rooms.filter(is_occupied=True).count()
         available_rooms = total_rooms - occupied_rooms
 
+        banners_data = HeroBannerSerializer(banners, many=True, context={'request': request}).data
+        # Ensure every banner has both absolute image_url and relative image_path for mobile safety
+        for idx, b_obj in enumerate(banners):
+            if b_obj.image and idx < len(banners_data):
+                try:
+                    banners_data[idx]['image_url'] = request.build_absolute_uri(b_obj.image.url)
+                    banners_data[idx]['image_path'] = b_obj.image.url
+                except Exception:
+                    pass
+
         return Response({
             "stats": {
                 "total_rooms": total_rooms,
                 "occupied_rooms": occupied_rooms,
                 "available_rooms": available_rooms,
             },
-            "banners": HeroBannerSerializer(banners, many=True, context={'request': request}).data,
+            "banners": banners_data,
             "rooms": RoomSerializer(rooms, many=True, context={'request': request}).data,
             "rules": HouseRuleSerializer(rules, many=True).data,
             "notices": NoticeSerializer(notices, many=True, context={'request': request}).data,
@@ -278,8 +294,11 @@ class RoomReservationActionView(APIView):
             tenant = reservation.user
 
             if reservation.phone_number and not getattr(tenant, 'phone_number', ''):
-                tenant.phone_number = reservation.phone_number
-                tenant.save(update_fields=['phone_number'])
+                try:
+                    tenant.phone_number = reservation.phone_number
+                    tenant.save(update_fields=['phone_number'])
+                except Exception:
+                    pass
 
             Tenancy.objects.filter(room=room, is_active=True).update(
                 is_active=False,
@@ -351,20 +370,23 @@ class MoveOutStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        req = MoveOutRequest.objects.filter(tenant=request.user).order_by('-created_at').first()
-        if not req or req.status == 'REJECTED':
+        try:
+            req = MoveOutRequest.objects.filter(tenant=request.user).order_by('-created_at').first()
+            if not req or req.status == 'REJECTED':
+                return Response({"has_active_request": False, "request": None})
+            return Response({
+                "has_active_request": True,
+                "request": {
+                    "id": req.id,
+                    "room_number": req.room.room_number,
+                    "requested_date": req.requested_date,
+                    "reason": req.reason,
+                    "status": req.status,
+                    "status_display": req.get_status_display(),
+                }
+            })
+        except Exception:
             return Response({"has_active_request": False, "request": None})
-        return Response({
-            "has_active_request": True,
-            "request": {
-                "id": req.id,
-                "room_number": req.room.room_number,
-                "requested_date": req.requested_date,
-                "reason": req.reason,
-                "status": req.status,
-                "status_display": req.get_status_display(),
-            }
-        })
 
 
 class RequestMoveOutView(APIView):
@@ -376,26 +398,29 @@ class RequestMoveOutView(APIView):
         if not active_tenancy:
             return Response({"error": "You do not have an active room tenancy to vacate."}, status=status.HTTP_400_BAD_REQUEST)
 
-        existing = MoveOutRequest.objects.filter(tenancy=active_tenancy, status='PENDING').first()
-        if existing:
-            return Response({"error": "You already have a pending move-out request."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            existing = MoveOutRequest.objects.filter(tenancy=active_tenancy, status='PENDING').first()
+            if existing:
+                return Response({"error": "You already have a pending move-out request."}, status=status.HTTP_400_BAD_REQUEST)
 
-        requested_date = request.data.get('requested_date') or timezone.localdate()
-        reason = request.data.get('reason', '')
+            requested_date = request.data.get('requested_date') or timezone.localdate()
+            reason = request.data.get('reason', '')
 
-        mo = MoveOutRequest.objects.create(
-            tenancy=active_tenancy,
-            room=active_tenancy.room,
-            tenant=request.user,
-            requested_date=requested_date,
-            reason=reason,
-            status='PENDING',
-        )
+            mo = MoveOutRequest.objects.create(
+                tenancy=active_tenancy,
+                room=active_tenancy.room,
+                tenant=request.user,
+                requested_date=requested_date,
+                reason=reason,
+                status='PENDING',
+            )
 
-        return Response({
-            "message": "Move-out request submitted successfully!",
-            "id": mo.id,
-        }, status=status.HTTP_201_CREATED)
+            return Response({
+                "message": "Move-out request submitted successfully!",
+                "id": mo.id,
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"error": f"Could not create move-out request: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PendingMoveOutListView(APIView):
@@ -403,21 +428,24 @@ class PendingMoveOutListView(APIView):
     permission_classes = [IsAdminUserRole]
 
     def get(self, request):
-        qs = MoveOutRequest.objects.filter(status='PENDING').select_related('room', 'tenant')
-        data = [
-            {
-                "id": mo.id,
-                "room_number": mo.room.room_number,
-                "tenant_name": mo.tenant.full_name,
-                "tenant_email": mo.tenant.email,
-                "requested_date": mo.requested_date,
-                "reason": mo.reason,
-                "status": mo.status,
-                "status_display": mo.get_status_display(),
-            }
-            for mo in qs
-        ]
-        return Response(data)
+        try:
+            qs = MoveOutRequest.objects.filter(status='PENDING').select_related('room', 'tenant')
+            data = [
+                {
+                    "id": mo.id,
+                    "room_number": mo.room.room_number,
+                    "tenant_name": mo.tenant.full_name,
+                    "tenant_email": mo.tenant.email,
+                    "requested_date": mo.requested_date,
+                    "reason": mo.reason,
+                    "status": mo.status,
+                    "status_display": mo.get_status_display(),
+                }
+                for mo in qs
+            ]
+            return Response(data)
+        except Exception:
+            return Response([])
 
 
 class ProcessMoveOutRequestView(APIView):
@@ -446,7 +474,6 @@ class ProcessMoveOutRequestView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Generate final settlement bill
             today = timezone.localdate()
             MonthlyBill.objects.create(
                 tenancy=mo.tenancy,
@@ -465,7 +492,6 @@ class ProcessMoveOutRequestView(APIView):
                 admin_remarks='Final move-out settlement invoice.',
             )
 
-            # Close tenancy and mark room available
             mo.tenancy.is_active = False
             mo.tenancy.move_out_date = today
             mo.tenancy.save(update_fields=['is_active', 'move_out_date'])
@@ -480,14 +506,17 @@ class ProcessMoveOutRequestView(APIView):
             mo.save(update_fields=['final_meter_reading', 'status', 'resolved_at'])
 
             return Response({
-                "message": f"Move-out approved! Final bill generated and Room {room.room_number} is now vacant."
+                "message": f"Move-out approved! Final bill generated and Room {mo.room.room_number} is now vacant."
             })
 
         return Response({"detail": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class HeroBannerListCreateView(generics.ListCreateAPIView):
-    """Admin can upload new homepage hero viewer images; anyone can view them."""
+    """
+    Admin can upload single OR multiple homepage hero viewer images at once (up to 5 MB each, any image format).
+    Anyone can view active hero banners in the landing page slideshow.
+    """
     serializer_class = HeroBannerSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -500,8 +529,64 @@ class HeroBannerListCreateView(generics.ListCreateAPIView):
         if self.request.user.is_authenticated and (
             self.request.user.role == 'ADMIN' or self.request.user.is_superuser
         ):
-            return HeroBanner.objects.all()
-        return HeroBanner.objects.filter(is_active=True)
+            return HeroBanner.objects.all().order_by('-id')
+        return HeroBanner.objects.filter(is_active=True).order_by('-id')
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        # Support both multiple files ('images' or 'image') and single file ('image')
+        uploaded_files = request.FILES.getlist('images') or request.FILES.getlist('image')
+        if not uploaded_files and 'image' in request.FILES:
+            uploaded_files = [request.FILES['image']]
+
+        if not uploaded_files:
+            return Response(
+                {"error": "Please select at least one banner image to upload."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        title = (request.data.get('title') or 'SmartRent Featured Suite').strip()
+        subtitle = (request.data.get('subtitle') or 'Sub-metered Power & 24/7 Water Supply').strip()
+        badge_text = (request.data.get('badge_text') or 'Physical Inspection Passed').strip()
+        is_active_raw = request.data.get('is_active', True)
+        is_active = str(is_active_raw).lower() not in ('false', '0', 'no')
+
+        created_banners = []
+        for idx, img_file in enumerate(uploaded_files):
+            if hasattr(img_file, 'size') and img_file.size > MAX_BANNER_FILE_SIZE:
+                return Response(
+                    {"error": f"Image '{img_file.name}' exceeds the 5 MB size limit."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            ext = os.path.splitext(img_file.name)[1].lower()
+            content_type = (getattr(img_file, 'content_type', '') or '').lower()
+            if ext not in ALLOWED_BANNER_EXTENSIONS and not content_type.startswith('image/'):
+                return Response(
+                    {"error": f"File '{img_file.name}' is not a supported image format."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            slide_title = title if len(uploaded_files) == 1 else f"{title} ({idx + 1})"
+            banner_obj = HeroBanner.objects.create(
+                title=slide_title,
+                subtitle=subtitle,
+                badge_text=badge_text,
+                image=img_file,
+                is_active=is_active,
+            )
+            created_banners.append(banner_obj)
+
+        serialized = HeroBannerSerializer(
+            created_banners, many=True, context={'request': request}
+        ).data
+
+        return Response(
+            {
+                "message": f"Successfully uploaded {len(created_banners)} hero banner slide(s)!",
+                "banners": serialized,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class HeroBannerDetailView(generics.RetrieveUpdateDestroyAPIView):
