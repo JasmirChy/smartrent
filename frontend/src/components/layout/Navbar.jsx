@@ -11,11 +11,48 @@ import {
   Megaphone,
   MessageSquare,
   ArrowRight,
-  CalendarCheck,
   FileText,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import axiosClient, { fetchNotices } from '../../api/axiosClient';
+
+function getSafeMediaUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
+
+  const currentHost = window.location.hostname;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  let backendOrigin = 'http://localhost:8000';
+  try {
+    backendOrigin = new URL(apiBase).origin;
+  } catch {
+    backendOrigin = `http://${currentHost || 'localhost'}:8000`;
+  }
+
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (backendOrigin.includes('localhost') || backendOrigin.includes('127.0.0.1'))
+  ) {
+    backendOrigin = `http://${currentHost}:8000`;
+  }
+
+  if (rawUrl.startsWith('/')) {
+    return `${backendOrigin}${rawUrl}`;
+  }
+  if (
+    currentHost &&
+    currentHost !== 'localhost' &&
+    currentHost !== '127.0.0.1' &&
+    (rawUrl.includes('://localhost:') || rawUrl.includes('://127.0.0.1:'))
+  ) {
+    return rawUrl
+      .replace('://localhost:', `://${currentHost}:`)
+      .replace('://127.0.0.1:', `://${currentHost}:`);
+  }
+  return rawUrl;
+}
 
 export default function Navbar() {
   const { user, isAdmin, openAuthModal, logout } = useAuth();
@@ -26,9 +63,13 @@ export default function Navbar() {
   const [notices, setNotices] = useState([]);
   const [unreadChatsCount, setUnreadChatsCount] = useState(0);
   const [pendingActionCount, setPendingActionCount] = useState(0);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Fetch notices, unread messages, and pending bill/booking alerts
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [user?.profile_picture_url, user?.profile_picture]);
+
   useEffect(() => {
     if (!user) {
       setNotices([]);
@@ -38,7 +79,6 @@ export default function Navbar() {
     }
 
     const loadNotificationData = () => {
-      // 1. Active House Notices
       fetchNotices()
         .then((data) => {
           const list = Array.isArray(data) ? data : data?.results || [];
@@ -46,7 +86,6 @@ export default function Navbar() {
         })
         .catch(() => {});
 
-      // 2. Unread Chat Messages
       axiosClient
         .get('/communication/contacts/')
         .then((res) => {
@@ -59,7 +98,6 @@ export default function Navbar() {
         })
         .catch(() => {});
 
-      // 3. Pending Bills (for Tenant) or Pending Verifications (for Admin)
       axiosClient
         .get('/billing/')
         .then((res) => {
@@ -84,7 +122,6 @@ export default function Navbar() {
     return () => clearInterval(timer);
   }, [user, isAdmin]);
 
-  // Close notification dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -107,6 +144,11 @@ export default function Navbar() {
   ];
 
   const totalNotifications = notices.length + unreadChatsCount + pendingActionCount;
+  const navAvatarUrl = !avatarLoadFailed
+    ? getSafeMediaUrl(
+        user?.profile_picture_path || user?.profile_picture_url || user?.profile_picture
+      )
+    : null;
 
   return (
     <header className="sticky top-0 z-40 h-16 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-8 flex items-center justify-between">
@@ -125,7 +167,7 @@ export default function Navbar() {
         </div>
       </Link>
 
-      {/* Center Navigation Pills (Visible on Desktop) */}
+      {/* Center Navigation Pills */}
       <nav className="hidden md:flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
         {navItems.map((item) => {
           const active = location.pathname === item.path;
@@ -149,7 +191,6 @@ export default function Navbar() {
       <div className="flex items-center gap-3">
         {user ? (
           <div className="flex items-center gap-3 relative" ref={dropdownRef}>
-            {/* Functional Notification Bell Button */}
             <button
               type="button"
               onClick={() => setShowNotifications((prev) => !prev)}
@@ -166,7 +207,6 @@ export default function Navbar() {
               )}
             </button>
 
-            {/* Notification Dropdown Menu */}
             {showNotifications && (
               <div className="absolute right-0 top-12 w-80 sm:w-96 rounded-3xl bg-white shadow-2xl border border-slate-200 p-4 z-50">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
@@ -179,7 +219,6 @@ export default function Navbar() {
                 </div>
 
                 <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-                  {/* 1. Unread Chat Messages Alert */}
                   {unreadChatsCount > 0 && (
                     <div
                       onClick={() => {
@@ -205,7 +244,6 @@ export default function Navbar() {
                     </div>
                   )}
 
-                  {/* 2. Billing / Verification Action Alert */}
                   {pendingActionCount > 0 && (
                     <div
                       onClick={() => {
@@ -235,7 +273,6 @@ export default function Navbar() {
                     </div>
                   )}
 
-                  {/* 3. House Broadcast Notices */}
                   {notices.map((n) => (
                     <div
                       key={n.id}
@@ -293,11 +330,12 @@ export default function Navbar() {
               to="/profile"
               className="flex items-center gap-2.5 pl-1 pr-2.5 py-1 rounded-full hover:bg-slate-100 transition border border-slate-200/80"
             >
-              {user.profile_picture_url ? (
+              {navAvatarUrl ? (
                 <img
-                  src={user.profile_picture_url}
+                  src={navAvatarUrl}
                   alt={user.full_name}
-                  className="w-8 h-8 rounded-full object-cover border border-indigo-200"
+                  onError={() => setAvatarLoadFailed(true)}
+                  className="w-8 h-8 rounded-full object-cover border border-indigo-200 bg-slate-100"
                 />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center">

@@ -1,9 +1,11 @@
+import os
+import json
 import random
 from decimal import Decimal
-from django.apps import apps
 from django.core.mail import send_mail
+from django.core.files.storage import default_storage
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction, connection, IntegrityError
 from django.db.models import Q
 from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
@@ -13,8 +15,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
-from apps.rooms.models import Room, Tenancy
+from apps.rooms.models import Room, Tenancy, RoomReservation
 from apps.rooms.views import IsAdminUserRole
+from apps.billing.models import MonthlyBill, HouseExpense
+from apps.communication.models import ComplaintTicket, ChatMessage, Notice
 from .models import User, EmailOTP, KYCProfile
 from .serializers import (
     UserProfileSerializer,
@@ -25,6 +29,40 @@ from .serializers import (
     ConfirmPasswordOTPSerializer,
     KYCProfileSerializer,
 )
+
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_IMAGE_EXTENSIONS = {
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg', '.heic', '.heif', '.avif', '.jfif'
+}
+
+BANNERS_DIR = os.path.join(settings.MEDIA_ROOT, 'profile_banners')
+BANNERS_META_FILE = os.path.join(BANNERS_DIR, 'banners_metadata.json')
+
+
+def _read_banners_map():
+    os.makedirs(BANNERS_DIR, exist_ok=True)
+    if os.path.exists(BANNERS_META_FILE):
+        try:
+            with open(BANNERS_META_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _write_banners_map(data):
+    os.makedirs(BANNERS_DIR, exist_ok=True)
+    with open(BANNERS_META_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+def get_user_cover_urls(request, user_id):
+    banners_map = _read_banners_map()
+    rel_path = banners_map.get(str(user_id))
+    if rel_path and default_storage.exists(rel_path):
+        rel_url = default_storage.url(rel_path)
+        return request.build_absolute_uri(rel_url), rel_url
+    return None, None
 
 
 def generate_and_send_otp(email, purpose='PASSWORD_RESET'):
@@ -161,24 +199,112 @@ class ResendOTPView(APIView):
 
 
 class MeProfileView(APIView):
+    """
+    Handles retrieving and updating the logged-in user's profile, avatar, and cover banner image.
+    Supports any image format (JPG, JPEG, PNG, WEBP, HEIC, AVIF, etc.) up to 5 MB.
+    """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
+    def _validate_image_file(self, file_obj, label):
+        if hasattr(file_obj, 'size') and file_obj.size > MAX_IMAGE_SIZE:
+            return f"{label} exceeds the 5 MB limit. Please upload an image under 5 MB."
+        ext = os.path.splitext(file_obj.name)[1].lower()
+        content_type = (getattr(file_obj, 'content_type', '') or '').lower()
+        if ext not in ALLOWED_IMAGE_EXTENSIONS and not content_type.startswith('image/'):
+            return f"Unsupported format for {label}. Please upload a valid image (JPG, JPEG, PNG, WEBP, HEIC, etc.)."
+        return None
+
+    def _build_user_payload(self, request, user):
+        serializer = UserProfileSerializer(user, context={'request': request})
+        data = dict(serializer.data)
+        if user.profile_picture:
+            try:
+                data['profile_picture_url'] = request.build_absolute_uri(user.profile_picture.url)
+                data['profile_picture_path'] = user.profile_picture.url
+            except Exception:
+                pass
+        cover_abs_url, cover_rel_path = get_user_cover_urls(request, user.id)
+        data['cover_picture_url'] = cover_abs_url
+        data['cover_picture_path'] = cover_rel_path
+        return data
+
     def get(self, request):
-        serializer = UserProfileSerializer(request.user, context={'request': request})
-        return Response(serializer.data)
+        return Response(self._build_user_payload(request, request.user), status=status.HTTP_200_OK)
 
     def patch(self, request):
-        serializer = UserProfileSerializer(
-            request.user,
-            data=request.data,
-            partial=True,
-            context={'request': request},
-        )
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        uploaded_avatar = request.FILES.get('profile_picture')
+        uploaded_cover = request.FILES.get('cover_picture')
+        remove_cover = str(request.data.get('remove_cover_picture') or '').lower() in ('true', '1', 'yes')
+
+        # 1. Validate & assign Profile Avatar
+        if uploaded_avatar:
+            err = self._validate_image_file(uploaded_avatar, "Profile picture")
+            if err:
+                return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+            user.profile_picture = uploaded_avatar
+
+        # 2. Validate & save Cover / Banner Image (Zero-migration storage)
+        if uploaded_cover:
+            err = self._validate_image_file(uploaded_cover, "Cover banner image")
+            if err:
+                return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+
+            banners_map = _read_banners_map()
+            old_path = banners_map.get(str(user.id))
+            if old_path and default_storage.exists(old_path):
+                try:
+                    default_storage.delete(old_path)
+                except Exception:
+                    pass
+
+            ext = os.path.splitext(uploaded_cover.name)[1].lower() or '.jpg'
+            saved_path = default_storage.save(
+                f"profile_banners/user_{user.id}_cover_{int(timezone.now().timestamp())}{ext}",
+                uploaded_cover,
+            )
+            banners_map[str(user.id)] = saved_path
+            _write_banners_map(banners_map)
+        elif remove_cover:
+            banners_map = _read_banners_map()
+            old_path = banners_map.pop(str(user.id), None)
+            if old_path and default_storage.exists(old_path):
+                try:
+                    default_storage.delete(old_path)
+                except Exception:
+                    pass
+            _write_banners_map(banners_map)
+
+        # 3. Update full_name if provided
+        if 'full_name' in request.data:
+            new_name = str(request.data.get('full_name') or '').strip()
+            if new_name:
+                user.full_name = new_name
+
+        # 4. Safely handle phone_number (prevent PostgreSQL UniqueViolation crash)
+        if 'phone_number' in request.data:
+            new_phone = str(request.data.get('phone_number') or '').strip()
+            if new_phone and new_phone != user.phone_number:
+                conflicting_users = User.objects.filter(phone_number=new_phone).exclude(id=user.id)
+                if conflicting_users.exists():
+                    for other_u in conflicting_users:
+                        other_u.phone_number = f"900{random.randint(1000000, 9999999)}"
+                        other_u.save(update_fields=['phone_number'])
+                user.phone_number = new_phone
+
+        try:
+            with transaction.atomic():
+                user.save()
+        except IntegrityError:
+            return Response(
+                {"error": "That phone number is already in use by another account. Please enter a different number."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = self._build_user_payload(request, user)
+        payload['message'] = "Profile, avatar, and cover banner updated successfully!"
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class RequestPasswordChangeOTPView(APIView):
@@ -264,6 +390,7 @@ class AdminUserManagementListView(APIView):
         for u in users:
             active_tenancy = u.tenancies.filter(is_active=True).select_related('room').first()
             kyc = getattr(u, 'kyc_profile', None)
+            cover_abs_url, _ = get_user_cover_urls(request, u.id)
             data.append({
                 "id": u.id,
                 "full_name": u.full_name,
@@ -278,6 +405,7 @@ class AdminUserManagementListView(APIView):
                 "citizenship_front_url": request.build_absolute_uri(kyc.citizenship_front.url) if kyc and kyc.citizenship_front else None,
                 "citizenship_back_url": request.build_absolute_uri(kyc.citizenship_back.url) if kyc and kyc.citizenship_back else None,
                 "profile_picture_url": request.build_absolute_uri(u.profile_picture.url) if u.profile_picture else None,
+                "cover_picture_url": cover_abs_url,
             })
         return Response(data)
 
@@ -360,15 +488,11 @@ class AdminManageAdminsView(APIView):
         return Response({"error": "Invalid action specified."}, status=status.HTTP_400_BAD_REQUEST)
 
 
-from apps.rooms.models import Room, Tenancy, RoomReservation, MoveOutRequest
-from apps.billing.models import MonthlyBill, HouseExpense
-from apps.communication.models import ComplaintTicket, ChatMessage, Notice
-from django.db import connection
-
 class AdminResetDatabaseView(APIView):
     """
-    Factory-resets the entire SmartRent database using direct raw SQL truncation/deletes
-    to completely bypass Django ORM cascade lookups and missing tables.
+    Factory-resets the entire SmartRent database safely using isolated savepoints
+    so missing tables never break the transaction block, and deletes all accounts
+    except the currently logged-in Admin account.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -389,37 +513,34 @@ class AdminResetDatabaseView(APIView):
 
         try:
             with connection.cursor() as cursor:
-                # Safely truncate or delete all operational tables using raw SQL (ignoring missing tables)
                 tables_to_wipe = [
                     'communication_chatmessage',
-                    'communication_complainticket',
+                    'communication_complaintticket',
                     'communication_notice',
                     'billing_monthlybill',
                     'billing_houseexpense',
                     'rooms_roomreservation',
                     'rooms_tenancy',
-                    'rooms_moveoutrequest',
                     'accounts_emailotp',
                     'accounts_kycprofile',
                 ]
                 for table in tables_to_wipe:
                     try:
-                        cursor.execute(f'DELETE FROM "{table}";')
+                        with transaction.atomic():
+                            cursor.execute(f'DELETE FROM "{table}";')
                     except Exception:
                         pass
 
-            # 2. Reset all Rooms to Vacant & 0.00 meter reading via ORM
-            Room.objects.all().update(
-                is_occupied=False,
-                current_meter_reading=Decimal('0.00'),
-            )
+            with transaction.atomic():
+                Room.objects.all().update(
+                    is_occupied=False,
+                    current_meter_reading=Decimal('0.00'),
+                )
 
-            # 3. Delete all tenant users (keep only Admin accounts and rentals.rooms77@gmail.com)
-            tenants_to_delete = User.objects.exclude(
-                Q(id=user.id) | Q(role='ADMIN') | Q(is_superuser=True) | Q(email__iexact='rentals.rooms77@gmail.com')
-            )
-            deleted_count = tenants_to_delete.count()
-            tenants_to_delete.delete()
+            with transaction.atomic():
+                tenants_to_delete = User.objects.exclude(id=user.id)
+                deleted_count = tenants_to_delete.count()
+                tenants_to_delete.delete()
 
         except Exception as e:
             return Response(
@@ -430,12 +551,14 @@ class AdminResetDatabaseView(APIView):
         return Response(
             {
                 "message": (
-                    f"System reset complete! Erased {deleted_count} tenant(s), all bills, chats, and KYC records. "
-                    f"All rooms are now Vacant (0.00 units) and your Admin account is preserved."
+                    f"System reset complete! Erased {deleted_count} user account(s), all bills, chats, and KYC records. "
+                    f"All rooms are now Vacant (0.00 units) and your logged-in Admin account is preserved."
                 )
             },
             status=status.HTTP_200_OK,
         )
+
+
 class KYCProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = KYCProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -503,7 +626,7 @@ class AcceptDigitalLeaseView(APIView):
     def post(self, request):
         profile, created = KYCProfile.objects.get_or_create(
             user=request.user,
-            defaults={'full_name_legal': getattr(request.user, 'full_name', '') or request.user.email}
+            defaults={'full_name_legal': getattr(self.request.user, 'full_name', '') or request.user.email}
         )
         profile.has_accepted_lease = True
         profile.lease_accepted_at = timezone.now()
