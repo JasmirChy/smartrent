@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from django.core.files.storage import default_storage
@@ -41,6 +41,21 @@ FINE_PROOFS_DIR = os.path.join(settings.MEDIA_ROOT, 'fine_proofs')
 FINE_METADATA_FILE = os.path.join(FINE_PROOFS_DIR, 'fine_evidence_metadata.json')
 
 
+def cleanup_orphaned_unpaid_bills():
+    """
+    Automatically removes leftover UNPAID / REJECTED / PENDING_VERIFICATION bills
+    belonging to closed tenancies (is_active=False) or vacant rooms (is_occupied=False).
+    Preserves all APPROVED and PAID_CASH historical receipts.
+    """
+    try:
+        MonthlyBill.objects.filter(
+            Q(tenancy__is_active=False) | Q(room__is_occupied=False),
+            status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
+        ).delete()
+    except Exception:
+        pass
+
+
 def build_https_safe_uri(request, relative_url):
     """Builds an absolute URI and upgrades http:// to https:// on production hosts."""
     if not relative_url:
@@ -48,7 +63,7 @@ def build_https_safe_uri(request, relative_url):
     try:
         full_url = request.build_absolute_uri(relative_url)
     except Exception:
-        full_url = relative_url
+        full_url = str(relative_url)
     if (
         full_url.startswith('http://')
         and 'localhost' not in full_url
@@ -91,58 +106,89 @@ def enrich_bill_with_fine_evidence(request, bill_dict):
     return bill_dict
 
 
-def _send_email_worker(recipient_email, subject, message_body):
+def get_admin_emails():
+    """Returns all active Admin email addresses to receive billing & proof alerts."""
+    admin_emails = list(
+        User.objects.filter(
+            Q(role='ADMIN') | Q(is_superuser=True) | Q(is_staff=True),
+            is_active=True,
+        )
+        .exclude(email='')
+        .values_list('email', flat=True)
+    )
+    default_from = getattr(settings, 'EMAIL_HOST_USER', '') or getattr(settings, 'DEFAULT_FROM_EMAIL', '')
+    if default_from and '@' in default_from and default_from not in admin_emails:
+        admin_emails.append(default_from)
+    return list(dict.fromkeys(admin_emails))
+
+
+def _send_email_worker(recipient_list, subject, message_body):
     """
     Background worker:
     1) Tries Google Apps Script HTTPS Webhook FIRST (Port 443 — instant on Render Free Tier)
     2) Falls back to Django SMTP with a short timeout
     """
+    valid_recipients = [r.strip() for r in recipient_list if r and '@' in str(r)]
+    if not valid_recipients:
+        return False
+
     webhook_url = getattr(settings, 'GOOGLE_SCRIPT_WEBHOOK_URL', '').strip()
     webhook_secret = getattr(settings, 'GOOGLE_SCRIPT_SECRET', 'SMARTRENT_SECRET_2026').strip()
-    if webhook_url:
-        try:
-            payload = json.dumps({
-                "secret": webhook_secret,
-                "to": recipient_email,
-                "subject": subject,
-                "message": message_body,
-            }).encode('utf-8')
-            req = urllib.request.Request(
-                webhook_url,
-                data=payload,
-                headers={'Content-Type': 'application/json'},
-                method='POST',
-            )
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                body = resp.read().decode('utf-8', errors='ignore')
-                if resp.status in (200, 302) and 'Unauthorized' not in body:
-                    return True
-        except Exception as wh_err:
-            print(f"[SmartRent Billing Webhook Notice]: {wh_err}")
 
-    if getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
-        try:
-            send_mail(
-                subject=subject,
-                message=message_body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[recipient_email],
-                fail_silently=False,
-            )
-            return True
-        except Exception as smtp_err:
-            print(f"[SmartRent Billing SMTP Notice]: {smtp_err}")
+    for recipient_email in valid_recipients:
+        sent_via_webhook = False
+        if webhook_url:
+            try:
+                payload = json.dumps({
+                    "secret": webhook_secret,
+                    "to": recipient_email,
+                    "subject": subject,
+                    "message": message_body,
+                }).encode('utf-8')
+                req = urllib.request.Request(
+                    webhook_url,
+                    data=payload,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    body = resp.read().decode('utf-8', errors='ignore')
+                    if resp.status in (200, 302) and 'Unauthorized' not in body:
+                        sent_via_webhook = True
+            except Exception as wh_err:
+                print(f"[SmartRent Billing Webhook Notice]: {wh_err}")
 
-    return False
+        if not sent_via_webhook and getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
+            try:
+                send_mail(
+                    subject=subject,
+                    message=message_body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[recipient_email],
+                    fail_silently=False,
+                )
+            except Exception as smtp_err:
+                print(f"[SmartRent Billing SMTP Notice]: {smtp_err}")
+
+    return True
 
 
 def send_billing_notification_email(recipient_email, subject, message_body):
-    """Dispatches email asynchronously in a background thread so API responses return in <100ms."""
+    """
+    Dispatches email asynchronously in a background thread (supports single email string or list of emails)
+    so API responses return in <100ms.
+    """
     if not recipient_email:
+        return False
+    if isinstance(recipient_email, str):
+        recipient_list = [recipient_email]
+    else:
+        recipient_list = list(recipient_email)
+    if not recipient_list:
         return False
     threading.Thread(
         target=_send_email_worker,
-        args=(recipient_email, subject, message_body),
+        args=(recipient_list, subject, message_body),
         daemon=True,
     ).start()
     return True
@@ -294,6 +340,8 @@ class BillListView(generics.ListAPIView):
     serializer_class = MonthlyBillSerializer
 
     def get_queryset(self):
+        cleanup_orphaned_unpaid_bills()
+
         try:
             threading.Thread(target=dispatch_due_rent_email_reminders, daemon=True).start()
         except Exception:
@@ -373,12 +421,47 @@ class TenantSubmitOnlineBillView(APIView):
         bill.status = 'PENDING_VERIFICATION'
         bill.save()
 
+        meter_url = build_https_safe_uri(request, bill.meter_photo_proof.url) if bill.meter_photo_proof else 'N/A'
+        pay_url = build_https_safe_uri(request, bill.payment_screenshot_proof.url) if bill.payment_screenshot_proof else 'N/A'
+
+        # 1. Notify All Admins of New Payment & Meter Proof Submission
+        send_billing_notification_email(
+            recipient_email=get_admin_emails(),
+            subject=f"💳 Payment Proof Submitted — Room {bill.room.room_number} ({bill.tenant.full_name})",
+            message_body=(
+                f"Namaste Admin,\n\n"
+                f"Tenant {bill.tenant.full_name} ({bill.tenant.email}) has submitted their sub-meter reading "
+                f"and online payment receipt for verification:\n\n"
+                f"• Room: Room {bill.room.room_number} ({bill.billing_month_label})\n"
+                f"• Meter Reading: {bill.previous_meter_reading} → {bill.current_meter_reading} ({bill.units_consumed} units)\n"
+                f"• Total Payable Submitted: Rs. {bill.total_payable}\n"
+                f"• Transaction Reference: {bill.transaction_reference or 'Not specified'}\n"
+                f"• Zone 1 (Meter Photo): {meter_url}\n"
+                f"• Zone 2 (Payment Receipt): {pay_url}\n\n"
+                f"Open your SmartRent Admin Command Center (Remittance & Meter Audit Clearing) to Approve or Reject.\n"
+                f"— SmartRent Automated Alert"
+            ),
+        )
+
+        # 2. Notify Tenant that Proof is Under Review
+        send_billing_notification_email(
+            recipient_email=bill.tenant.email,
+            subject=f"SmartRent — Payment Proof Received for Room {bill.room.room_number} ({bill.billing_month_label})",
+            message_body=(
+                f"Namaste {bill.tenant.full_name},\n\n"
+                f"We have received your sub-meter reading ({bill.current_meter_reading} units) and payment screenshot "
+                f"for Room {bill.room.room_number} ({bill.billing_month_label} — Total: Rs. {bill.total_payable}).\n\n"
+                f"The Landlord Admin will verify your submission shortly and issue your official receipt by email.\n\n"
+                f"— SmartRent House Management"
+            ),
+        )
+
         bill_data = enrich_bill_with_fine_evidence(
             request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
         )
         return Response(
             {
-                "message": "Meter reading and payment proof submitted for Admin verification!",
+                "message": "Meter reading and payment proof submitted! Admin has been notified.",
                 "bill": bill_data,
             },
             status=status.HTTP_200_OK,
@@ -427,24 +510,26 @@ class AdminAuditBillView(APIView):
 
             send_billing_notification_email(
                 recipient_email=bill.tenant.email,
-                subject=f"SmartRent - Payment Approved for Room {bill.room.room_number} ({bill.billing_month_label})",
+                subject=f"✅ SmartRent - Payment Approved for Room {bill.room.room_number} ({bill.billing_month_label})",
                 message_body=(
                     f"Namaste {bill.tenant.full_name},\n\n"
                     f"Your payment of Rs. {bill.total_payable} for Room {bill.room.room_number} "
-                    f"({bill.billing_month_label}) has been verified and approved!\n\n"
-                    f"Breakdown:\n"
+                    f"({bill.billing_month_label}) has been verified and APPROVED!\n\n"
+                    f"Official Receipt Breakdown:\n"
                     f"• Room Rent: Rs. {bill.base_rent}\n"
                     f"• Water Bill: Rs. {bill.water_bill}\n"
                     f"• Electricity: {bill.units_consumed} units × Rs. {bill.electricity_rate} = Rs. {bill.electricity_amount}\n"
                     f"• Damage / Rule Fine: Rs. {bill.damage_fine_amount}\n"
-                    f"• Total Paid: Rs. {bill.total_payable}\n\n"
+                    f"• Total Paid: Rs. {bill.total_payable}\n"
+                    f"• Admin Remarks: {remarks or 'Verified'}\n\n"
+                    f"You can print your official PDF receipt anytime from your SmartRent Tenant Dashboard.\n\n"
                     f"Thank you!\n— SmartRent House Management"
                 ),
             )
 
             return Response(
                 {
-                    "message": f"Bill for Room {bill.room.room_number} approved and receipt issued!",
+                    "message": f"Bill for Room {bill.room.room_number} approved and receipt emailed to {bill.tenant.email}!",
                     "bill": enrich_bill_with_fine_evidence(
                         request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
                     ),
@@ -456,9 +541,23 @@ class AdminAuditBillView(APIView):
         bill.admin_remarks = remarks or "Please upload a clearer meter photo or valid payment screenshot."
         bill.save()
 
+        # Notify Tenant when Bill Proof is Rejected
+        send_billing_notification_email(
+            recipient_email=bill.tenant.email,
+            subject=f"⚠️ SmartRent - Action Required: Payment Proof Rejected (Room {bill.room.room_number})",
+            message_body=(
+                f"Namaste {bill.tenant.full_name},\n\n"
+                f"Your submitted meter photo / payment screenshot for Room {bill.room.room_number} "
+                f"({bill.billing_month_label}) could not be verified.\n\n"
+                f"Admin Remarks: {bill.admin_remarks}\n\n"
+                f"Please log in to your SmartRent Tenant Dashboard and re-upload a clear meter reading photo and valid payment receipt.\n\n"
+                f"— SmartRent House Management"
+            ),
+        )
+
         return Response(
             {
-                "message": f"Bill for Room {bill.room.room_number} rejected. Tenant notified to re-upload.",
+                "message": f"Bill for Room {bill.room.room_number} rejected and tenant notified by email.",
                 "bill": enrich_bill_with_fine_evidence(
                     request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
                 ),
@@ -603,11 +702,30 @@ class AdminCashOverrideView(APIView):
         if bill.tenancy and bill.tenancy.is_active:
             create_next_cycle_bill(bill)
 
+        # Send Official Cash Receipt Email to Tenant
+        send_billing_notification_email(
+            recipient_email=bill.tenant.email,
+            subject=f"✅ SmartRent Cash Payment Receipt — Room {bill.room.room_number} ({bill.billing_month_label})",
+            message_body=(
+                f"Namaste {bill.tenant.full_name},\n\n"
+                f"Your cash payment of Rs. {bill.total_payable} for Room {bill.room.room_number} "
+                f"({bill.billing_month_label}) has been recorded by the Admin!\n\n"
+                f"Receipt Breakdown:\n"
+                f"• Receipt Reference: {bill.transaction_reference}\n"
+                f"• Room Rent: Rs. {bill.base_rent}\n"
+                f"• Water Bill: Rs. {bill.water_bill}\n"
+                f"• Electricity ({bill.previous_meter_reading} → {bill.current_meter_reading} = {bill.units_consumed} units × Rs. {bill.electricity_rate}): Rs. {bill.electricity_amount}\n"
+                f"• Damage / Rule Fine: Rs. {bill.damage_fine_amount}\n"
+                f"• Total Paid (CASH): Rs. {bill.total_payable}\n\n"
+                f"Thank you!\n— SmartRent House Management"
+            ),
+        )
+
         return Response(
             {
                 "message": (
                     f"Cash payment of Rs. {bill.total_payable} recorded for "
-                    f"{bill.tenant.full_name} (Room {bill.room.room_number})!"
+                    f"{bill.tenant.full_name} (Room {bill.room.room_number}) and receipt emailed!"
                 ),
                 "bill": enrich_bill_with_fine_evidence(
                     request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
@@ -622,6 +740,7 @@ class BulkGenerateBillsView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        cleanup_orphaned_unpaid_bills()
         active_tenancies = Tenancy.objects.filter(is_active=True).select_related('room', 'tenant')
         created_count = 0
 
@@ -632,6 +751,7 @@ class BulkGenerateBillsView(APIView):
             ).exists()
 
             if not has_open_bill:
+                new_bill = None
                 last_paid = (
                     MonthlyBill.objects.filter(tenancy=tenancy, status__in=['APPROVED', 'PAID_CASH'])
                     .order_by('-due_date')
@@ -643,7 +763,7 @@ class BulkGenerateBillsView(APIView):
                         created_count += 1
                 else:
                     due_date = tenancy.get_next_due_date()
-                    MonthlyBill.objects.create(
+                    new_bill = MonthlyBill.objects.create(
                         tenancy=tenancy,
                         room=tenancy.room,
                         tenant=tenancy.tenant,
@@ -659,10 +779,26 @@ class BulkGenerateBillsView(APIView):
                     )
                     created_count += 1
 
+                if new_bill and tenancy.tenant and tenancy.tenant.email:
+                    send_billing_notification_email(
+                        recipient_email=tenancy.tenant.email,
+                        subject=f"📄 SmartRent — New Monthly Bill Generated for Room {tenancy.room.room_number} ({new_bill.billing_month_label})",
+                        message_body=(
+                            f"Namaste {tenancy.tenant.full_name},\n\n"
+                            f"Your monthly billing invoice for Room {tenancy.room.room_number} ({new_bill.billing_month_label}) is now open.\n\n"
+                            f"• Base Rent: Rs. {new_bill.base_rent}\n"
+                            f"• Fixed Water Bill: Rs. {new_bill.water_bill}\n"
+                            f"• Previous Sub-Meter Reading: {new_bill.previous_meter_reading} units\n"
+                            f"• Due Date: {new_bill.due_date}\n\n"
+                            f"Please log in to your SmartRent Tenant Dashboard to enter your current sub-meter reading and upload your payment receipt.\n\n"
+                            f"— SmartRent House Management"
+                        ),
+                    )
+
         return Response({
             "message": (
                 f"Auto-generation complete! Created {created_count} new bill(s) across "
-                f"{active_tenancies.count()} active room(s)."
+                f"{active_tenancies.count()} active room(s) and emailed tenants."
             ),
             "created_count": created_count,
         })
@@ -872,6 +1008,8 @@ class AdminAnalyticsDashboardView(APIView):
     permission_classes = [IsAdminUserRole]
 
     def get(self, request):
+        cleanup_orphaned_unpaid_bills()
+
         paid_bills = MonthlyBill.objects.filter(status__in=['APPROVED', 'PAID_CASH'])
         pending_bills = MonthlyBill.objects.filter(status='PENDING_VERIFICATION')
         unpaid_bills = MonthlyBill.objects.filter(status='UNPAID')

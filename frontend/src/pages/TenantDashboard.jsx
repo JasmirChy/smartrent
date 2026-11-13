@@ -85,6 +85,7 @@ export default function TenantDashboard() {
 
   const [activeTab, setActiveTab] = useState('BILLING');
   const [feedback, setFeedback] = useState({ type: '', text: '' });
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
 
   // Sub-meter & QR Payment Form States
   const [selectedBillId, setSelectedBillId] = useState(null);
@@ -107,6 +108,7 @@ export default function TenantDashboard() {
   // Modals & KYC States
   const [showLeaseModal, setShowLeaseModal] = useState(false);
   const [showMoveOutModal, setShowMoveOutModal] = useState(false);
+  const [showPayBillFirstModal, setShowPayBillFirstModal] = useState(false);
   const [moveOutDate, setMoveOutDate] = useState('');
   const [moveOutReason, setMoveOutReason] = useState('');
 
@@ -176,13 +178,23 @@ export default function TenantDashboard() {
     }
   }, [kycProfile, user]);
 
-  const assignedRoom =
-    profileData?.room_details || profileData?.assigned_room || user?.assigned_room || null;
+  // Only treat room_details as active if it has a valid room_number
+  const rawRoom =
+    profileData?.room_details !== undefined
+      ? profileData.room_details
+      : profileData?.assigned_room || user?.assigned_room || null;
+  const assignedRoom = rawRoom && rawRoom.room_number ? rawRoom : null;
 
+  const openUnpaidBill = bills.find((b) =>
+    ['UNPAID', 'PENDING_VERIFICATION', 'REJECTED'].includes(b.status)
+  );
+
+  // If tenant has vacated (!assignedRoom), only show a bill if there is an open unpaid bill
+  // or if they explicitly clicked a past invoice row in the table
   const activeBill =
     bills.find((b) => String(b.id) === String(selectedBillId)) ||
-    bills.find((b) => ['UNPAID', 'PENDING_VERIFICATION', 'REJECTED'].includes(b.status)) ||
-    bills[0] ||
+    openUnpaidBill ||
+    (assignedRoom ? bills[0] : null) ||
     null;
 
   useEffect(() => {
@@ -204,8 +216,18 @@ export default function TenantDashboard() {
   const prevReading = Number(
     activeBill?.previous_meter_reading ?? assignedRoom?.current_meter_reading ?? 0
   );
-  const baseRent = Number(activeBill?.base_rent ?? assignedRoom?.base_rent ?? 3800);
-  const waterBill = Number(activeBill?.water_bill ?? assignedRoom?.fixed_water_bill ?? 100);
+  const baseRent = Number(
+    activeBill?.base_rent ?? assignedRoom?.base_rent ?? (assignedRoom ? 3800 : 0)
+  );
+  const headerBaseRent = assignedRoom
+    ? Number(assignedRoom.base_rent ?? 3800)
+    : isBillOpen
+    ? Number(activeBill?.base_rent ?? 0)
+    : 0;
+
+  const waterBill = Number(
+    activeBill?.water_bill ?? assignedRoom?.fixed_water_bill ?? (assignedRoom ? 100 : 0)
+  );
   const elecRate = Number(
     activeBill?.electricity_rate ?? assignedRoom?.electricity_rate_per_unit ?? 15
   );
@@ -294,6 +316,8 @@ export default function TenantDashboard() {
       });
       setShowMoveOutModal(false);
       queryClient.invalidateQueries({ queryKey: ['moveOutStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['tenantMeProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['tenantBills'] });
     },
     onError: (err) =>
       setFeedback({
@@ -333,6 +357,14 @@ export default function TenantDashboard() {
     updateKYCMutation.mutate(formData);
   };
 
+  const handleRequestMoveOutClick = () => {
+    if (openUnpaidBill) {
+      setShowPayBillFirstModal(true);
+      return;
+    }
+    setShowMoveOutModal(true);
+  };
+
   const handlePrintReceipt = (bill) => {
     const win = window.open('', '_blank', 'width=700,height=700');
     if (!win) return;
@@ -367,11 +399,12 @@ export default function TenantDashboard() {
     win.document.close();
   };
 
-  const userAvatarUrl = getSafeMediaUrl(
+  const rawAvatarUrl = getSafeMediaUrl(
     profileData?.profile_picture_path ||
       profileData?.profile_picture_url ||
       user?.profile_picture_url
   );
+  const userAvatarUrl = !avatarLoadError ? rawAvatarUrl : null;
   const qrSafeUrl = getSafeMediaUrl(paymentQR?.qr_image_url);
 
   return (
@@ -383,7 +416,8 @@ export default function TenantDashboard() {
             {userAvatarUrl ? (
               <img
                 src={userAvatarUrl}
-                alt={user?.full_name}
+                alt={user?.full_name || 'Tenant'}
+                onError={() => setAvatarLoadError(true)}
                 onClick={() =>
                   openPhotoLightbox([
                     {
@@ -393,10 +427,10 @@ export default function TenantDashboard() {
                     },
                   ])
                 }
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-100 shadow-sm cursor-pointer hover:scale-105 transition"
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-100 shadow-sm cursor-pointer hover:scale-105 transition shrink-0"
               />
             ) : (
-              <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white font-extrabold text-2xl flex items-center justify-center shadow-md">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white font-extrabold text-2xl flex items-center justify-center shadow-md shrink-0">
                 {user?.full_name?.charAt(0)?.toUpperCase() || 'T'}
               </div>
             )}
@@ -420,7 +454,7 @@ export default function TenantDashboard() {
               BASE AGREEMENT
             </p>
             <p className="text-2xl font-extrabold text-indigo-600">
-              Rs. {Number(baseRent).toLocaleString()}{' '}
+              Rs. {Number(headerBaseRent).toLocaleString()}{' '}
               <span className="text-sm font-medium text-slate-500">/month</span>
             </p>
           </div>
@@ -432,12 +466,16 @@ export default function TenantDashboard() {
               <Clock className="w-4 h-4 text-amber-600" /> Billing Cycle
             </span>
             <span className="px-3 py-1 rounded-full bg-white text-amber-800 text-[11px] font-bold border border-amber-200">
-              {activeBill?.billing_month_label || 'Active Cycle'}
+              {assignedRoom || isBillOpen
+                ? activeBill?.billing_month_label || 'Active Cycle'
+                : 'No Active Cycle'}
             </span>
           </div>
           <div className="mt-4">
             <p className="text-2xl font-extrabold text-slate-900">
-              Due: {activeBill?.due_date || assignedRoom?.next_due_date || 'Pending'}
+              {assignedRoom || isBillOpen
+                ? `Due: ${activeBill?.due_date || assignedRoom?.next_due_date || 'Pending'}`
+                : 'No Pending Dues'}
             </p>
           </div>
         </div>
@@ -487,346 +525,389 @@ export default function TenantDashboard() {
       </div>
 
       {/* TAB 1: BILLING */}
-      {activeTab === 'BILLING' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="lg:col-span-7 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h2 className="text-lg font-extrabold text-slate-900">Monthly Bill Telemetry</h2>
-              {bills.length > 1 && (
-                <select
-                  value={activeBill?.id || ''}
-                  onChange={(e) => {
-                    setSelectedBillId(Number(e.target.value));
-                    setMeterInput('');
-                  }}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-extrabold text-slate-800 outline-none focus:border-indigo-600"
-                >
-                  {bills.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.billing_month_label} — Rs. {Number(b.total_payable).toLocaleString()} (
-                      {b.status_display})
-                    </option>
-                  ))}
-                </select>
-              )}
+      {activeTab === 'BILLING' &&
+        (!assignedRoom && !activeBill ? (
+          <div className="rounded-3xl bg-white p-8 sm:p-12 border border-slate-200 shadow-sm text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+              <Home className="w-7 h-7" />
             </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
-                <div className="flex items-center gap-3">
-                  <Home className="w-5 h-5 text-indigo-600" />
-                  <p className="text-sm font-bold text-slate-900">Base Room Rent</p>
-                </div>
-                <span className="text-base font-extrabold text-slate-900">
-                  Rs. {baseRent.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
-                <div className="flex items-center gap-3">
-                  <Droplets className="w-5 h-5 text-emerald-600" />
-                  <p className="text-sm font-bold text-slate-900">Fixed Water Supply</p>
-                </div>
-                <span className="text-base font-extrabold text-slate-900">
-                  Rs. {waterBill.toLocaleString()}
-                </span>
-              </div>
-            </div>
-
-            {/* PROPERTY DAMAGE / VIOLATION FINE ALERT CARD (AUTO-HIDES WHEN PAID OR UNDONE) */}
-            {fineAmount > 0 && isBillOpen && (
-              <div className="rounded-2xl bg-rose-50 border-2 border-rose-200 p-5 space-y-3 shadow-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
-                      <AlertTriangle className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-rose-950">
-                        Property Damage / Rule Violation Fine
-                      </h3>
-                      {fineAppliedAt && (
-                        <p className="text-[11px] text-rose-600 font-semibold">
-                          Issued on {fineAppliedAt}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <span className="text-lg font-black text-rose-600">
-                    + Rs. {fineAmount.toLocaleString()}
-                  </span>
-                </div>
-
-                {fineReason && (
-                  <div className="p-3 rounded-xl bg-white/90 border border-rose-200/80 text-xs text-rose-950">
-                    <span className="font-extrabold uppercase text-[10px] text-rose-500 block mb-0.5">
-                      Official Admin Reason / Remarks:
-                    </span>
-                    <p className="font-semibold leading-relaxed">{fineReason}</p>
-                  </div>
-                )}
-
-                {fineEvidenceUrls.length > 0 && (
-                  <div className="space-y-2 pt-1">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-rose-800 flex items-center gap-1.5">
-                      <Camera className="w-3.5 h-3.5 text-rose-600" /> Attached Inspection Evidence (
-                      {fineEvidenceUrls.length} Photo{fineEvidenceUrls.length > 1 ? 's' : ''} — Tap
-                      to Zoom)
-                    </p>
-                    <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
-                      {fineEvidenceUrls.map((evUrl, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() =>
-                            openPhotoLightbox(
-                              fineEvidenceUrls.map((u, i) => ({
-                                url: u,
-                                title: `Fine Evidence Photo #${i + 1}`,
-                                subtitle: `Fine: Rs. ${fineAmount} • Reason: ${fineReason}`,
-                              })),
-                              idx
-                            )
-                          }
-                          className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-rose-300 bg-white shrink-0 cursor-pointer group"
-                        >
-                          <img
-                            src={evUrl}
-                            alt={`Fine Evidence ${idx + 1}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition"
-                          />
-                          <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                            <ZoomIn className="w-4 h-4 text-white" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="rounded-2xl bg-indigo-50 border border-indigo-100 p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-extrabold text-indigo-950 flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-indigo-600" /> Sub-Meter Telemetry
-                </span>
-                <span className="px-3 py-1 rounded-lg bg-white text-xs font-extrabold text-indigo-700 border border-indigo-200">
-                  Rs. {elecRate} / unit
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-2xl border border-slate-200">
-                  <p className="text-[10px] font-extrabold text-slate-400 uppercase">
-                    PREV READING
-                  </p>
-                  <p className="text-2xl font-black text-slate-800 mt-1">{prevReading}</p>
-                </div>
-                <div className="bg-white p-4 rounded-2xl border-2 border-indigo-500">
-                  <p className="text-[10px] font-extrabold text-indigo-600 uppercase">
-                    NEW READING
-                  </p>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={prevReading}
-                    value={meterInput}
-                    onChange={(e) => setMeterInput(e.target.value)}
-                    className="w-full text-2xl font-black outline-none mt-1 text-slate-900"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-              <div className="bg-white rounded-xl p-3.5 border border-indigo-100 text-sm flex justify-between items-center">
-                <span className="font-medium text-slate-600">
-                  Consumed:{' '}
-                  <strong className="text-slate-900">{unitsConsumed.toFixed(2)} units</strong>
-                </span>
-                <strong className="text-indigo-700">
-                  Rs. {liveElectricityCost.toLocaleString()}
-                </strong>
-              </div>
-            </div>
-
-            <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400">
-                  GRAND TOTAL PAYABLE
-                </p>
-                <p className="text-4xl font-black mt-2 text-white">
-                  Rs. {liveGrandTotal.toLocaleString()}
-                </p>
-                {fineAmount > 0 && isBillOpen && (
-                  <p className="text-xs font-bold text-rose-400 mt-1">
-                    Includes Rs. {fineAmount.toLocaleString()} violation/damage fine
-                  </p>
-                )}
-              </div>
-              <span className="px-4 py-2 rounded-xl text-xs font-extrabold bg-white/20 text-white">
-                {activeBill?.status_display || 'Awaiting Submission'}
-              </span>
+            <h2 className="text-xl font-extrabold text-slate-900">
+              No Active Room or Pending Monthly Bill
+            </h2>
+            <p className="text-sm text-slate-500 max-w-lg mx-auto leading-relaxed">
+              You do not currently have an active room assigned or any open unpaid bills. You can
+              view and print your past official payment receipts in the table below, or browse
+              available units to book a room.
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition"
+              >
+                Browse Available Rooms
+              </button>
             </div>
           </div>
-
-          <div className="lg:col-span-5 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-            <h2 className="text-lg font-extrabold text-slate-900">Verification & QR Payment Desk</h2>
-
-            {/* SCAN & DOWNLOAD OFFICIAL PAYMENT QR BOX */}
-            <div className="rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/70 to-indigo-50/50 border border-emerald-200 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="lg:col-span-7 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                    <QrCode className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">
-                      {paymentQR?.merchant_name || 'SmartRent Official Payment QR'}
-                    </h3>
-                    <p className="text-[11px] text-slate-600">
-                      Scan to pay Rs. {liveGrandTotal.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                {qrSafeUrl && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      downloadFileFromUrl(
-                        qrSafeUrl,
-                        `SmartRent-Payment-QR-${activeBill?.room_number || 'Official'}.png`
-                      )
-                    }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition shrink-0"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Download QR
-                  </button>
-                )}
-              </div>
-
-              {qrSafeUrl ? (
-                <div className="flex flex-col items-center bg-white rounded-2xl p-3.5 border border-emerald-200/80 shadow-2xs">
-                  <div className="relative group">
-                    <img
-                      src={qrSafeUrl}
-                      alt="Official Payment QR Code"
-                      onClick={() => setShowQRZoomModal(true)}
-                      className="w-44 h-44 object-contain rounded-xl cursor-pointer transition-transform group-hover:scale-[1.02]"
-                    />
+                  <h2 className="text-lg font-extrabold text-slate-900">Monthly Bill Telemetry</h2>
+                  {!assignedRoom && selectedBillId && (
                     <button
                       type="button"
-                      onClick={() => setShowQRZoomModal(true)}
-                      className="mt-2 w-full inline-flex items-center justify-center gap-1 text-[11px] font-extrabold text-indigo-600 hover:text-indigo-800"
+                      onClick={() => setSelectedBillId(null)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-600"
                     >
-                      <Maximize2 className="w-3 h-3" /> Tap to View Fullscreen
+                      Close Past Invoice View
                     </button>
+                  )}
+                </div>
+                {bills.length > 1 && (
+                  <select
+                    value={activeBill?.id || ''}
+                    onChange={(e) => {
+                      setSelectedBillId(Number(e.target.value));
+                      setMeterInput('');
+                    }}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-extrabold text-slate-800 outline-none focus:border-indigo-600"
+                  >
+                    {bills.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.billing_month_label} — Rs. {Number(b.total_payable).toLocaleString()} (
+                        {b.status_display})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
+                  <div className="flex items-center gap-3">
+                    <Home className="w-5 h-5 text-indigo-600" />
+                    <p className="text-sm font-bold text-slate-900">Base Room Rent</p>
                   </div>
-                  {paymentQR?.payment_note && (
-                    <p className="text-[11px] text-slate-500 text-center mt-2 leading-relaxed">
-                      {paymentQR.payment_note}
+                  <span className="text-base font-extrabold text-slate-900">
+                    Rs. {baseRent.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
+                  <div className="flex items-center gap-3">
+                    <Droplets className="w-5 h-5 text-emerald-600" />
+                    <p className="text-sm font-bold text-slate-900">Fixed Water Supply</p>
+                  </div>
+                  <span className="text-base font-extrabold text-slate-900">
+                    Rs. {waterBill.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* PROPERTY DAMAGE / VIOLATION FINE ALERT CARD (AUTO-HIDES WHEN PAID OR UNDONE) */}
+              {fineAmount > 0 && isBillOpen && (
+                <div className="rounded-2xl bg-rose-50 border-2 border-rose-200 p-5 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-extrabold uppercase tracking-wider text-rose-950">
+                          Property Damage / Rule Violation Fine
+                        </h3>
+                        {fineAppliedAt && (
+                          <p className="text-[11px] text-rose-600 font-semibold">
+                            Issued on {fineAppliedAt}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-lg font-black text-rose-600">
+                      + Rs. {fineAmount.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {fineReason && (
+                    <div className="p-3 rounded-xl bg-white/90 border border-rose-200/80 text-xs text-rose-950">
+                      <span className="font-extrabold uppercase text-[10px] text-rose-500 block mb-0.5">
+                        Official Admin Reason / Remarks:
+                      </span>
+                      <p className="font-semibold leading-relaxed">{fineReason}</p>
+                    </div>
+                  )}
+
+                  {fineEvidenceUrls.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-rose-800 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-rose-600" /> Attached Inspection
+                        Evidence ({fineEvidenceUrls.length} Photo
+                        {fineEvidenceUrls.length > 1 ? 's' : ''} — Tap to Zoom)
+                      </p>
+                      <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+                        {fineEvidenceUrls.map((evUrl, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() =>
+                              openPhotoLightbox(
+                                fineEvidenceUrls.map((u, i) => ({
+                                  url: u,
+                                  title: `Fine Evidence Photo #${i + 1}`,
+                                  subtitle: `Fine: Rs. ${fineAmount} • Reason: ${fineReason}`,
+                                })),
+                                idx
+                              )
+                            }
+                            className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-rose-300 bg-white shrink-0 cursor-pointer group"
+                          >
+                            <img
+                              src={evUrl}
+                              alt={`Fine Evidence ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition"
+                            />
+                            <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                              <ZoomIn className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="rounded-2xl bg-indigo-50 border border-indigo-100 p-5 space-y-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-extrabold text-indigo-950 flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-indigo-600" /> Sub-Meter Telemetry
+                  </span>
+                  <span className="px-3 py-1 rounded-lg bg-white text-xs font-extrabold text-indigo-700 border border-indigo-200">
+                    Rs. {elecRate} / unit
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200">
+                    <p className="text-[10px] font-extrabold text-slate-400 uppercase">
+                      PREV READING
+                    </p>
+                    <p className="text-2xl font-black text-slate-800 mt-1">{prevReading}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border-2 border-indigo-500">
+                    <p className="text-[10px] font-extrabold text-indigo-600 uppercase">
+                      NEW READING
+                    </p>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={prevReading}
+                      disabled={!isBillOpen}
+                      value={meterInput}
+                      onChange={(e) => setMeterInput(e.target.value)}
+                      className="w-full text-2xl font-black outline-none mt-1 text-slate-900 disabled:bg-transparent"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-3.5 border border-indigo-100 text-sm flex justify-between items-center">
+                  <span className="font-medium text-slate-600">
+                    Consumed:{' '}
+                    <strong className="text-slate-900">{unitsConsumed.toFixed(2)} units</strong>
+                  </span>
+                  <strong className="text-indigo-700">
+                    Rs. {liveElectricityCost.toLocaleString()}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400">
+                    GRAND TOTAL PAYABLE
+                  </p>
+                  <p className="text-4xl font-black mt-2 text-white">
+                    Rs. {liveGrandTotal.toLocaleString()}
+                  </p>
+                  {fineAmount > 0 && isBillOpen && (
+                    <p className="text-xs font-bold text-rose-400 mt-1">
+                      Includes Rs. {fineAmount.toLocaleString()} violation/damage fine
                     </p>
                   )}
                 </div>
-              ) : (
-                <div className="p-4 rounded-xl bg-white/80 border border-dashed border-emerald-300 text-center text-xs text-slate-500">
-                  Official payment QR code has not been uploaded by Admin yet. Please ask Admin or
-                  pay via cash/eSewa.
-                </div>
-              )}
+                <span className="px-4 py-2 rounded-xl text-xs font-extrabold bg-white/20 text-white">
+                  {activeBill?.status_display || 'Awaiting Submission'}
+                </span>
+              </div>
             </div>
 
-            <form onSubmit={handleSubmitOnlineProof} className="space-y-5">
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
-                  METER PHOTO (ZONE 1)
-                </label>
-                <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 cursor-pointer overflow-hidden">
-                  {meterPreview || activeBill?.meter_photo_url ? (
-                    <img
-                      src={meterPreview || getSafeMediaUrl(activeBill.meter_photo_url)}
-                      alt="Meter"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-center">
-                      <Camera className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
-                      <p className="text-sm font-bold text-slate-600">Upload Meter Reading</p>
+            <div className="lg:col-span-5 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+              <h2 className="text-lg font-extrabold text-slate-900">
+                Verification & QR Payment Desk
+              </h2>
+
+              {/* SCAN & DOWNLOAD OFFICIAL PAYMENT QR BOX */}
+              <div className="rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/70 to-indigo-50/50 border border-emerald-200 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <QrCode className="w-4 h-4" />
                     </div>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    required
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) {
-                        setMeterPhoto(f);
-                        setMeterPreview(URL.createObjectURL(f));
-                      }
-                    }}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
-                  PAYMENT SCREENSHOT (ZONE 2)
-                </label>
-                <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 cursor-pointer overflow-hidden">
-                  {paymentPreview || activeBill?.payment_screenshot_url ? (
-                    <img
-                      src={paymentPreview || getSafeMediaUrl(activeBill.payment_screenshot_url)}
-                      alt="Payment"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-center">
-                      <CreditCard className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-                      <p className="text-sm font-bold text-slate-600">Upload eSewa/Bank Receipt</p>
+                    <div>
+                      <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">
+                        {paymentQR?.merchant_name || 'SmartRent Official Payment QR'}
+                      </h3>
+                      <p className="text-[11px] text-slate-600">
+                        Scan to pay Rs. {liveGrandTotal.toLocaleString()}
+                      </p>
                     </div>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    required
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) {
-                        setPaymentPhoto(f);
-                        setPaymentPreview(URL.createObjectURL(f));
+                  </div>
+                  {qrSafeUrl && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadFileFromUrl(
+                          qrSafeUrl,
+                          `SmartRent-Payment-QR-${activeBill?.room_number || 'Official'}.png`
+                        )
                       }
-                    }}
-                    className="hidden"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Download QR
+                    </button>
+                  )}
+                </div>
+
+                {qrSafeUrl ? (
+                  <div className="flex flex-col items-center bg-white rounded-2xl p-3.5 border border-emerald-200/80 shadow-2xs">
+                    <div className="relative group">
+                      <img
+                        src={qrSafeUrl}
+                        alt="Official Payment QR Code"
+                        onClick={() => setShowQRZoomModal(true)}
+                        className="w-44 h-44 object-contain rounded-xl cursor-pointer transition-transform group-hover:scale-[1.02]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowQRZoomModal(true)}
+                        className="mt-2 w-full inline-flex items-center justify-center gap-1 text-[11px] font-extrabold text-indigo-600 hover:text-indigo-800"
+                      >
+                        <Maximize2 className="w-3 h-3" /> Tap to View Fullscreen
+                      </button>
+                    </div>
+                    {paymentQR?.payment_note && (
+                      <p className="text-[11px] text-slate-500 text-center mt-2 leading-relaxed">
+                        {paymentQR.payment_note}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-white/80 border border-dashed border-emerald-300 text-center text-xs text-slate-500">
+                    Official payment QR code has not been uploaded by Admin yet. Please ask Admin or
+                    pay via cash/eSewa.
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleSubmitOnlineProof} className="space-y-5">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
+                    METER PHOTO (ZONE 1)
+                  </label>
+                  <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 cursor-pointer overflow-hidden">
+                    {meterPreview || activeBill?.meter_photo_url ? (
+                      <img
+                        src={meterPreview || getSafeMediaUrl(activeBill.meter_photo_url)}
+                        alt="Meter"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-center">
+                        <Camera className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-600">Upload Meter Reading</p>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      required
+                      disabled={!isBillOpen}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          setMeterPhoto(f);
+                          setMeterPreview(URL.createObjectURL(f));
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
+                    PAYMENT SCREENSHOT (ZONE 2)
+                  </label>
+                  <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 cursor-pointer overflow-hidden">
+                    {paymentPreview || activeBill?.payment_screenshot_url ? (
+                      <img
+                        src={paymentPreview || getSafeMediaUrl(activeBill.payment_screenshot_url)}
+                        alt="Payment"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-center">
+                        <CreditCard className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-600">
+                          Upload eSewa/Bank Receipt
+                        </p>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      required
+                      disabled={!isBillOpen}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          setPaymentPhoto(f);
+                          setPaymentPreview(URL.createObjectURL(f));
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-600 mb-2 uppercase">
+                    TRANSACTION REF ID
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!isBillOpen}
+                    value={transactionRef}
+                    onChange={(e) => setTransactionRef(e.target.value)}
+                    placeholder="e.g. ESEWA-12345"
+                    className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 outline-none focus:border-indigo-600 disabled:bg-slate-100"
                   />
-                </label>
-              </div>
+                </div>
 
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-600 mb-2 uppercase">
-                  TRANSACTION REF ID
-                </label>
-                <input
-                  type="text"
-                  value={transactionRef}
-                  onChange={(e) => setTransactionRef(e.target.value)}
-                  placeholder="e.g. ESEWA-12345"
-                  className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={!activeBill || !isBillOpen || submitBillMutation.isPending}
-                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-2xl shadow-lg disabled:opacity-50"
-              >
-                {submitBillMutation.isPending
-                  ? 'Submitting...'
-                  : isBillOpen
-                  ? 'Submit Proofs for Approval'
-                  : 'Bill Already Settled ✓'}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={!activeBill || !isBillOpen || submitBillMutation.isPending}
+                  className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-2xl shadow-lg disabled:opacity-50"
+                >
+                  {submitBillMutation.isPending
+                    ? 'Submitting...'
+                    : isBillOpen
+                    ? 'Submit Proofs for Approval'
+                    : 'Bill Already Settled ✓'}
+                </button>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        ))}
 
       {/* TAB 2: KYC & LEASE & MOVE OUT */}
       {activeTab === 'KYC_LEASE' && (
@@ -979,7 +1060,8 @@ export default function TenantDashboard() {
                   </div>
                 ) : (
                   <button
-                    onClick={() => setShowMoveOutModal(true)}
+                    type="button"
+                    onClick={handleRequestMoveOutClick}
                     className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-sm rounded-xl"
                   >
                     Request Move-Out Settlement
@@ -1046,7 +1128,7 @@ export default function TenantDashboard() {
       {/* QUICK ACTIONS & HISTORY TABLE */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
         <button
-          onClick={() => activeBill && handlePrintReceipt(activeBill)}
+          onClick={() => (activeBill || bills[0]) && handlePrintReceipt(activeBill || bills[0])}
           className="p-5 bg-white border border-slate-200 hover:border-emerald-500 text-left rounded-3xl shadow-sm"
         >
           <Download className="w-6 h-6 text-emerald-500 mb-3" />
@@ -1094,96 +1176,104 @@ export default function TenantDashboard() {
               </tr>
             </thead>
             <tbody className="text-sm divide-y divide-slate-100">
-              {bills.map((b) => {
-                const rowFineEv = Array.isArray(b.fine_evidence_urls)
-                  ? b.fine_evidence_urls.map((u) => getSafeMediaUrl(u)).filter(Boolean)
-                  : [];
-                const isRowPaid = ['APPROVED', 'PAID_CASH'].includes(b.status);
+              {bills.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-xs text-slate-400 font-bold">
+                    No billing history or past invoices found.
+                  </td>
+                </tr>
+              ) : (
+                bills.map((b) => {
+                  const rowFineEv = Array.isArray(b.fine_evidence_urls)
+                    ? b.fine_evidence_urls.map((u) => getSafeMediaUrl(u)).filter(Boolean)
+                    : [];
+                  const isRowPaid = ['APPROVED', 'PAID_CASH'].includes(b.status);
 
-                return (
-                  <tr
-                    key={b.id}
-                    onClick={() => setSelectedBillId(b.id)}
-                    className={`cursor-pointer transition ${
-                      activeBill?.id === b.id ? 'bg-indigo-50/40' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    <td className="py-4 px-6 font-bold text-slate-900">
-                      {b.billing_month_label}
-                      <span className="block text-[11px] font-normal text-slate-500">
-                        Room {b.room_number} • Due {b.due_date}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-slate-600">
-                      Rs. {b.base_rent} + {b.water_bill}
-                    </td>
-                    <td className="py-4 px-6 text-slate-600">
-                      <strong className="text-indigo-600">{b.units_consumed} units</strong>
-                      {Number(b.damage_fine_amount || 0) > 0 && !isRowPaid && (
-                        <div className="mt-1">
-                          <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 text-[11px] font-extrabold">
-                            Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
-                          </span>
-                          {b.damage_fine_reason && (
-                            <span className="block text-[11px] text-rose-600 truncate max-w-[200px]">
-                              {b.damage_fine_reason}
+                  return (
+                    <tr
+                      key={b.id}
+                      onClick={() => setSelectedBillId(b.id)}
+                      className={`cursor-pointer transition ${
+                        activeBill?.id === b.id ? 'bg-indigo-50/40' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <td className="py-4 px-6 font-bold text-slate-900">
+                        {b.billing_month_label}
+                        <span className="block text-[11px] font-normal text-slate-500">
+                          Room {b.room_number} • Due {b.due_date}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-slate-600">
+                        Rs. {b.base_rent} + {b.water_bill}
+                      </td>
+                      <td className="py-4 px-6 text-slate-600">
+                        <strong className="text-indigo-600">{b.units_consumed} units</strong>
+                        {Number(b.damage_fine_amount || 0) > 0 && !isRowPaid && (
+                          <div className="mt-1">
+                            <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 text-[11px] font-extrabold">
+                              Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
                             </span>
+                            {b.damage_fine_reason && (
+                              <span className="block text-[11px] text-rose-600 truncate max-w-[200px]">
+                                {b.damage_fine_reason}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-4 px-6 font-black text-slate-900">
+                        Rs. {Number(b.total_payable).toLocaleString()}
+                      </td>
+                      <td className="py-4 px-6">
+                        <span
+                          className={`px-3 py-1 text-xs rounded-lg font-bold ${
+                            isRowPaid
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : b.status === 'PENDING_VERIFICATION'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {b.status_display}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1.5"
+                        >
+                          {rowFineEv.length > 0 && !isRowPaid && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openPhotoLightbox(
+                                  rowFineEv.map((u, i) => ({
+                                    url: u,
+                                    title: `Fine Evidence #${i + 1} — ${b.billing_month_label}`,
+                                    subtitle: b.damage_fine_reason,
+                                  }))
+                                )
+                              }
+                              className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg"
+                              title="View Fine Evidence Photos"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
                           )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-4 px-6 font-black text-slate-900">
-                      Rs. {Number(b.total_payable).toLocaleString()}
-                    </td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`px-3 py-1 text-xs rounded-lg font-bold ${
-                          isRowPaid
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : b.status === 'PENDING_VERIFICATION'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {b.status_display}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1.5"
-                      >
-                        {rowFineEv.length > 0 && !isRowPaid && (
                           <button
                             type="button"
-                            onClick={() =>
-                              openPhotoLightbox(
-                                rowFineEv.map((u, i) => ({
-                                  url: u,
-                                  title: `Fine Evidence #${i + 1} — ${b.billing_month_label}`,
-                                  subtitle: b.damage_fine_reason,
-                                }))
-                              )
-                            }
-                            className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg"
-                            title="View Fine Evidence Photos"
+                            onClick={() => handlePrintReceipt(b)}
+                            className="p-2 hover:bg-slate-200 rounded-lg"
+                            title="Print Official Receipt"
                           >
-                            <Eye className="w-4 h-4" />
+                            <FileText className="w-5 h-5 text-slate-500" />
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handlePrintReceipt(b)}
-                          className="p-2 hover:bg-slate-200 rounded-lg"
-                          title="Print Official Receipt"
-                        >
-                          <FileText className="w-5 h-5 text-slate-500" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -1439,8 +1529,8 @@ export default function TenantDashboard() {
                 {kycProfile?.full_name_legal || user?.full_name}
               </p>
               <p>
-                <strong className="text-slate-900">Assigned Unit:</strong> Room{' '}
-                {assignedRoom?.room_number || 'Pending'}
+                <strong className="text-slate-900">Assigned Unit:</strong>{' '}
+                {assignedRoom?.room_number ? `Room ${assignedRoom.room_number}` : 'No Active Room'}
               </p>
               <p>
                 <strong className="text-slate-900">Financials:</strong> Base Rent Rs.{' '}
@@ -1517,6 +1607,93 @@ export default function TenantDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: PAY BILL FIRST WARNING MODAL                                     */}
+      {/* ========================================================================= */}
+      {showPayBillFirstModal && (
+        <div
+          onClick={() => setShowPayBillFirstModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-white rounded-3xl p-7 sm:p-8 shadow-2xl border-2 border-rose-100 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                    Action Required
+                  </span>
+                  <h3 className="text-lg font-black text-slate-900">
+                    Please Pay Your Bill First
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPayBillFirstModal(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              You have an unsettled monthly bill on your account. Please pay and clear your pending
+              bill before submitting a move-out settlement request.
+            </p>
+
+            {openUnpaidBill && (
+              <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-600">Billing Cycle:</span>
+                  <strong className="text-slate-900">{openUnpaidBill.billing_month_label}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-600">Current Status:</span>
+                  <span className="px-2 py-0.5 rounded bg-white text-rose-700 font-extrabold text-[11px] border border-rose-200">
+                    {openUnpaidBill.status_display}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-rose-200/70">
+                  <span className="font-extrabold text-slate-800">Total Payable:</span>
+                  <strong className="text-base font-black text-rose-600">
+                    Rs. {Number(openUnpaidBill.total_payable).toLocaleString()}
+                  </strong>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowPayBillFirstModal(false)}
+                className="flex-1 py-3.5 border-2 border-slate-200 rounded-xl font-extrabold text-xs sm:text-sm text-slate-700 hover:bg-slate-50 transition"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (openUnpaidBill) {
+                    setSelectedBillId(openUnpaidBill.id);
+                  }
+                  setShowPayBillFirstModal(false);
+                  setActiveTab('BILLING');
+                }}
+                className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-xs sm:text-sm shadow-lg shadow-indigo-600/20 transition inline-flex items-center justify-center gap-1.5"
+              >
+                <CreditCard className="w-4 h-4" /> Pay Bill First
+              </button>
+            </div>
           </div>
         </div>
       )}

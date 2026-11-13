@@ -17,7 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
-from apps.rooms.models import Room, Tenancy, RoomReservation
+from apps.rooms.models import Room, Tenancy, RoomReservation, MoveOutRequest
 from apps.rooms.views import IsAdminUserRole
 from apps.billing.models import MonthlyBill, HouseExpense
 from apps.communication.models import ComplaintTicket, ChatMessage, Notice
@@ -96,6 +96,16 @@ def build_enriched_user_dossier(request, u):
     active_tenancy = u.tenancies.filter(is_active=True).select_related('room').first()
     kyc = getattr(u, 'kyc_profile', None)
     cover_abs_url, cover_rel_path = get_user_cover_urls(request, u.id)
+
+    # Clean up any leftover UNPAID/REJECTED bills belonging to closed tenancies
+    try:
+        MonthlyBill.objects.filter(
+            tenant=u,
+            tenancy__is_active=False,
+            status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
+        ).delete()
+    except Exception:
+        pass
 
     user_bills = list(u.bills.select_related('room').all().order_by('-due_date', '-created_at'))
     pending_bills_qs = [
@@ -177,66 +187,89 @@ def build_enriched_user_dossier(request, u):
     return base_data
 
 
-def _send_smartrent_email_worker(recipient_email, subject, message_body):
+def get_admin_emails():
+    """Returns all active Admin email addresses to receive landlord notifications."""
+    admin_emails = list(
+        User.objects.filter(
+            Q(role='ADMIN') | Q(is_superuser=True) | Q(is_staff=True),
+            is_active=True,
+        )
+        .exclude(email='')
+        .values_list('email', flat=True)
+    )
+    default_from = getattr(settings, 'EMAIL_HOST_USER', '') or getattr(settings, 'DEFAULT_FROM_EMAIL', '')
+    if default_from and '@' in default_from and default_from not in admin_emails:
+        admin_emails.append(default_from)
+    return list(dict.fromkeys(admin_emails))
+
+
+def _send_smartrent_email_worker(recipient_list, subject, message_body):
     """
     Background worker:
     1) Tries Google Apps Script HTTPS Webhook FIRST (Port 443 — instant on Render Free Tier)
     2) Falls back to Standard Django SMTP if Webhook is not configured or fails
     """
-    if not recipient_email:
+    valid_recipients = [r.strip() for r in recipient_list if r and '@' in str(r)]
+    if not valid_recipients:
         return False
 
-    # 1. Try Google Apps Script HTTPS Webhook FIRST (Port 443 — never blocked by Render)
     webhook_url = getattr(settings, 'GOOGLE_SCRIPT_WEBHOOK_URL', '').strip()
     webhook_secret = getattr(settings, 'GOOGLE_SCRIPT_SECRET', 'SMARTRENT_SECRET_2026').strip()
-    if webhook_url:
-        try:
-            payload = json.dumps({
-                "secret": webhook_secret,
-                "to": recipient_email,
-                "subject": subject,
-                "message": message_body,
-            }).encode('utf-8')
-            req = urllib.request.Request(
-                webhook_url,
-                data=payload,
-                headers={'Content-Type': 'application/json'},
-                method='POST',
-            )
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                body = resp.read().decode('utf-8', errors='ignore')
-                if resp.status in (200, 302) and 'Unauthorized' not in body and '<!DOCTYPE html>' not in body:
-                    return True
-        except Exception as wh_err:
-            print(f"[SmartRent Webhook Notice]: {wh_err}")
 
-    # 2. Fallback to standard SMTP (works on localhost or paid SMTP relays)
-    if getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
-        try:
-            send_mail(
-                subject=subject,
-                message=message_body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[recipient_email],
-                fail_silently=False,
-            )
-            return True
-        except Exception as smtp_err:
-            print(f"[SmartRent SMTP Notice]: {smtp_err}")
+    for recipient_email in valid_recipients:
+        sent_via_webhook = False
+        if webhook_url:
+            try:
+                payload = json.dumps({
+                    "secret": webhook_secret,
+                    "to": recipient_email,
+                    "subject": subject,
+                    "message": message_body,
+                }).encode('utf-8')
+                req = urllib.request.Request(
+                    webhook_url,
+                    data=payload,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    body = resp.read().decode('utf-8', errors='ignore')
+                    if resp.status in (200, 302) and 'Unauthorized' not in body and '<!DOCTYPE html>' not in body:
+                        sent_via_webhook = True
+            except Exception as wh_err:
+                print(f"[SmartRent Webhook Notice]: {wh_err}")
 
-    return False
+        if not sent_via_webhook and getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
+            try:
+                send_mail(
+                    subject=subject,
+                    message=message_body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[recipient_email],
+                    fail_silently=False,
+                )
+            except Exception as smtp_err:
+                print(f"[SmartRent SMTP Notice]: {smtp_err}")
+
+    return True
 
 
 def send_smartrent_email(recipient_email, subject, message_body):
     """
-    Dispatches email asynchronously in a background thread so OTP and notification
-    endpoints respond immediately (<100ms) without hanging the browser.
+    Dispatches email asynchronously in a background thread (supports single email string or list of emails)
+    so OTP and notification endpoints respond immediately (<100ms) without hanging the browser.
     """
     if not recipient_email:
         return False
+    if isinstance(recipient_email, str):
+        recipient_list = [recipient_email]
+    else:
+        recipient_list = list(recipient_email)
+    if not recipient_list:
+        return False
     threading.Thread(
         target=_send_smartrent_email_worker,
-        args=(recipient_email, subject, message_body),
+        args=(recipient_list, subject, message_body),
         daemon=True,
     ).start()
     return True
@@ -279,6 +312,35 @@ class SignupView(APIView):
         if serializer.is_valid():
             user = serializer.save()
             tokens = get_tokens_for_user(user)
+
+            # 1. Welcome Email to New Tenant
+            send_smartrent_email(
+                user.email,
+                "🏠 Welcome to SmartRent Portal!",
+                (
+                    f"Namaste {user.full_name},\n\n"
+                    f"Your SmartRent account ({user.email}) has been created successfully!\n\n"
+                    f"Next Steps:\n"
+                    f"• Complete your KYC Identity Verification and Digital Lease in your Tenant Dashboard.\n"
+                    f"• Browse available rooms or view your assigned room telemetry.\n\n"
+                    f"— SmartRent House Management"
+                ),
+            )
+
+            # 2. Alert Admin(s) of New Tenant Signup
+            send_smartrent_email(
+                get_admin_emails(),
+                f"👤 New Tenant Registered — {user.full_name}",
+                (
+                    f"Namaste Admin,\n\n"
+                    f"A new user has registered on SmartRent:\n"
+                    f"• Name: {user.full_name}\n"
+                    f"• Email: {user.email}\n"
+                    f"• Phone: {user.phone_number}\n\n"
+                    f"— SmartRent Automated Alert"
+                ),
+            )
+
             return Response(
                 {
                     "message": "Account created successfully!",
@@ -401,14 +463,12 @@ class MeProfileView(APIView):
         uploaded_cover = request.FILES.get('cover_picture')
         remove_cover = str(request.data.get('remove_cover_picture') or '').lower() in ('true', '1', 'yes')
 
-        # 1. Validate & assign Profile Avatar
         if uploaded_avatar:
             err = self._validate_image_file(uploaded_avatar, "Profile picture")
             if err:
                 return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
             user.profile_picture = uploaded_avatar
 
-        # 2. Validate & save Cover / Banner Image
         if uploaded_cover:
             err = self._validate_image_file(uploaded_cover, "Cover banner image")
             if err:
@@ -439,13 +499,11 @@ class MeProfileView(APIView):
                     pass
             _write_banners_map(banners_map)
 
-        # 3. Update full_name if provided
         if 'full_name' in request.data:
             new_name = str(request.data.get('full_name') or '').strip()
             if new_name:
                 user.full_name = new_name
 
-        # 4. Safely handle phone_number
         if 'phone_number' in request.data:
             new_phone = str(request.data.get('phone_number') or '').strip()
             if new_phone and new_phone != user.phone_number:
@@ -529,6 +587,17 @@ class ConfirmPasswordChangeOTPView(APIView):
         user.is_email_verified = True
         user.save()
 
+        send_smartrent_email(
+            user.email,
+            "🔒 SmartRent Security Alert — Password Updated",
+            (
+                f"Namaste {user.full_name},\n\n"
+                f"Your SmartRent account password was successfully updated.\n"
+                f"If you did not perform this action, please contact SmartRent House Management immediately.\n\n"
+                f"— SmartRent House Management"
+            ),
+        )
+
         return Response(
             {"message": "Password updated successfully! You can now log in with your new password."},
             status=status.HTTP_200_OK,
@@ -572,10 +641,33 @@ class AdminEvictOrManageUserView(APIView):
             t.save(update_fields=['is_active', 'move_out_date'])
             vacated_rooms.append(room.room_number)
 
+        # Clear any open unpaid advance bills and pending move-out requests for this vacated tenant
+        MonthlyBill.objects.filter(
+            tenant=target_user,
+            status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
+        ).delete()
+        MoveOutRequest.objects.filter(tenant=target_user, status='PENDING').update(
+            status='APPROVED',
+            resolved_at=timezone.now(),
+        )
+
         action_type = request.data.get('action_type', 'VACATE')
         if action_type == 'BAN':
             target_user.is_active = False
             target_user.save(update_fields=['is_active'])
+
+        if target_user.email:
+            send_smartrent_email(
+                target_user.email,
+                f"SmartRent Notice — Room Tenancy Update ({', '.join(vacated_rooms) if vacated_rooms else 'Account'})",
+                (
+                    f"Namaste {target_user.full_name},\n\n"
+                    f"Your tenancy for Room(s): {', '.join(vacated_rooms) if vacated_rooms else 'N/A'} "
+                    f"has been officially closed/vacated by the Landlord Admin on {timezone.localdate()}.\n\n"
+                    f"Please contact House Management if you have any final settlement questions.\n"
+                    f"— SmartRent House Management"
+                ),
+            )
 
         return Response({
             "message": f"Successfully processed request for {target_user.full_name}. Vacated rooms: {', '.join(vacated_rooms) if vacated_rooms else 'None'}."
@@ -610,6 +702,18 @@ class AdminManageAdminsView(APIView):
                 is_staff=True,
                 is_email_verified=True,
             )
+
+            send_smartrent_email(
+                new_admin.email,
+                "🛡️ SmartRent — Administrator Account Created",
+                (
+                    f"Namaste {new_admin.full_name},\n\n"
+                    f"You have been granted Landlord Administrator access on SmartRent Portal.\n"
+                    f"• Login Email: {new_admin.email}\n\n"
+                    f"— SmartRent Executive Command"
+                ),
+            )
+
             return Response({"message": f"Successfully created new Admin account for {new_admin.email}!"}, status=status.HTTP_201_CREATED)
 
         if action == 'REMOVE':
@@ -657,6 +761,7 @@ class AdminResetDatabaseView(APIView):
                     'billing_monthlybill',
                     'billing_houseexpense',
                     'rooms_roomreservation',
+                    'rooms_moveoutrequest',
                     'rooms_tenancy',
                     'accounts_emailotp',
                     'accounts_kycprofile',
@@ -708,6 +813,47 @@ class KYCProfileView(generics.RetrieveUpdateAPIView):
         )
         return profile
 
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        if instance.status != 'VERIFIED':
+            instance.status = 'PENDING'
+            instance.save(update_fields=['status', 'updated_at'])
+
+        user = self.request.user
+        front_url = build_https_safe_uri(self.request, instance.citizenship_front.url) if instance.citizenship_front else 'Not uploaded'
+        back_url = build_https_safe_uri(self.request, instance.citizenship_back.url) if instance.citizenship_back else 'Not uploaded'
+
+        # 1. Notify All Admins of KYC Submission
+        send_smartrent_email(
+            get_admin_emails(),
+            f"🪪 KYC Documents Submitted — {user.full_name}",
+            (
+                f"Namaste Admin,\n\n"
+                f"A tenant has submitted / updated their KYC Identity Verification documents:\n\n"
+                f"• Tenant: {user.full_name} ({user.email})\n"
+                f"• Legal Full Name: {instance.full_name_legal}\n"
+                f"• Citizenship No: {instance.citizenship_number}\n"
+                f"• Emergency Contact: {instance.emergency_contact_name} ({instance.emergency_contact_phone})\n"
+                f"• Citizenship Front: {front_url}\n"
+                f"• Citizenship Back: {back_url}\n\n"
+                f"Please inspect and Verify or Reject their KYC in the Admin Command Center -> Tenants Directory.\n"
+                f"— SmartRent Automated Alert"
+            ),
+        )
+
+        # 2. Notify Tenant
+        send_smartrent_email(
+            user.email,
+            "SmartRent — KYC Documents Received for Verification",
+            (
+                f"Namaste {user.full_name},\n\n"
+                f"Your KYC identity documents (Citizenship No: {instance.citizenship_number}) have been saved "
+                f"and submitted to the Landlord Admin for verification.\n\n"
+                f"You will receive an email as soon as your KYC status is verified.\n\n"
+                f"— SmartRent House Management"
+            ),
+        )
+
 
 class AdminKYCListView(generics.ListAPIView):
     serializer_class = KYCProfileSerializer
@@ -740,8 +886,21 @@ class AdminKYCAuditView(APIView):
             profile.status = 'VERIFIED'
             profile.admin_notes = notes
             profile.save(update_fields=['status', 'admin_notes', 'updated_at'])
+
+            send_smartrent_email(
+                profile.user.email,
+                "✅ SmartRent — Your KYC Identity is Verified!",
+                (
+                    f"Namaste {profile.user.full_name},\n\n"
+                    f"Great news! Your KYC identity documents (Citizenship No: {profile.citizenship_number or 'Verified'}) "
+                    f"have been reviewed and VERIFIED by the Landlord Admin.\n\n"
+                    f"Admin Notes: {notes or 'Identity verified.'}\n\n"
+                    f"Thank you,\n— SmartRent House Management"
+                ),
+            )
+
             return Response({
-                "message": f"KYC verified for {profile.user.email}!",
+                "message": f"KYC verified for {profile.user.email} and email notification sent!",
                 "profile": KYCProfileSerializer(profile, context={'request': request}).data
             })
 
@@ -749,8 +908,21 @@ class AdminKYCAuditView(APIView):
             profile.status = 'REJECTED'
             profile.admin_notes = notes
             profile.save(update_fields=['status', 'admin_notes', 'updated_at'])
+
+            send_smartrent_email(
+                profile.user.email,
+                "⚠️ SmartRent — KYC Verification Action Required",
+                (
+                    f"Namaste {profile.user.full_name},\n\n"
+                    f"Your KYC identity submission could not be verified at this time.\n"
+                    f"Reason / Admin Notes: {notes or 'Please upload clearer citizenship front and back photos.'}\n\n"
+                    f"Please log in to your SmartRent Tenant Dashboard (Tab 2: KYC Verification) to update your documents.\n\n"
+                    f"— SmartRent House Management"
+                ),
+            )
+
             return Response({
-                "message": f"KYC rejected for {profile.user.email}.",
+                "message": f"KYC rejected for {profile.user.email} and tenant notified via email.",
                 "profile": KYCProfileSerializer(profile, context={'request': request}).data
             })
 
@@ -768,6 +940,30 @@ class AcceptDigitalLeaseView(APIView):
         profile.has_accepted_lease = True
         profile.lease_accepted_at = timezone.now()
         profile.save(update_fields=['has_accepted_lease', 'lease_accepted_at', 'updated_at'])
+
+        # Notify Tenant
+        send_smartrent_email(
+            request.user.email,
+            "📜 SmartRent — Digital Lease Agreement Signed",
+            (
+                f"Namaste {request.user.full_name},\n\n"
+                f"You have officially accepted and signed the SmartRent Digital Lease Agreement on "
+                f"{profile.lease_accepted_at.strftime('%b %d, %Y %I:%M %p')}.\n\n"
+                f"— SmartRent House Management"
+            ),
+        )
+
+        # Notify Admin(s)
+        send_smartrent_email(
+            get_admin_emails(),
+            f"📜 Digital Lease Signed — {request.user.full_name}",
+            (
+                f"Namaste Admin,\n\n"
+                f"Tenant {request.user.full_name} ({request.user.email}) has accepted and signed the Digital Lease Agreement.\n\n"
+                f"— SmartRent Automated Alert"
+            ),
+        )
+
         return Response({
             "message": "Digital lease agreement accepted successfully!",
             "profile": KYCProfileSerializer(profile, context={'request': request}).data

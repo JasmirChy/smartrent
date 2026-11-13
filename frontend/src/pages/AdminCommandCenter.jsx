@@ -34,6 +34,7 @@ import {
   Camera,
   Loader2,
   ImagePlus,
+  LogOut,
 } from 'lucide-react';
 import {
   BarChart,
@@ -50,6 +51,8 @@ import {
 import axiosClient, {
   fetchReservations,
   processReservationAction,
+  fetchPendingMoveOuts,
+  processMoveOutRequest,
   triggerBulkGenerateBills,
   fetchNotices,
   createNotice,
@@ -134,6 +137,11 @@ export default function AdminCommandCenter() {
   const [adminRemarks, setAdminRemarks] = useState('');
   const [selectedReservation, setSelectedReservation] = useState(null);
   const [startingMeterOverride, setStartingMeterOverride] = useState('');
+
+  // Move-Out & Final Settlement States
+  const [selectedMoveOut, setSelectedMoveOut] = useState(null);
+  const [finalMeterOverride, setFinalMeterOverride] = useState('');
+  const [moveOutRemarks, setMoveOutRemarks] = useState('');
 
   // Overrides & Modals
   const [showCashModal, setShowCashModal] = useState(false);
@@ -237,6 +245,13 @@ export default function AdminCommandCenter() {
     refetchIntervalInBackground: true,
   });
 
+  const { data: rawMoveOuts = [] } = useQuery({
+    queryKey: ['adminPendingMoveOuts'],
+    queryFn: fetchPendingMoveOuts,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
+
   const { data: rawNotices = [] } = useQuery({
     queryKey: ['adminNotices'],
     queryFn: fetchNotices,
@@ -264,6 +279,7 @@ export default function AdminCommandCenter() {
 
   const bills = Array.isArray(rawBills) ? rawBills : [];
   const reservations = Array.isArray(rawReservations) ? rawReservations : [];
+  const pendingMoveOuts = Array.isArray(rawMoveOuts) ? rawMoveOuts : [];
   const notices = Array.isArray(rawNotices) ? rawNotices : [];
 
   const tenantUsers = adminUsers.filter((u) => u.role !== 'ADMIN');
@@ -523,6 +539,7 @@ export default function AdminCommandCenter() {
     queryClient.invalidateQueries({ queryKey: ['roomsMatrix'] });
     queryClient.invalidateQueries({ queryKey: ['adminUsersManagement'] });
     queryClient.invalidateQueries({ queryKey: ['adminReservations'] });
+    queryClient.invalidateQueries({ queryKey: ['adminPendingMoveOuts'] });
     queryClient.invalidateQueries({ queryKey: ['adminNotices'] });
     queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
     queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
@@ -575,6 +592,26 @@ export default function AdminCommandCenter() {
       refreshAllAdminData();
       setSelectedReservation(null);
       setStartingMeterOverride('');
+    },
+  });
+
+  const moveOutActionMutation = useMutation({
+    mutationFn: async ({ id, payload }) => processMoveOutRequest(id, payload),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setSelectedMoveOut(null);
+      setFinalMeterOverride('');
+      setMoveOutRemarks('');
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          'Could not process move-out request.',
+      });
     },
   });
 
@@ -831,6 +868,8 @@ export default function AdminCommandCenter() {
     selectedBillForAudit || pendingQueue[0] || bills.find((b) => b.status === 'UNPAID') || null;
   const activeReviewReservation =
     selectedReservation || pendingReservations[0] || reservations[0] || null;
+  const activeReviewMoveOut =
+    selectedMoveOut || pendingMoveOuts[0] || null;
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
@@ -1280,15 +1319,22 @@ export default function AdminCommandCenter() {
             <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  BOOKING QUEUE
+                  BOOKINGS & MOVE-OUTS
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
                   <CalendarCheck className="w-4 h-4" />
                 </div>
               </div>
-              <p className="text-2xl font-extrabold text-slate-900">
-                {pendingReservations.length} Requests
-              </p>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-2xl font-extrabold text-slate-900">
+                  {pendingReservations.length} Bookings
+                </p>
+                {pendingMoveOuts.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-extrabold">
+                    {pendingMoveOuts.length} Move-Out
+                  </span>
+                )}
+              </div>
             </div>
             <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
               <div className="flex items-center justify-between mb-3">
@@ -1513,6 +1559,184 @@ export default function AdminCommandCenter() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE */}
+          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <LogOut className="w-5 h-5 text-rose-600" />
+                Tenant Move-Out & Final Settlement Queue
+                {pendingMoveOuts.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-xs font-extrabold">
+                    {pendingMoveOuts.length} Pending
+                  </span>
+                )}
+              </h3>
+              <span className="text-xs text-slate-500">
+                Verify final sub-meter reading to generate settlement bill & vacate room
+              </span>
+            </div>
+
+            {pendingMoveOuts.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No pending move-out requests from tenants right now.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <div className="lg:col-span-5 space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                  {pendingMoveOuts.map((mo) => (
+                    <div
+                      key={mo.id}
+                      onClick={() => {
+                        setSelectedMoveOut(mo);
+                        setFinalMeterOverride(
+                          String(mo.current_meter_reading ?? '')
+                        );
+                      }}
+                      className={`p-4 rounded-2xl border cursor-pointer transition ${
+                        activeReviewMoveOut?.id === mo.id
+                          ? 'border-rose-600 bg-rose-50/50'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-slate-900 text-xs">
+                          Room {mo.room_number} • {mo.tenant_name}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800">
+                          {mo.status_display || 'Pending Move-Out'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 font-semibold">
+                        Planned Departure: {mo.requested_date}
+                      </p>
+                      {mo.reason && (
+                        <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                          Reason: {mo.reason}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {activeReviewMoveOut && (
+                  <div className="lg:col-span-7 rounded-2xl bg-rose-50/40 border border-rose-200/80 p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200/60 pb-3">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900">
+                          Room {activeReviewMoveOut.room_number} — {activeReviewMoveOut.tenant_name}
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Email: {activeReviewMoveOut.tenant_email}
+                          {activeReviewMoveOut.tenant_phone
+                            ? ` • 📞 ${activeReviewMoveOut.tenant_phone}`
+                            : ''}
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-lg bg-white text-rose-700 font-extrabold text-xs border border-rose-200">
+                        Departure: {activeReviewMoveOut.requested_date}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 rounded-xl bg-white border border-slate-200">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          Previous Sub-Meter Reading
+                        </span>
+                        <strong className="text-sm text-indigo-600">
+                          {activeReviewMoveOut.current_meter_reading ?? 0} units
+                        </strong>
+                      </div>
+                      <div className="p-3 rounded-xl bg-white border border-slate-200">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          Tenant Reason
+                        </span>
+                        <strong className="text-slate-800">
+                          {activeReviewMoveOut.reason || 'Not specified'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
+                          Final Sub-Meter Reading (Units) *
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={activeReviewMoveOut.current_meter_reading || 0}
+                          value={
+                            finalMeterOverride !== ''
+                              ? finalMeterOverride
+                              : String(activeReviewMoveOut.current_meter_reading ?? 0)
+                          }
+                          onChange={(e) => setFinalMeterOverride(e.target.value)}
+                          placeholder="Enter final sub-meter reading"
+                          className="w-full px-3 py-2.5 text-xs font-bold rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
+                          Admin Settlement Remarks (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={moveOutRemarks}
+                          onChange={(e) => setMoveOutRemarks(e.target.value)}
+                          placeholder="e.g. Keys returned & deposit settled"
+                          className="w-full px-3 py-2.5 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-1">
+                      <button
+                        type="button"
+                        disabled={moveOutActionMutation.isPending}
+                        onClick={() =>
+                          moveOutActionMutation.mutate({
+                            id: activeReviewMoveOut.id,
+                            payload: {
+                              action: 'REJECT',
+                              admin_remarks:
+                                moveOutRemarks || 'Please clear pending dues before move-out.',
+                            },
+                          })
+                        }
+                        className="flex-1 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200 transition"
+                      >
+                        Reject Request
+                      </button>
+                      <button
+                        type="button"
+                        disabled={moveOutActionMutation.isPending}
+                        onClick={() =>
+                          moveOutActionMutation.mutate({
+                            id: activeReviewMoveOut.id,
+                            payload: {
+                              action: 'APPROVE',
+                              final_meter_reading:
+                                finalMeterOverride !== ''
+                                  ? finalMeterOverride
+                                  : activeReviewMoveOut.current_meter_reading,
+                              admin_remarks:
+                                moveOutRemarks || 'Final move-out settlement invoice.',
+                            },
+                          })
+                        }
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-sm transition"
+                      >
+                        {moveOutActionMutation.isPending
+                          ? 'Processing...'
+                          : 'Approve, Generate Final Bill & Vacate'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
