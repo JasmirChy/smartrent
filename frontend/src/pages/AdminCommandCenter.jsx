@@ -123,6 +123,7 @@ export default function AdminCommandCenter() {
 
   const [activeAdminTab, setActiveAdminTab] = useState('OVERVIEW'); // OVERVIEW | USERS | ADMINS
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [userToDelete, setUserToDelete] = useState(null);
 
   // Fullscreen Photo Lightbox States
   const [lightboxState, setLightboxState] = useState({
@@ -778,6 +779,16 @@ export default function AdminCommandCenter() {
       setBannerMsg({ type: 'success', text: data.message });
       refreshAllAdminData();
       setSelectedUserId(null);
+      setUserToDelete(null);
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          'Could not complete tenant action.',
+      });
     },
   });
 
@@ -868,8 +879,7 @@ export default function AdminCommandCenter() {
     selectedBillForAudit || pendingQueue[0] || bills.find((b) => b.status === 'UNPAID') || null;
   const activeReviewReservation =
     selectedReservation || pendingReservations[0] || reservations[0] || null;
-  const activeReviewMoveOut =
-    selectedMoveOut || pendingMoveOuts[0] || null;
+  const activeReviewMoveOut = selectedMoveOut || pendingMoveOuts[0] || null;
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
@@ -994,7 +1004,7 @@ export default function AdminCommandCenter() {
                 Registered Users & Tenants Directory
               </h3>
               <p className="text-xs text-slate-500">
-                Inspect full tenant profiles, fullscreen photos, KYC citizenship IDs, assigned rooms, and pending bills.
+                Inspect full tenant profiles, fullscreen photos, KYC citizenship IDs, assigned rooms, or permanently delete departed tenants.
               </p>
             </div>
             {tenantUsers.length > 0 && (
@@ -1145,7 +1155,7 @@ export default function AdminCommandCenter() {
                     </div>
 
                     {/* Action Footer */}
-                    <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between gap-1.5">
                       <button
                         type="button"
                         onClick={() => setSelectedUserId(u.id)}
@@ -1156,7 +1166,7 @@ export default function AdminCommandCenter() {
                       <button
                         type="button"
                         onClick={() => openFineModalForUser(u, null)}
-                        className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                        className="py-2.5 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition inline-flex items-center gap-1"
                         title="Apply Fine to Tenant"
                       >
                         <AlertTriangle className="w-3.5 h-3.5" /> Fine
@@ -1165,7 +1175,7 @@ export default function AdminCommandCenter() {
                         <button
                           type="button"
                           onClick={() => openPhotoLightbox(galleryItems, 0)}
-                          className="py-2.5 px-3 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                          className="py-2.5 px-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
                           title="Open Photo Viewer"
                         >
                           <Camera className="w-3.5 h-3.5" />
@@ -1183,12 +1193,20 @@ export default function AdminCommandCenter() {
                               evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
                             }
                           }}
-                          className="py-2.5 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold transition"
-                          title="Vacate Room"
+                          className="py-2.5 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-extrabold transition"
+                          title="Vacate Room (Keeps User Account)"
                         >
                           Vacate
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setUserToDelete(u)}
+                        className="py-2.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
+                        title="Permanently Delete Tenant & All Data"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -2720,7 +2738,7 @@ export default function AdminCommandCenter() {
 
               {/* Sticky Modal Footer */}
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {u.room_number && (
                     <button
                       type="button"
@@ -2736,9 +2754,18 @@ export default function AdminCommandCenter() {
                           });
                         }
                       }}
-                      className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-sm transition"
+                      className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-sm transition"
                     >
-                      Ask Tenant to Leave / Vacate Room {u.room_number}
+                      Vacate Room {u.room_number}
+                    </button>
+                  )}
+                  {u.role !== 'ADMIN' && (
+                    <button
+                      type="button"
+                      onClick={() => setUserToDelete(u)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-sm transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Tenant & All Data
                     </button>
                   )}
                 </div>
@@ -3754,6 +3781,102 @@ export default function AdminCommandCenter() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 9: PERMANENT TENANT & DATA DELETION CONFIRMATION MODAL              */}
+      {/* ========================================================================= */}
+      {userToDelete && (
+        <div
+          onClick={() => setUserToDelete(null)}
+          className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border-2 border-rose-200 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-rose-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                    Permanent Removal
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    Delete Tenant & All Data?
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <p className="font-extrabold text-slate-900 text-sm">{userToDelete.full_name}</p>
+              <p className="text-slate-500">{userToDelete.email}</p>
+              {userToDelete.phone_number && (
+                <p className="text-slate-500">📞 {userToDelete.phone_number}</p>
+              )}
+              <p className="pt-1 font-bold text-indigo-600">
+                {userToDelete.room_number
+                  ? `Currently Assigned: Room ${userToDelete.room_number} (Will be marked Vacant)`
+                  : 'No Active Room Assigned'}
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-[11px] text-rose-900 space-y-1">
+              <p className="font-extrabold text-rose-700">
+                This will permanently erase from the database:
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5 text-rose-800">
+                <li>Tenant login account, profile avatar & cover banner</li>
+                <li>KYC citizenship photos & digital lease records</li>
+                <li>All monthly bills, receipts, reservations & move-out requests</li>
+                <li>All chat messages & maintenance tickets</li>
+              </ul>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={evictMutation.isPending}
+                onClick={() =>
+                  evictMutation.mutate({
+                    userId: userToDelete.id,
+                    actionType: 'DELETE',
+                  })
+                }
+                className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-rose-600/20 transition inline-flex items-center justify-center gap-1.5"
+              >
+                {evictMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Yes, Delete Tenant
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

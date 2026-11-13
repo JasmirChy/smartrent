@@ -624,13 +624,27 @@ class AdminUserManagementListView(APIView):
 
 
 class AdminEvictOrManageUserView(APIView):
+    """
+    Allows Admin to:
+    - VACATE: Close active tenancy, mark room vacant, and clear open unpaid bills.
+    - BAN: Vacate room and deactivate account.
+    - DELETE: Permanently delete the tenant and all associated data (bills, KYC, tenancies, reservations, chats, tickets, and files).
+    """
     permission_classes = [IsAdminUserRole]
 
     @transaction.atomic
     def post(self, request, user_id):
         target_user = get_object_or_404(User, id=user_id)
-        active_tenancies = Tenancy.objects.filter(tenant=target_user, is_active=True).select_related('room')
+        action_type = (request.data.get('action_type') or 'VACATE').upper()
 
+        if target_user.id == request.user.id:
+            return Response(
+                {"error": "You cannot vacate or delete your own logged-in Admin account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 1. Vacate any rooms currently occupied by this user
+        active_tenancies = Tenancy.objects.filter(tenant=target_user, is_active=True).select_related('room')
         vacated_rooms = []
         for t in active_tenancies:
             room = t.room
@@ -641,7 +655,91 @@ class AdminEvictOrManageUserView(APIView):
             t.save(update_fields=['is_active', 'move_out_date'])
             vacated_rooms.append(room.room_number)
 
-        # Clear any open unpaid advance bills and pending move-out requests for this vacated tenant
+        # ---------------------------------------------------------------------
+        # PERMANENT TENANT & DATA DELETION ('DELETE')
+        # ---------------------------------------------------------------------
+        if action_type == 'DELETE':
+            if getattr(target_user, 'role', '') == 'ADMIN' or target_user.is_superuser:
+                return Response(
+                    {"error": "Cannot delete an Administrator account from the tenant directory. Revoke admin role first."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            tenant_name = target_user.full_name
+            tenant_email = target_user.email
+            uid_str = str(target_user.id)
+
+            # Remove cover banner file if present
+            try:
+                banners_map = _read_banners_map()
+                old_cover = banners_map.pop(uid_str, None)
+                if old_cover and default_storage.exists(old_cover):
+                    default_storage.delete(old_cover)
+                _write_banners_map(banners_map)
+            except Exception:
+                pass
+
+            # Remove profile picture file
+            try:
+                if target_user.profile_picture:
+                    target_user.profile_picture.delete(save=False)
+            except Exception:
+                pass
+
+            # Remove KYC citizenship files
+            try:
+                kyc_obj = getattr(target_user, 'kyc_profile', None)
+                if kyc_obj:
+                    if kyc_obj.citizenship_front:
+                        kyc_obj.citizenship_front.delete(save=False)
+                    if kyc_obj.citizenship_back:
+                        kyc_obj.citizenship_back.delete(save=False)
+            except Exception:
+                pass
+
+            # Remove bill proof files
+            try:
+                for b in MonthlyBill.objects.filter(tenant=target_user):
+                    if b.meter_photo_proof:
+                        b.meter_photo_proof.delete(save=False)
+                    if b.payment_screenshot_proof:
+                        b.payment_screenshot_proof.delete(save=False)
+            except Exception:
+                pass
+
+            # Delete all dependent records across apps
+            try:
+                ChatMessage.objects.filter(Q(sender=target_user) | Q(receiver=target_user)).delete()
+            except Exception:
+                pass
+            try:
+                ComplaintTicket.objects.filter(tenant=target_user).delete()
+            except Exception:
+                pass
+
+            MonthlyBill.objects.filter(tenant=target_user).delete()
+            MoveOutRequest.objects.filter(tenant=target_user).delete()
+            RoomReservation.objects.filter(user=target_user).delete()
+            Tenancy.objects.filter(tenant=target_user).delete()
+            KYCProfile.objects.filter(user=target_user).delete()
+            EmailOTP.objects.filter(email=tenant_email).delete()
+
+            target_user.delete()
+
+            room_note = f" Room {', '.join(vacated_rooms)} is now Vacant." if vacated_rooms else ""
+            return Response(
+                {
+                    "message": (
+                        f"Tenant {tenant_name} ({tenant_email}) and all associated bills, KYC documents, "
+                        f"and history have been permanently deleted from the system!{room_note}"
+                    )
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # ---------------------------------------------------------------------
+        # VACATE / BAN FLOW
+        # ---------------------------------------------------------------------
         MonthlyBill.objects.filter(
             tenant=target_user,
             status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
@@ -651,7 +749,6 @@ class AdminEvictOrManageUserView(APIView):
             resolved_at=timezone.now(),
         )
 
-        action_type = request.data.get('action_type', 'VACATE')
         if action_type == 'BAN':
             target_user.is_active = False
             target_user.save(update_fields=['is_active'])
@@ -935,7 +1032,7 @@ class AcceptDigitalLeaseView(APIView):
     def post(self, request):
         profile, created = KYCProfile.objects.get_or_create(
             user=request.user,
-            defaults={'full_name_legal': getattr(request.user, 'full_name', '') or request.user.email}
+            defaults={'full_name_legal': getattr(self.request.user, 'full_name', '') or self.user.email}
         )
         profile.has_accepted_lease = True
         profile.lease_accepted_at = timezone.now()
