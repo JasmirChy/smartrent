@@ -24,14 +24,231 @@ import {
   Pause,
   ZoomIn,
   Layers,
+  Wrench,
+  Lock,
+  Car,
+  Users,
+  CreditCard,
+  MessageSquare,
+  Ban,
+  LogOut,
+  HeartHandshake,
+  FileCheck2,
 } from 'lucide-react';
-import axiosClient, { createReservation } from '../api/axiosClient';
+import axiosClient, { createReservation, acceptDigitalLease } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_HERO_IMAGE =
   'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=85';
 
 const MAX_BANNER_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+const HOUSE_RULES_CATEGORIES = [
+  {
+    id: 1,
+    title: '1. Cleanliness & Hygiene',
+    subtitle: 'Sanitation standards for rooms, kitchens, drains, and shared spaces',
+    icon: Sparkles,
+    iconBg: 'bg-emerald-50 text-emerald-600',
+    items: [
+      'Keep rooms, bathrooms, and shared spaces clean.',
+      'Dispose of garbage in designated dustbins.',
+      'Do not throw waste, sanitary products, or food into drains or toilets.',
+      'Maintain cleanliness around the building.',
+    ],
+  },
+  {
+    id: 2,
+    title: '2. Property Damage & Maintenance',
+    subtitle: 'Care of walls, and reporting of maintenance issues',
+    icon: Wrench,
+    iconBg: 'bg-indigo-50 text-indigo-600',
+    items: [
+      'Take proper care of walls, doors, furniture, and fixtures.',
+      'Do not modify, drill, or repaint property without permission.',
+      'Report leaks, breakages, and maintenance issues immediately.',
+      'Tenants are responsible for damage caused by negligence or misuse.',
+      'Normal wear and tear is not chargeable.',
+    ],
+  },
+  {
+    id: 3,
+    title: '3. Electricity & Water Usage',
+    subtitle: 'Responsible utility consumption and sub-meter integrity',
+    icon: Zap,
+    iconBg: 'bg-amber-50 text-amber-600',
+    items: [
+      'Switch off lights and appliances when not in use.',
+      'Avoid unnecessary electricity and water wastage.',
+      'Use high-power appliances responsibly.',
+      'Do not tamper with meters, wiring, or connections.',
+      'Pay utility bills within the agreed deadline.',
+    ],
+  },
+  {
+    id: 4,
+    title: '4. Noise & Peaceful Environment',
+    subtitle: 'Quiet hours (10:00 PM – 6:00 AM) and neighborly conduct',
+    icon: Moon,
+    iconBg: 'bg-violet-50 text-violet-600',
+    items: [
+      'Avoid loud music, shouting, and unnecessary disturbances.',
+      'Maintain quiet hours from 10:00 PM to 6:00 AM.',
+      'Respect neighbors and other tenants.',
+      'Fighting, threatening, or disruptive behavior is prohibited.',
+    ],
+  },
+  {
+    id: 5,
+    title: '5. Security & Safety',
+    subtitle: 'Access control, appliance safety, and emergency awareness',
+    icon: Lock,
+    iconBg: 'bg-teal-50 text-teal-600',
+    items: [
+      'Lock rooms and entrances when leaving.',
+      'Do not share keys or access codes with unauthorized people.',
+      'Inform the owner about overnight guests.',
+      'Never leave cooking appliances unattended.',
+      'Do not keep hazardous or illegal materials on the property.',
+      'Report suspicious activities and emergencies immediately.',
+    ],
+  },
+  {
+    id: 6,
+    title: '6. Parking & Common Areas',
+    subtitle: 'Designated parking and unobstructed corridors & staircases',
+    icon: Car,
+    iconBg: 'bg-sky-50 text-sky-600',
+    items: [
+      'Park vehicles only in designated spaces.',
+      'Keep corridors, staircases, and balconies clean.',
+      'Do not block entrances or other vehicles.',
+      'Do not misuse or damage shared facilities.',
+      'Keep common areas accessible to everyone.',
+    ],
+  },
+  {
+    id: 7,
+    title: '7. Visitors & Guests',
+    subtitle: 'Guest conduct and prior notice for overnight stays',
+    icon: Users,
+    iconBg: 'bg-indigo-50 text-indigo-600',
+    items: [
+      "Tenants are responsible for their visitors' behavior.",
+      'Inform the owner about overnight or extended stays.',
+      'Ensure guests respect other residents and house rules.',
+      'Visitors must not damage property or disturb others.',
+    ],
+  },
+  {
+    id: 8,
+    title: '8. Rent & Bill Payments',
+    subtitle: 'Timely monthly settlement and receipt record-keeping',
+    icon: CreditCard,
+    iconBg: 'bg-emerald-50 text-emerald-600',
+    items: [
+      'Pay monthly rent and utility bills on time.',
+      'Clear outstanding payments within the agreed period.',
+      'Inform the owner about possible payment delays.',
+      'Keep payment receipts for future reference.',
+      'Follow agreed rent and billing arrangements.',
+    ],
+  },
+  {
+    id: 9,
+    title: '9. Maintenance & Communication',
+    subtitle: 'Official reporting channels and inspection cooperation',
+    icon: MessageSquare,
+    iconBg: 'bg-blue-50 text-blue-600',
+    items: [
+      'Report maintenance problems and damages promptly.',
+      'Obtain permission before making repairs or modifications.',
+      'Cooperate with scheduled inspections after prior notice.',
+      'Report complaints through the website or directly to the owner.',
+      'Allow necessary access during emergencies.',
+    ],
+  },
+  {
+    id: 10,
+    title: '10. Additional Restrictions',
+    subtitle: 'Policies on pets, subletting, commercial use, and privacy',
+    icon: Ban,
+    iconBg: 'bg-rose-50 text-rose-600',
+    items: [
+      'Illegal activities are strictly prohibited.',
+      'Pets require prior owner approval.',
+      'Subletting requires written permission.',
+      'Unauthorized commercial activities are not allowed.',
+      "Respect everyone's privacy and personal belongings.",
+    ],
+  },
+  {
+    id: 11,
+    title: '11. Damage Fines & Penalties',
+    subtitle: 'Official penalty schedule and transparent fine enforcement rules',
+    icon: AlertTriangle,
+    iconBg: 'bg-rose-100 text-rose-600',
+    isHighlightedFineCategory: true,
+    items: [
+      'Every fine must include a clear reason.',
+      'Photographic evidence should be attached whenever possible.',
+      'Tenants receive notifications for issued fines.',
+      'Tenants can review and dispute fines.',
+      'Repair costs must have supporting evidence.',
+      'No fines for normal wear and tear.',
+      'All penalties must be reasonable and follow the rental agreement and applicable law.',
+    ],
+  },
+  {
+    id: 12,
+    title: '12. Moving In & Moving Out',
+    subtitle: 'Registration, handover inspection, advance notice, and final settlement',
+    icon: LogOut,
+    iconBg: 'bg-amber-50 text-amber-600',
+    items: [
+      'Complete registration before occupying the room.',
+      'Inspect and report existing damages during handover.',
+      'Provide advance notice before vacating.',
+      'Clear outstanding rent and bills before departure.',
+      'Return keys and owner-provided belongings.',
+      'Complete the final inspection before deposit settlement.',
+    ],
+  },
+  {
+    id: 13,
+    title: '13. General Responsibilities',
+    subtitle: 'Community harmony, announcements, and agreement compliance',
+    icon: HeartHandshake,
+    iconBg: 'bg-teal-50 text-teal-600',
+    items: [
+      'Respect other tenants, their privacy, and belongings.',
+      'Maintain a friendly and cooperative environment.',
+      'Follow owner announcements and instructions.',
+      'Keep registered contact information updated.',
+      'Repeated violations may result in action under the rental agreement.',
+    ],
+  },
+];
+
+const DAMAGE_FINE_PENALTIES = [
+  { violation: 'Littering in shared areas', penalty: 'NPR 100–200' },
+  { violation: 'Repeated noise disturbances', penalty: 'NPR 200–500' },
+  { violation: 'Intentional water wastage', penalty: 'Actual additional cost' },
+  { violation: 'Damaged furniture or fixtures', penalty: 'Repair/replacement cost' },
+  { violation: 'Plumbing or electrical damage', penalty: 'Actual repair cost' },
+  { violation: 'Unauthorized modifications', penalty: 'Restoration cost' },
+  { violation: 'Damage caused by guests', penalty: 'Actual repair cost' },
+];
+
+const FINE_GUIDELINES_LIST = [
+  'Every fine must include a clear reason.',
+  'Photographic evidence should be attached whenever possible.',
+  'Tenants receive notifications for issued fines.',
+  'Tenants can review and dispute fines.',
+  'Repair costs must have supporting evidence.',
+  'No fines for normal wear and tear.',
+  'All penalties must be reasonable and follow the rental agreement and applicable law.',
+];
 
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
@@ -74,7 +291,7 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 }
 
 export default function PublicLanding() {
-  const { user, isAdmin, openAuthModal } = useAuth();
+  const { user, isAdmin, openAuthModal, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -85,7 +302,18 @@ export default function PublicLanding() {
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const [isHoveringHero, setIsHoveringHero] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
+
+  // 13-Category Accordion & Tenant Acknowledgment States
   const [openRuleIndex, setOpenRuleIndex] = useState(0);
+  const [expandAllRules, setExpandAllRules] = useState(false);
+  const [rulesAcceptedLocal, setRulesAcceptedLocal] = useState(() => {
+    try {
+      return localStorage.getItem('smartrent_rules_accepted') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [rulesAckMsg, setRulesAckMsg] = useState('');
 
   // Reservation Modal States
   const [reservingRoom, setReservingRoom] = useState(null);
@@ -123,9 +351,10 @@ export default function PublicLanding() {
 
   const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
   const rawBanners = Array.isArray(data?.banners) ? data.banners : [];
-  const rules = Array.isArray(data?.rules) ? data.rules : [];
   const notices = Array.isArray(data?.notices) ? data.notices : [];
   const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
+
+  const hasAcceptedRules = Boolean(user?.has_accepted_lease || rulesAcceptedLocal);
 
   // Normalize banner image URLs for both laptop and mobile
   const banners = rawBanners.map((b) => ({
@@ -162,6 +391,54 @@ export default function PublicLanding() {
       });
     };
   }, [bannerPreviews]);
+
+  // Mutation: Accept House Rules & Digital Lease Acknowledgment
+  const acceptRulesMutation = useMutation({
+    mutationFn: acceptDigitalLease,
+    onSuccess: async (resData) => {
+      try {
+        localStorage.setItem('smartrent_rules_accepted', 'true');
+      } catch {
+        // Ignore storage errors
+      }
+      setRulesAcceptedLocal(true);
+      setRulesAckMsg(
+        resData?.message ||
+          'Thank you! Your acknowledgment of the House Rules & Guidelines has been recorded.'
+      );
+      if (typeof refreshProfile === 'function') {
+        await refreshProfile();
+      }
+      queryClient.invalidateQueries({ queryKey: ['tenantKYC'] });
+      queryClient.invalidateQueries({ queryKey: ['tenantMeProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['meProfileSettings'] });
+    },
+    onError: () => {
+      try {
+        localStorage.setItem('smartrent_rules_accepted', 'true');
+      } catch {
+        // Ignore storage errors
+      }
+      setRulesAcceptedLocal(true);
+      setRulesAckMsg('House Rules & Guidelines acknowledgment saved!');
+    },
+  });
+
+  const handleAcceptHouseRules = () => {
+    if (user) {
+      acceptRulesMutation.mutate();
+    } else {
+      try {
+        localStorage.setItem('smartrent_rules_accepted', 'true');
+      } catch {
+        // Ignore storage errors
+      }
+      setRulesAcceptedLocal(true);
+      setRulesAckMsg(
+        'You have accepted the House Rules & Guidelines! Sign in anytime to link this acknowledgment to your tenant profile.'
+      );
+    }
+  };
 
   // Admin Mutation: Upload Multiple Hero Images at once
   const uploadBannerMutation = useMutation({
@@ -981,73 +1258,261 @@ export default function PublicLanding() {
         )}
       </section>
 
-      {/* HOUSE RULES */}
-      <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-14 border-t border-slate-200/70">
-        <div className="text-center mb-8">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
-            COMMUNITY HARMONY
-          </p>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-            House Rules & Regulations
-          </h2>
+      {/* ========================================================================= */}
+      {/* HOUSE RULES & GUIDELINES (13 ACCORDION CARDS + HIGHLIGHTED FINES CARD)    */}
+      {/* ========================================================================= */}
+      <section
+        id="house-rules"
+        className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-14 border-t border-slate-200/70 space-y-8"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
+              COMMUNITY HARMONY & TENANT CHARTER
+            </p>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+              House Rules & Guidelines
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              Official 13-point residential guidelines for a clean, safe, peaceful, and respectful living environment.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setExpandAllRules((prev) => !prev)}
+            className="self-start sm:self-auto px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 border border-slate-200 text-xs font-extrabold shadow-2xs transition"
+          >
+            {expandAllRules ? 'Collapse All 13 Categories' : 'Expand All 13 Categories'}
+          </button>
         </div>
 
-        <div className="space-y-3.5">
-          {rules.map((rule, idx) => {
-            const isOpen = openRuleIndex === idx;
-            const iconMap = {
-              CLEANLINESS: <Sparkles className="w-5 h-5 text-emerald-600" />,
-              DISCIPLINE: <Moon className="w-5 h-5 text-indigo-600" />,
-              DAMAGE_FINE: <AlertTriangle className="w-5 h-5 text-rose-600" />,
-            };
-            const bgMap = {
-              CLEANLINESS: 'bg-emerald-50',
-              DISCIPLINE: 'bg-indigo-50',
-              DAMAGE_FINE: 'bg-rose-50',
-            };
+        {/* 13 ACCORDION CARDS */}
+        <div className="space-y-3">
+          {HOUSE_RULES_CATEGORIES.map((cat, idx) => {
+            const isOpen = expandAllRules || openRuleIndex === idx;
+            const IconComponent = cat.icon;
 
             return (
               <div
-                key={rule.id}
-                className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden"
+                key={cat.id}
+                className={`rounded-2xl transition overflow-hidden border ${
+                  cat.isHighlightedFineCategory
+                    ? 'bg-rose-50/40 border-rose-200 shadow-sm'
+                    : 'bg-white border-slate-200/80 shadow-xs'
+                }`}
               >
                 <button
-                  onClick={() => setOpenRuleIndex(isOpen ? -1 : idx)}
+                  type="button"
+                  onClick={() => {
+                    if (expandAllRules) {
+                      setExpandAllRules(false);
+                      setOpenRuleIndex(idx);
+                    } else {
+                      setOpenRuleIndex(isOpen ? -1 : idx);
+                    }
+                  }}
                   className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-slate-50/60 transition"
                 >
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0 pr-3">
                     <div
-                      className={`w-10 h-10 rounded-xl ${
-                        bgMap[rule.category] || 'bg-slate-100'
-                      } flex items-center justify-center shrink-0`}
+                      className={`w-10 h-10 rounded-xl ${cat.iconBg} flex items-center justify-center shrink-0`}
                     >
-                      {iconMap[rule.category] || <ShieldCheck className="w-5 h-5" />}
+                      <IconComponent className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">{rule.title}</h3>
-                      <p className="text-xs text-slate-500">{rule.category_display}</p>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3
+                          className={`text-sm sm:text-base font-extrabold ${
+                            cat.isHighlightedFineCategory ? 'text-rose-900' : 'text-slate-900'
+                          }`}
+                        >
+                          {cat.title}
+                        </h3>
+                        {cat.isHighlightedFineCategory && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-extrabold uppercase">
+                            Penalty Schedule
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate">{cat.subtitle}</p>
                     </div>
                   </div>
                   <ChevronDown
-                    className={`w-5 h-5 text-slate-400 transition-transform ${
-                      isOpen ? 'rotate-180' : ''
+                    className={`w-5 h-5 text-slate-400 shrink-0 transition-transform duration-200 ${
+                      isOpen ? 'rotate-180 text-indigo-600' : ''
                     }`}
                   />
                 </button>
 
                 {isOpen && (
-                  <div className="px-5 pb-5 pt-1 text-xs sm:text-sm text-slate-600 leading-relaxed border-t border-slate-100">
-                    <p>{rule.description}</p>
-                    <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-semibold">
-                      {Number(rule.fine_amount) > 0
-                        ? `Violation Fine: Rs. ${Number(rule.fine_amount).toLocaleString()}`
-                        : 'Fine Policy: 100% of Damaged Property Repair / Replacement Cost'}
-                    </div>
+                  <div className="px-5 pb-5 pt-2 border-t border-slate-100/90 space-y-4">
+                    {cat.isHighlightedFineCategory && (
+                      <div className="overflow-x-auto rounded-xl border border-rose-200 bg-white">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-rose-50 text-rose-900 font-extrabold uppercase text-[11px] border-b border-rose-200">
+                            <tr>
+                              <th className="py-2.5 px-4">Violation</th>
+                              <th className="py-2.5 px-4">Penalty</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-100">
+                            {DAMAGE_FINE_PENALTIES.map((row, rIdx) => (
+                              <tr key={rIdx} className="hover:bg-rose-50/30">
+                                <td className="py-2.5 px-4 font-semibold text-slate-800">
+                                  {row.violation}
+                                </td>
+                                <td className="py-2.5 px-4 font-extrabold text-rose-600">
+                                  {row.penalty}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    <ul className="space-y-2">
+                      {cat.items.map((point, pIdx) => (
+                        <li
+                          key={pIdx}
+                          className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700"
+                        >
+                          <CheckCircle2
+                            className={`w-4 h-4 shrink-0 mt-0.5 ${
+                              cat.isHighlightedFineCategory
+                                ? 'text-rose-600'
+                                : 'text-indigo-600'
+                            }`}
+                          />
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+
+        {/* SEPARATE HIGHLIGHTED CARD FOR DAMAGE FINES & PENALTIES */}
+        <div className="rounded-3xl bg-gradient-to-br from-rose-50 via-white to-amber-50/60 border-2 border-rose-200 p-6 sm:p-8 shadow-md space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-200/70 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                  Highlighted Policy Schedule
+                </span>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900">
+                  Damage Fines & Penalties Schedule
+                </h3>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-extrabold self-start sm:self-auto">
+              Evidence-Backed Enforcement
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Violation & Penalty Table */}
+            <div className="lg:col-span-7 overflow-x-auto rounded-2xl border border-rose-200 bg-white shadow-2xs">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4">Violation</th>
+                    <th className="py-3 px-4">Penalty</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {DAMAGE_FINE_PENALTIES.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-rose-50/40 transition">
+                      <td className="py-3 px-4 font-bold text-slate-800">{item.violation}</td>
+                      <td className="py-3 px-4 font-black text-rose-600">{item.penalty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Fine Guidelines Box */}
+            <div className="lg:col-span-5 rounded-2xl bg-white p-5 border border-rose-200/90 space-y-3 shadow-2xs">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-rose-700 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-rose-600" /> Official Fine Guidelines
+              </h4>
+              <ul className="space-y-2.5 text-xs text-slate-700">
+                {FINE_GUIDELINES_LIST.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span className="font-medium leading-relaxed">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* IMPORTANT NOTICE & "I AGREE & ACCEPT" TENANT ACKNOWLEDGMENT CARD */}
+        <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl space-y-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-extrabold uppercase tracking-wider border border-indigo-400/30">
+                <FileCheck2 className="w-3.5 h-3.5" /> Important Notice
+              </div>
+              <h3 className="text-lg sm:text-xl font-extrabold text-white">
+                Tenant Acknowledgment & Responsibility Charter
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                All tenants are expected to follow these guidelines to maintain a clean, safe,
+                peaceful, and respectful living environment. By accepting these rules, tenants
+                acknowledge their responsibilities toward the property and other residents.
+              </p>
+            </div>
+
+            <div className="shrink-0 flex flex-col sm:flex-row md:flex-col items-stretch sm:items-center gap-3">
+              {hasAcceptedRules ? (
+                <div className="px-5 py-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>✓ House Rules Acknowledged & Accepted</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleAcceptHouseRules}
+                  disabled={acceptRulesMutation.isPending}
+                  className="px-6 py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-emerald-500/25 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {acceptRulesMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Recording Acknowledgment...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      I Agree & Accept
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {rulesAckMsg && (
+            <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2">
+              <span>{rulesAckMsg}</span>
+              <button
+                type="button"
+                onClick={() => setRulesAckMsg('')}
+                className="text-emerald-300 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
