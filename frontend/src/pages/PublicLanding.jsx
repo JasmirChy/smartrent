@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import axiosClient, { createReservation, acceptDigitalLease } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
 
 const DEFAULT_HERO_IMAGE =
   'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=85';
@@ -53,6 +54,7 @@ const HOUSE_RULES_CATEGORIES = [
     items: [
       'Keep rooms, bathrooms, and shared spaces clean.',
       'Dispose of garbage in designated dustbins.',
+      'Clean kitchens and shared facilities after use.',
       'Do not throw waste, sanitary products, or food into drains or toilets.',
       'Maintain cleanliness around the building.',
     ],
@@ -60,7 +62,7 @@ const HOUSE_RULES_CATEGORIES = [
   {
     id: 2,
     title: '2. Property Damage & Maintenance',
-    subtitle: 'Care of walls, and reporting of maintenance issues',
+    subtitle: 'Care of walls, fixtures, and reporting of maintenance issues',
     icon: Wrench,
     iconBg: 'bg-indigo-50 text-indigo-600',
     items: [
@@ -670,7 +672,9 @@ export default function PublicLanding() {
                   <span className="text-indigo-100 line-clamp-1">{notice.content}</span>
                 </div>
                 <span className="text-[10px] text-indigo-300 whitespace-nowrap">
-                  {notice.created_at ? new Date(notice.created_at).toLocaleDateString() : ''}
+                  {notice.created_at
+                    ? formatDualDate(new Date(notice.created_at).toISOString().split('T')[0])
+                    : ''}
                 </span>
               </div>
             ))}
@@ -1676,7 +1680,7 @@ export default function PublicLanding() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    EXPECTED MOVE-IN / VISIT DATE
+                    EXPECTED MOVE-IN / VISIT DATE (AD)
                   </label>
                   <input
                     type="date"
@@ -1685,6 +1689,11 @@ export default function PublicLanding() {
                     onChange={(e) => setMoveInDate(e.target.value)}
                     className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                   />
+                  {moveInDate && (
+                    <p className="text-[11px] font-extrabold text-indigo-600 mt-1">
+                      📅 BS: {formatBSOnly(moveInDate)}
+                    </p>
+                  )}
                 </div>
 
                 <div>

@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import axiosClient, { downloadFileFromUrl } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import { formatDualDate, formatDualMonthLabel } from '../utils/nepaliDate';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_EXTENSIONS = [
@@ -48,7 +49,7 @@ const ALLOWED_EXTENSIONS = [
 ];
 
 function resolveMobileSafeImageUrl(rawUrl, cacheBuster = '') {
-if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
 
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -533,7 +534,8 @@ export default function ProfileSettings() {
             </span>
             {activeUser.joined_at && (
               <span className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900/45 backdrop-blur-md text-white/90 text-[11px] font-bold border border-white/15">
-                <Calendar className="w-3 h-3 text-indigo-300" /> Joined {activeUser.joined_at}
+                <Calendar className="w-3 h-3 text-indigo-300" /> Joined{' '}
+                {formatDualDate(activeUser.joined_at)}
               </span>
             )}
           </div>
@@ -779,7 +781,9 @@ export default function ProfileSettings() {
                 }`}
               >
                 {activeUser.has_accepted_lease
-                  ? `✓ Lease Signed (${activeUser.lease_accepted_at || 'Verified'})`
+                  ? `✓ Lease Signed (${formatDualDate(
+                      activeUser.lease_accepted_at || 'Verified'
+                    )})`
                   : 'Lease Pending'}
               </p>
             </div>
@@ -837,18 +841,18 @@ export default function ProfileSettings() {
             <div className="grid grid-cols-2 gap-4 text-xs">
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
                 <span className="text-slate-400 font-bold uppercase text-[10px] block">
-                  Move-In Date
+                  Move-In Date (AD / BS)
                 </span>
-                <strong className="text-sm text-slate-900 mt-0.5 block">
-                  {roomDetails.entry_date || activeUser.entry_date || 'Verified'}
+                <strong className="text-xs sm:text-sm text-slate-900 mt-0.5 block">
+                  {formatDualDate(roomDetails.entry_date || activeUser.entry_date || 'Verified')}
                 </strong>
               </div>
               <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/70">
                 <span className="text-amber-700 font-bold uppercase text-[10px] block">
-                  Next Rent Due Date
+                  Next Rent Due Date (AD / BS)
                 </span>
-                <strong className="text-sm text-slate-900 mt-0.5 block">
-                  {roomDetails.next_due_date || 'Upcoming'}
+                <strong className="text-xs sm:text-sm text-slate-900 mt-0.5 block">
+                  {formatDualDate(roomDetails.next_due_date || 'Upcoming')}
                 </strong>
               </div>
               <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100">
@@ -1268,7 +1272,7 @@ export default function ProfileSettings() {
               <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
                   <tr>
-                    <th className="py-3 px-4">Billing Cycle</th>
+                    <th className="py-3 px-4">Billing Cycle (AD / BS)</th>
                     <th className="py-3 px-4">Total Payable</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Proof Photos</th>
@@ -1281,9 +1285,11 @@ export default function ProfileSettings() {
                     return (
                       <tr key={b.id} className="hover:bg-slate-50/80">
                         <td className="py-3 px-4">
-                          <p className="font-extrabold text-slate-900">{b.billing_month_label}</p>
+                          <p className="font-extrabold text-slate-900">
+                            {formatDualMonthLabel(b.billing_month_label)}
+                          </p>
                           <p className="text-[11px] text-slate-500">
-                            Room {b.room_number} • Due: {b.due_date}
+                            Room {b.room_number} • Due: {formatDualDate(b.due_date)}
                           </p>
                         </td>
                         <td className="py-3 px-4 font-black text-slate-900">
@@ -1311,7 +1317,9 @@ export default function ProfileSettings() {
                                   openPhotoLightbox([
                                     {
                                       url: mUrl,
-                                      title: `Meter Photo — ${b.billing_month_label}`,
+                                      title: `Meter Photo — ${formatDualMonthLabel(
+                                        b.billing_month_label
+                                      )}`,
                                       subtitle: `Room ${b.room_number}`,
                                     },
                                   ])
@@ -1330,7 +1338,9 @@ export default function ProfileSettings() {
                                   openPhotoLightbox([
                                     {
                                       url: pUrl,
-                                      title: `Payment Receipt — ${b.billing_month_label}`,
+                                      title: `Payment Receipt — ${formatDualMonthLabel(
+                                        b.billing_month_label
+                                      )}`,
                                       subtitle: `Room ${b.room_number} • Rs. ${b.total_payable}`,
                                     },
                                   ])

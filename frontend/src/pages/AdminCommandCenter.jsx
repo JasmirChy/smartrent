@@ -68,6 +68,11 @@ import axiosClient, {
   downloadFileFromUrl,
   auditKYC,
 } from '../api/axiosClient';
+import {
+  formatDualDate,
+  formatDualMonthLabel,
+  formatBSOnly,
+} from '../utils/nepaliDate';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 const MAX_EVIDENCE_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -379,6 +384,12 @@ export default function AdminCommandCenter() {
     return true;
   });
 
+  // Map BarChart data to include AD + Nepali BS month labels
+  const monthlyTrendChartData = (analytics?.monthly_trend_chart || []).map((item) => ({
+    ...item,
+    month: formatDualMonthLabel(item.month),
+  }));
+
   const openFineModalForUser = (userObj = null, billObj = null) => {
     setFineModalError('');
     setFineAmount('');
@@ -555,7 +566,7 @@ export default function AdminCommandCenter() {
           items.push({
             key: `BILL_METER_${b.id}`,
             url: mUrl,
-            title: `Meter Photo Proof — ${b.billing_month_label}`,
+            title: `Meter Photo Proof — ${formatDualMonthLabel(b.billing_month_label)}`,
             subtitle: `Room ${b.room_number} • ${b.units_consumed} units • Rs. ${b.total_payable}`,
           });
         }
@@ -563,7 +574,7 @@ export default function AdminCommandCenter() {
           items.push({
             key: `BILL_PAY_${b.id}`,
             url: pUrl,
-            title: `Payment Receipt — ${b.billing_month_label}`,
+            title: `Payment Receipt — ${formatDualMonthLabel(b.billing_month_label)}`,
             subtitle: `Room ${b.room_number} • Ref: ${b.transaction_reference || 'N/A'} • Rs. ${b.total_payable}`,
           });
         }
@@ -580,7 +591,9 @@ export default function AdminCommandCenter() {
             items.push({
               key: `BILL_FINE_${b.id}_${evIdx}`,
               url: safeEv,
-              title: `Fine Evidence Photo #${evIdx + 1} — ${b.billing_month_label}`,
+              title: `Fine Evidence Photo #${evIdx + 1} — ${formatDualMonthLabel(
+                b.billing_month_label
+              )}`,
               subtitle: `Fine: Rs. ${b.damage_fine_amount} • Reason: ${b.damage_fine_reason || 'Violation'}`,
             });
           }
@@ -1600,7 +1613,7 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* ROOM RESERVATION & VISIT BOOKING QUEUE (WITH MANAGED FILTER TABS) */}
+          {/* ROOM RESERVATION & VISIT BOOKING QUEUE (WITH MANAGED FILTER TABS & DUAL AD/BS DATES) */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1675,7 +1688,7 @@ export default function AdminCommandCenter() {
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        Move-in: {res.expected_move_in_date}
+                        Move-in: {formatDualDate(res.expected_move_in_date)}
                       </p>
                     </div>
                   ))}
@@ -1690,7 +1703,7 @@ export default function AdminCommandCenter() {
                           {activeReviewReservation.user_full_name || activeReviewReservation.user_email}
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                          Expected Move-In: {activeReviewReservation.expected_move_in_date}
+                          Expected Move-In: {formatDualDate(activeReviewReservation.expected_move_in_date)}
                           {activeReviewReservation.phone_number
                             ? ` • 📞 ${activeReviewReservation.phone_number}`
                             : ''}
@@ -1791,7 +1804,7 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE */}
+          {/* TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE (WITH DUAL AD/BS DATES) */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1839,7 +1852,7 @@ export default function AdminCommandCenter() {
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-600 font-semibold">
-                        Planned Departure: {mo.requested_date}
+                        Planned Departure: {formatDualDate(mo.requested_date)}
                       </p>
                       {mo.reason && (
                         <p className="text-[11px] text-slate-500 truncate mt-0.5">
@@ -1865,7 +1878,7 @@ export default function AdminCommandCenter() {
                         </p>
                       </div>
                       <span className="px-2.5 py-1 rounded-lg bg-white text-rose-700 font-extrabold text-xs border border-rose-200">
-                        Departure: {activeReviewMoveOut.requested_date}
+                        Departure: {formatDualDate(activeReviewMoveOut.requested_date)}
                       </span>
                     </div>
 
@@ -1969,7 +1982,7 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* UNIT TELEMETRY MATRIX (WITH ASSIGNED / VACANT FILTER & MANAGED SCROLL) */}
+          {/* UNIT TELEMETRY MATRIX (WITH ASSIGNED / VACANT FILTER & DUAL AD/BS DATES) */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="text-base font-extrabold text-slate-900">
@@ -2034,7 +2047,8 @@ export default function AdminCommandCenter() {
                           </p>
                           {occupied && tenant && (
                             <p>
-                              Next Due: <strong>{tenant.next_due_date}</strong>
+                              Next Due:{' '}
+                              <strong>{formatDualDate(tenant.next_due_date)}</strong>
                             </p>
                           )}
                         </div>
@@ -2083,7 +2097,7 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* REMITTANCE & METER AUDIT CLEARING QUEUE (WITH MANAGED FILTER TABS) */}
+          {/* REMITTANCE & METER AUDIT CLEARING QUEUE (WITH MANAGED FILTER TABS & DUAL AD/BS DATES) */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -2161,7 +2175,8 @@ export default function AdminCommandCenter() {
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-slate-500">
                           <span>
-                            {b.billing_month_label} • Rs. {Number(b.total_payable).toLocaleString()}
+                            {formatDualMonthLabel(b.billing_month_label)} • Rs.{' '}
+                            {Number(b.total_payable).toLocaleString()}
                           </span>
                           {Number(b.damage_fine_amount || 0) > 0 && !isSettled && (
                             <span className="text-rose-600 font-bold">
@@ -2182,7 +2197,10 @@ export default function AdminCommandCenter() {
                           Room {activeAuditBill.room_number} — {activeAuditBill.tenant_name}
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                          Cycle: {activeAuditBill.billing_month_label}
+                          Cycle: {formatDualMonthLabel(activeAuditBill.billing_month_label)}
+                          {activeAuditBill.due_date
+                            ? ` • Due: ${formatDualDate(activeAuditBill.due_date)}`
+                            : ''}
                         </p>
                       </div>
                       <div className="text-right">
@@ -2212,7 +2230,7 @@ export default function AdminCommandCenter() {
                           <div className="flex items-center gap-2">
                             {activeAuditBill.fine_applied_at && (
                               <span className="text-[10px] text-rose-600 font-semibold">
-                                {activeAuditBill.fine_applied_at}
+                                {formatDualDate(activeAuditBill.fine_applied_at)}
                               </span>
                             )}
                             {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
@@ -2274,7 +2292,9 @@ export default function AdminCommandCenter() {
                                   {
                                     url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
                                     title: `Room ${activeAuditBill.room_number} — Meter Photo`,
-                                    subtitle: activeAuditBill.billing_month_label,
+                                    subtitle: formatDualMonthLabel(
+                                      activeAuditBill.billing_month_label
+                                    ),
                                   },
                                 ])
                               }
@@ -2301,7 +2321,9 @@ export default function AdminCommandCenter() {
                                   {
                                     url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
                                     title: `Room ${activeAuditBill.room_number} — Payment Screenshot`,
-                                    subtitle: activeAuditBill.billing_month_label,
+                                    subtitle: formatDualMonthLabel(
+                                      activeAuditBill.billing_month_label
+                                    ),
                                   },
                                 ])
                               }
@@ -2375,13 +2397,13 @@ export default function AdminCommandCenter() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
               <h3 className="text-base font-extrabold text-slate-900 mb-1">
-                Financial Velocity (Bar Chart)
+                Financial Velocity (Bar Chart • AD / BS)
               </h3>
               <div className="w-full h-72 mt-4">
                 {!analyticsLoading && (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analytics?.monthly_trend_chart || []}>
-                      <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
+                    <BarChart data={monthlyTrendChartData}>
+                      <XAxis dataKey="month" stroke="#94A3B8" fontSize={10} />
                       <YAxis stroke="#94A3B8" fontSize={11} />
                       <Tooltip />
                       <Legend />
@@ -2437,7 +2459,7 @@ export default function AdminCommandCenter() {
             </h3>
             <form
               onSubmit={handleLogExpense}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end mt-4"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-start mt-4"
             >
               <div>
                 <label className="block text-[11px] font-bold mb-1">CATEGORY</label>
@@ -2473,7 +2495,7 @@ export default function AdminCommandCenter() {
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold mb-1">DATE</label>
+                <label className="block text-[11px] font-bold mb-1">DATE (AD / BS)</label>
                 <input
                   type="date"
                   required
@@ -2481,14 +2503,21 @@ export default function AdminCommandCenter() {
                   onChange={(e) => setExpenseDate(e.target.value)}
                   className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
                 />
+                {expenseDate && (
+                  <p className="text-[10px] font-extrabold text-indigo-600 mt-1">
+                    📅 BS: {formatBSOnly(expenseDate)}
+                  </p>
+                )}
               </div>
-              <button
-                type="submit"
-                disabled={expenseMutation.isPending}
-                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs"
-              >
-                Commit Expense
-              </button>
+              <div className="pt-5">
+                <button
+                  type="submit"
+                  disabled={expenseMutation.isPending}
+                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs"
+                >
+                  Commit Expense
+                </button>
+              </div>
             </form>
           </div>
         </>
@@ -2628,7 +2657,9 @@ export default function AdminCommandCenter() {
                             <Phone className="w-3.5 h-3.5 text-emerald-600" />{' '}
                             {u.phone_number || 'No Phone'}
                           </span>
-                          {u.joined_at && <span>Joined: {u.joined_at}</span>}
+                          {u.joined_at && (
+                            <span>Joined: {formatDualDate(u.joined_at)}</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2741,7 +2772,9 @@ export default function AdminCommandCenter() {
                         {u.citizenship_number || 'No ID No.'}
                       </p>
                       <p className="text-[11px] text-emerald-600 font-bold mt-0.5">
-                        {u.has_accepted_lease ? '✓ Lease Signed' : 'Lease Pending'}
+                        {u.has_accepted_lease
+                          ? `✓ Lease Signed (${formatDualDate(u.lease_accepted_at || 'Verified')})`
+                          : 'Lease Pending'}
                       </p>
                     </div>
                   </div>
@@ -2755,13 +2788,13 @@ export default function AdminCommandCenter() {
                       {u.room_details ? (
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           <div>
-                            <span className="text-slate-400 block">Move-In Date</span>
-                            <strong>{u.room_details.entry_date || 'N/A'}</strong>
+                            <span className="text-slate-400 block">Move-In Date (AD / BS)</span>
+                            <strong>{formatDualDate(u.room_details.entry_date)}</strong>
                           </div>
                           <div>
-                            <span className="text-slate-400 block">Next Due Date</span>
+                            <span className="text-slate-400 block">Next Due Date (AD / BS)</span>
                             <strong className="text-amber-700">
-                              {u.room_details.next_due_date || 'N/A'}
+                              {formatDualDate(u.room_details.next_due_date)}
                             </strong>
                           </div>
                           <div>
@@ -2910,7 +2943,7 @@ export default function AdminCommandCenter() {
                         <table className="w-full text-left text-xs whitespace-nowrap">
                           <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
                             <tr>
-                              <th className="py-3 px-4">Cycle / Room</th>
+                              <th className="py-3 px-4">Cycle / Room (AD / BS)</th>
                               <th className="py-3 px-4">Total Payable</th>
                               <th className="py-3 px-4">Status</th>
                               <th className="py-3 px-4">Proof Photos</th>
@@ -2929,10 +2962,10 @@ export default function AdminCommandCenter() {
                                 <tr key={b.id} className="hover:bg-slate-50/80">
                                   <td className="py-3 px-4">
                                     <p className="font-extrabold text-slate-900">
-                                      {b.billing_month_label}
+                                      {formatDualMonthLabel(b.billing_month_label)}
                                     </p>
                                     <p className="text-[11px] text-slate-500">
-                                      Room {b.room_number} • Due: {b.due_date}
+                                      Room {b.room_number} • Due: {formatDualDate(b.due_date)}
                                     </p>
                                   </td>
                                   <td className="py-3 px-4">
@@ -2970,7 +3003,9 @@ export default function AdminCommandCenter() {
                                             openPhotoLightbox([
                                               {
                                                 url: mUrl,
-                                                title: `Meter Photo — ${b.billing_month_label}`,
+                                                title: `Meter Photo — ${formatDualMonthLabel(
+                                                  b.billing_month_label
+                                                )}`,
                                                 subtitle: `Room ${b.room_number} • ${u.full_name}`,
                                               },
                                             ])
@@ -2989,7 +3024,9 @@ export default function AdminCommandCenter() {
                                             openPhotoLightbox([
                                               {
                                                 url: pUrl,
-                                                title: `Payment Slip — ${b.billing_month_label}`,
+                                                title: `Payment Slip — ${formatDualMonthLabel(
+                                                  b.billing_month_label
+                                                )}`,
                                                 subtitle: `Room ${b.room_number} • Rs. ${b.total_payable}`,
                                               },
                                             ])
@@ -3008,7 +3045,9 @@ export default function AdminCommandCenter() {
                                             openPhotoLightbox(
                                               fineEvUrls.map((ev, i) => ({
                                                 url: getSafeMediaUrl(ev),
-                                                title: `Fine Evidence #${i + 1} — ${b.billing_month_label}`,
+                                                title: `Fine Evidence #${i + 1} — ${formatDualMonthLabel(
+                                                  b.billing_month_label
+                                                )}`,
                                                 subtitle: fullBillObj?.damage_fine_reason,
                                               }))
                                             )
@@ -3692,7 +3731,7 @@ export default function AdminCommandCenter() {
                 required
                 value={selectedTenantId}
                 onChange={(e) => setSelectedTenantId(e.target.value)}
-                className="w-full px-3 py-2 border rounded-xl"
+                className="w-full px-3 py-2 border rounded-xl text-xs font-semibold"
               >
                 <option value="">Choose User</option>
                 {tenantUsers.map((u) => (
@@ -3701,30 +3740,48 @@ export default function AdminCommandCenter() {
                   </option>
                 ))}
               </select>
-              <input
-                type="date"
-                required
-                value={entryDate}
-                onChange={(e) => setEntryDate(e.target.value)}
-                className="w-full px-3 py-2 border rounded-xl"
-              />
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={startingMeter}
-                onChange={(e) => setStartingMeter(e.target.value)}
-                className="w-full px-3 py-2 border rounded-xl"
-              />
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  Move-In Date (AD)
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={entryDate}
+                  onChange={(e) => setEntryDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl text-xs"
+                />
+                {entryDate && (
+                  <p className="text-[11px] font-extrabold text-indigo-600 mt-1">
+                    📅 Nepali Date (BS): {formatBSOnly(entryDate)}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  Starting Sub-Meter Reading
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={startingMeter}
+                  onChange={(e) => setStartingMeter(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl text-xs"
+                />
+              </div>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setAssignModalRoom(null)}
-                  className="flex-1 py-2 border rounded-xl"
+                  className="flex-1 py-2 border rounded-xl text-xs font-bold"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold"
+                >
                   Confirm
                 </button>
               </div>
@@ -3758,13 +3815,13 @@ export default function AdminCommandCenter() {
                 required={!cashTenantId}
                 value={cashBillId}
                 onChange={(e) => setCashBillId(e.target.value)}
-                className="w-full px-3 py-2 border rounded-xl"
+                className="w-full px-3 py-2 border rounded-xl text-xs font-semibold"
               >
                 <option value="">Choose Bill</option>
                 {selectableBillsForDropdown.map((b) => (
                   <option key={b.id} value={b.id}>
-                    Room {b.room_number} — {b.tenant_name} ({b.billing_month_label}) • Rs.{' '}
-                    {b.total_payable}
+                    Room {b.room_number} — {b.tenant_name} (
+                    {formatDualMonthLabel(b.billing_month_label)}) • Rs. {b.total_payable}
                   </option>
                 ))}
               </select>
@@ -3775,17 +3832,20 @@ export default function AdminCommandCenter() {
                 value={cashMeterReading}
                 onChange={(e) => setCashMeterReading(e.target.value)}
                 placeholder="New Meter Reading"
-                className="w-full px-3 py-2 border rounded-xl"
+                className="w-full px-3 py-2 border rounded-xl text-xs"
               />
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setShowCashModal(false)}
-                  className="flex-1 py-2 border rounded-xl"
+                  className="flex-1 py-2 border rounded-xl text-xs font-bold"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold"
+                >
                   Confirm
                 </button>
               </div>
@@ -3862,7 +3922,7 @@ export default function AdminCommandCenter() {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
-                    2. Choose Bill
+                    2. Choose Bill (AD / BS)
                   </label>
                   {fineTenantId && filteredBillsForFine.length === 0 && (
                     <span className="text-[10px] font-extrabold text-emerald-600">
@@ -3882,8 +3942,9 @@ export default function AdminCommandCenter() {
                   </option>
                   {filteredBillsForFine.map((b) => (
                     <option key={b.id} value={b.id}>
-                      Room {b.room_number} — {b.tenant_name || 'Tenant'} ({b.billing_month_label}) •
-                      Total: Rs. {Number(b.total_payable || 0).toLocaleString()} [{b.status_display}]
+                      Room {b.room_number} — {b.tenant_name || 'Tenant'} (
+                      {formatDualMonthLabel(b.billing_month_label)}) • Total: Rs.{' '}
+                      {Number(b.total_payable || 0).toLocaleString()} [{b.status_display}]
                     </option>
                   ))}
                 </select>

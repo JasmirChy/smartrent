@@ -37,6 +37,11 @@ import axiosClient, {
   downloadFileFromUrl,
 } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import {
+  formatDualDate,
+  formatDualMonthLabel,
+  formatBSOnly,
+} from '../utils/nepaliDate';
 
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
@@ -368,6 +373,10 @@ export default function TenantDashboard() {
   const handlePrintReceipt = (bill) => {
     const win = window.open('', '_blank', 'width=700,height=700');
     if (!win) return;
+    const dualCycle = formatDualMonthLabel(bill.billing_month_label);
+    const dualDueDate = formatDualDate(bill.due_date, 'N/A');
+    const dualPaidAt = bill.paid_at ? formatDualDate(bill.paid_at) : 'Verified by Admin';
+
     win.document.write(`
       <html>
         <head>
@@ -383,14 +392,15 @@ export default function TenantDashboard() {
           <div class="box">
             <h2>SmartRent Official Payment Receipt</h2>
             <p><strong>Tenant:</strong> ${bill.tenant_name} | <strong>Room:</strong> ${bill.room_number}</p>
-            <p><strong>Billing Cycle:</strong> ${bill.billing_month_label} | <strong>Status:</strong> ${bill.status_display}</p>
+            <p><strong>Billing Cycle:</strong> ${dualCycle} | <strong>Due Date:</strong> ${dualDueDate}</p>
+            <p><strong>Status:</strong> ${bill.status_display}</p>
             <hr/>
             <div class="row"><span>Base Room Rent</span><span>Rs. ${bill.base_rent}</span></div>
             <div class="row"><span>Fixed Water Supply</span><span>Rs. ${bill.water_bill}</span></div>
             <div class="row"><span>Electricity (${bill.previous_meter_reading} → ${bill.current_meter_reading} = ${bill.units_consumed} units × Rs. 15)</span><span>Rs. ${bill.electricity_amount}</span></div>
             <div class="row"><span>Property Damage / Rule Fine ${bill.damage_fine_reason ? `(${bill.damage_fine_reason})` : ''}</span><span>Rs. ${bill.damage_fine_amount}</span></div>
             <div class="row total"><span>Total Paid</span><span>Rs. ${bill.total_payable}</span></div>
-            <p style="margin-top:20px;font-size:12px;color:#64748b;">Ref: ${bill.transaction_reference || 'Verified'} • Paid At: ${bill.paid_at || 'Verified by Admin'}</p>
+            <p style="margin-top:20px;font-size:12px;color:#64748b;">Ref: ${bill.transaction_reference || 'Verified'} • Paid At: ${dualPaidAt}</p>
           </div>
           <script>window.print();</script>
         </body>
@@ -406,6 +416,8 @@ export default function TenantDashboard() {
   );
   const userAvatarUrl = !avatarLoadError ? rawAvatarUrl : null;
   const qrSafeUrl = getSafeMediaUrl(paymentQR?.qr_image_url);
+
+  const rawDueDate = activeBill?.due_date || assignedRoom?.next_due_date || null;
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -461,22 +473,31 @@ export default function TenantDashboard() {
         </div>
 
         <div className="lg:col-span-4 rounded-3xl bg-amber-50 border border-amber-200 p-6 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-amber-900 uppercase tracking-wide">
               <Clock className="w-4 h-4 text-amber-600" /> Billing Cycle
             </span>
             <span className="px-3 py-1 rounded-full bg-white text-amber-800 text-[11px] font-bold border border-amber-200">
               {assignedRoom || isBillOpen
-                ? activeBill?.billing_month_label || 'Active Cycle'
+                ? formatDualMonthLabel(activeBill?.billing_month_label || 'Active Cycle')
                 : 'No Active Cycle'}
             </span>
           </div>
           <div className="mt-4">
-            <p className="text-2xl font-extrabold text-slate-900">
-              {assignedRoom || isBillOpen
-                ? `Due: ${activeBill?.due_date || assignedRoom?.next_due_date || 'Pending'}`
-                : 'No Pending Dues'}
-            </p>
+            {assignedRoom || isBillOpen ? (
+              <div>
+                <p className="text-lg sm:text-xl font-extrabold text-slate-900">
+                  Due: {rawDueDate || 'Pending'}
+                </p>
+                {rawDueDate && formatBSOnly(rawDueDate) && (
+                  <p className="text-xs font-bold text-amber-800 mt-0.5">
+                    Nepali Date: {formatBSOnly(rawDueDate)}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-2xl font-extrabold text-slate-900">No Pending Dues</p>
+            )}
           </div>
         </div>
       </div>
@@ -576,8 +597,8 @@ export default function TenantDashboard() {
                   >
                     {bills.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.billing_month_label} — Rs. {Number(b.total_payable).toLocaleString()} (
-                        {b.status_display})
+                        {formatDualMonthLabel(b.billing_month_label)} — Rs.{' '}
+                        {Number(b.total_payable).toLocaleString()} ({b.status_display})
                       </option>
                     ))}
                   </select>
@@ -619,7 +640,7 @@ export default function TenantDashboard() {
                         </h3>
                         {fineAppliedAt && (
                           <p className="text-[11px] text-rose-600 font-semibold">
-                            Issued on {fineAppliedAt}
+                            Issued on {formatDualDate(fineAppliedAt)}
                           </p>
                         )}
                       </div>
@@ -1024,9 +1045,9 @@ export default function TenantDashboard() {
                 </button>
               ) : (
                 <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-sm text-emerald-700 font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5" /> Signed on{' '}
+                  <CheckCircle2 className="w-5 h-5 shrink-0" /> Signed on{' '}
                   {kycProfile.lease_accepted_at
-                    ? new Date(kycProfile.lease_accepted_at).toLocaleDateString()
+                    ? formatDualDate(kycProfile.lease_accepted_at)
                     : 'Verified'}
                 </div>
               )}
@@ -1055,7 +1076,7 @@ export default function TenantDashboard() {
                       {moveOutStatus.request?.status_display || 'Pending'}
                     </span>
                     <p className="text-xs text-slate-500 mt-1 font-normal">
-                      Requested for: {moveOutStatus.request?.requested_date}
+                      Requested for: {formatDualDate(moveOutStatus.request?.requested_date)}
                     </p>
                   </div>
                 ) : (
@@ -1106,7 +1127,7 @@ export default function TenantDashboard() {
                       </span>
                     </div>
                     <p className="text-sm font-bold text-slate-700 mb-1">
-                      Move-In: {r.expected_move_in_date}
+                      Move-In: {formatDualDate(r.expected_move_in_date)}
                     </p>
                     <p className="text-xs text-slate-500 mb-4">{r.request_type_display}</p>
                   </div>
@@ -1167,7 +1188,7 @@ export default function TenantDashboard() {
           <table className="w-full text-left whitespace-nowrap">
             <thead>
               <tr className="bg-white text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                <th className="py-4 px-6">Billing Cycle</th>
+                <th className="py-4 px-6">Billing Cycle (AD / BS)</th>
                 <th className="py-4 px-6">Rent + Water</th>
                 <th className="py-4 px-6">Telemetry & Fines</th>
                 <th className="py-4 px-6">Total Payable</th>
@@ -1198,9 +1219,9 @@ export default function TenantDashboard() {
                       }`}
                     >
                       <td className="py-4 px-6 font-bold text-slate-900">
-                        {b.billing_month_label}
+                        {formatDualMonthLabel(b.billing_month_label)}
                         <span className="block text-[11px] font-normal text-slate-500">
-                          Room {b.room_number} • Due {b.due_date}
+                          Room {b.room_number} • Due: {formatDualDate(b.due_date)}
                         </span>
                       </td>
                       <td className="py-4 px-6 text-slate-600">
@@ -1532,6 +1553,12 @@ export default function TenantDashboard() {
                 <strong className="text-slate-900">Assigned Unit:</strong>{' '}
                 {assignedRoom?.room_number ? `Room ${assignedRoom.room_number}` : 'No Active Room'}
               </p>
+              {assignedRoom?.entry_date && (
+                <p>
+                  <strong className="text-slate-900">Move-In Date (AD / BS):</strong>{' '}
+                  {formatDualDate(assignedRoom.entry_date)}
+                </p>
+              )}
               <p>
                 <strong className="text-slate-900">Financials:</strong> Base Rent Rs.{' '}
                 {assignedRoom?.base_rent || '2,500 / 3,800'} + Fixed Water Rs. 100/mo +
@@ -1568,7 +1595,7 @@ export default function TenantDashboard() {
             >
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
-                  Expected Move-Out Date
+                  Expected Move-Out Date (AD)
                 </label>
                 <input
                   type="date"
@@ -1577,6 +1604,11 @@ export default function TenantDashboard() {
                   onChange={(e) => setMoveOutDate(e.target.value)}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"
                 />
+                {moveOutDate && (
+                  <p className="text-xs font-extrabold text-indigo-600 mt-1.5">
+                    📅 Nepali Date (BS): {formatBSOnly(moveOutDate)}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
@@ -1655,8 +1687,18 @@ export default function TenantDashboard() {
               <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-600">Billing Cycle:</span>
-                  <strong className="text-slate-900">{openUnpaidBill.billing_month_label}</strong>
+                  <strong className="text-slate-900">
+                    {formatDualMonthLabel(openUnpaidBill.billing_month_label)}
+                  </strong>
                 </div>
+                {openUnpaidBill.due_date && (
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-600">Due Date:</span>
+                    <strong className="text-slate-800">
+                      {formatDualDate(openUnpaidBill.due_date)}
+                    </strong>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-600">Current Status:</span>
                   <span className="px-2 py-0.5 rounded bg-white text-rose-700 font-extrabold text-[11px] border border-rose-200">
