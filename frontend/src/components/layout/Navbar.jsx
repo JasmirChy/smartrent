@@ -15,43 +15,45 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import axiosClient, { fetchNotices } from '../../api/axiosClient';
+import { formatDualDate } from '../../utils/nepaliDate';
 
-function getSafeMediaUrl(rawUrl) {
+function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
 
-  const currentHost = window.location.hostname;
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   let backendOrigin = 'http://localhost:8000';
   try {
     backendOrigin = new URL(apiBase).origin;
   } catch {
-    backendOrigin = `http://${currentHost || 'localhost'}:8000`;
+    backendOrigin = 'http://localhost:8000';
   }
 
-  if (
-    currentHost &&
-    currentHost !== 'localhost' &&
-    currentHost !== '127.0.0.1' &&
-    (backendOrigin.includes('localhost') || backendOrigin.includes('127.0.0.1'))
-  ) {
-    backendOrigin = `http://${currentHost}:8000`;
+  let finalUrl = rawUrl.trim();
+
+  // Always attach /media/ paths to the active backendOrigin
+  const mediaIndex = finalUrl.indexOf('/media/');
+  if (mediaIndex !== -1) {
+    finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
+  } else if (finalUrl.startsWith('/')) {
+    finalUrl = `${backendOrigin}${finalUrl}`;
   }
 
-  if (rawUrl.startsWith('/')) {
-    return `${backendOrigin}${rawUrl}`;
-  }
+  // Upgrade http:// to https:// whenever running on production (Vercel / Render)
   if (
-    currentHost &&
-    currentHost !== 'localhost' &&
-    currentHost !== '127.0.0.1' &&
-    (rawUrl.includes('://localhost:') || rawUrl.includes('://127.0.0.1:'))
+    finalUrl.startsWith('http://') &&
+    !finalUrl.includes('localhost') &&
+    !finalUrl.includes('127.0.0.1') &&
+    !finalUrl.includes('192.168.')
   ) {
-    return rawUrl
-      .replace('://localhost:', `://${currentHost}:`)
-      .replace('://127.0.0.1:', `://${currentHost}:`);
+    finalUrl = 'https://' + finalUrl.substring('http://'.length);
   }
-  return rawUrl;
+
+  if (cacheBuster) {
+    const sep = finalUrl.includes('?') ? '&' : '?';
+    return `${finalUrl}${sep}v=${cacheBuster}`;
+  }
+  return finalUrl;
 }
 
 export default function Navbar() {
@@ -68,7 +70,7 @@ export default function Navbar() {
 
   useEffect(() => {
     setAvatarLoadFailed(false);
-  }, [user?.profile_picture_url, user?.profile_picture]);
+  }, [user?.profile_picture_path, user?.profile_picture_url, user?.profile_picture]);
 
   useEffect(() => {
     if (!user) {
@@ -149,6 +151,12 @@ export default function Navbar() {
         user?.profile_picture_path || user?.profile_picture_url || user?.profile_picture
       )
     : null;
+
+  const activeRoomNumber =
+    user?.room_details?.room_number ||
+    user?.assigned_room?.room_number ||
+    user?.room_number ||
+    null;
 
   return (
     <header className="sticky top-0 z-40 h-16 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-8 flex items-center justify-between">
@@ -282,12 +290,14 @@ export default function Navbar() {
                       }}
                       className="p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 cursor-pointer transition space-y-1"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold text-indigo-600 uppercase flex items-center gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-extrabold text-indigo-600 uppercase flex items-center gap-1 shrink-0">
                           <Megaphone className="w-3 h-3" /> {n.category_display || n.category}
                         </span>
-                        <span className="text-[10px] text-slate-400">
-                          {n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}
+                        <span className="text-[10px] text-slate-400 truncate">
+                          {n.created_at
+                            ? formatDualDate(new Date(n.created_at).toISOString().split('T')[0])
+                            : ''}
                         </span>
                       </div>
                       <p className="text-xs font-extrabold text-slate-900 line-clamp-1">
@@ -335,10 +345,10 @@ export default function Navbar() {
                   src={navAvatarUrl}
                   alt={user.full_name}
                   onError={() => setAvatarLoadFailed(true)}
-                  className="w-8 h-8 rounded-full object-cover border border-indigo-200 bg-slate-100"
+                  className="w-8 h-8 rounded-full object-cover border border-indigo-200 bg-slate-100 shrink-0"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center shrink-0">
                   {user.full_name?.charAt(0)?.toUpperCase() || 'U'}
                 </div>
               )}
@@ -349,9 +359,9 @@ export default function Navbar() {
                     <>
                       <ShieldCheck className="w-3 h-3" /> Landlord Admin
                     </>
-                  ) : user.assigned_room ? (
+                  ) : activeRoomNumber ? (
                     <>
-                      <Home className="w-3 h-3" /> Room {user.assigned_room.room_number}
+                      <Home className="w-3 h-3" /> Room {activeRoomNumber}
                     </>
                   ) : (
                     'Verified User'

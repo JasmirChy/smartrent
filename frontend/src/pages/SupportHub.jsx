@@ -21,6 +21,46 @@ import {
 } from 'lucide-react';
 import axiosClient, { deleteEntireChat } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
+
+function getSafeMediaUrl(rawUrl, cacheBuster = '') {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  let backendOrigin = 'http://localhost:8000';
+  try {
+    backendOrigin = new URL(apiBase).origin;
+  } catch {
+    backendOrigin = 'http://localhost:8000';
+  }
+
+  let finalUrl = rawUrl.trim();
+
+  // Always attach /media/ paths to the active backendOrigin
+  const mediaIndex = finalUrl.indexOf('/media/');
+  if (mediaIndex !== -1) {
+    finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
+  } else if (finalUrl.startsWith('/')) {
+    finalUrl = `${backendOrigin}${finalUrl}`;
+  }
+
+  // Upgrade http:// to https:// whenever running on production (Vercel / Render)
+  if (
+    finalUrl.startsWith('http://') &&
+    !finalUrl.includes('localhost') &&
+    !finalUrl.includes('127.0.0.1') &&
+    !finalUrl.includes('192.168.')
+  ) {
+    finalUrl = 'https://' + finalUrl.substring('http://'.length);
+  }
+
+  if (cacheBuster) {
+    const sep = finalUrl.includes('?') ? '&' : '?';
+    return `${finalUrl}${sep}v=${cacheBuster}`;
+  }
+  return finalUrl;
+}
 
 export default function SupportHub() {
   const { user, isAdmin } = useAuth();
@@ -30,6 +70,7 @@ export default function SupportHub() {
   const [selectedContact, setSelectedContact] = useState(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
+  const [failedAvatarIds, setFailedAvatarIds] = useState({});
 
   const [messageText, setMessageText] = useState('');
   const [chatImage, setChatImage] = useState(null);
@@ -118,7 +159,7 @@ export default function SupportHub() {
         .catch(() => {});
     };
 
-    // Initial load + 4-second background sync (catches image uploads, read receipts & deleted chats effortlessly)
+    // Initial load + 4-second background sync
     fetchLatestMessages();
     const syncTimer = setInterval(fetchLatestMessages, 4000);
 
@@ -241,6 +282,10 @@ export default function SupportHub() {
       setComplaintAttachment(null);
       setComplaintPreview(null);
       setActiveTab('COMPLAINTS');
+      setBannerMsg({
+        type: 'success',
+        text: 'Maintenance ticket submitted! Landlord Admin has been notified.',
+      });
     },
   });
 
@@ -248,6 +293,10 @@ export default function SupportHub() {
     await axiosClient.patch(`/communication/complaints/${complaintId}/`, {
       status,
       admin_response: adminResponse,
+    });
+    setBannerMsg({
+      type: 'success',
+      text: `Ticket #${complaintId} updated to ${status.replace('_', ' ')}!`,
     });
     queryClient.invalidateQueries({ queryKey: ['complaintTickets'] });
   };
@@ -268,20 +317,37 @@ export default function SupportHub() {
     return true;
   });
 
+  // Formats chat date divider with AD + Nepali BS (Baishakh/Jestha form)
   const formatDateBadge = (dateStr) => {
-    if (!dateStr) return 'Today';
+    if (!dateStr) {
+      const todayIso = new Date().toISOString().split('T')[0];
+      return `Today • ${formatDualDate(todayIso)}`;
+    }
     const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+
+    const isoDate = d.toISOString().split('T')[0];
+    const bsDate = formatBSOnly(isoDate);
     const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(today.getDate() - 1);
 
-    if (d.toDateString() === today.toDateString()) return 'Today';
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    if (d.toDateString() === today.toDateString()) {
+      return `Today • ${isoDate} (${bsDate})`;
+    }
+    if (d.toDateString() === yesterday.toDateString()) {
+      return `Yesterday • ${isoDate} (${bsDate})`;
+    }
+    return formatDualDate(isoDate);
   };
 
   const totalUnreadMessages = contacts.reduce((acc, c) => acc + (Number(c.unread_count) || 0), 0);
   const openComplaintsCount = complaints.filter((c) => c.status !== 'RESOLVED').length;
+
+  const selectedContactAvatar =
+    selectedContact && !failedAvatarIds[selectedContact.id]
+      ? getSafeMediaUrl(selectedContact.profile_picture_path || selectedContact.profile_picture_url)
+      : null;
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-6 lg:p-8 space-y-5">
@@ -412,6 +478,10 @@ export default function SupportHub() {
               ) : (
                 filteredContacts.map((c) => {
                   const isSelected = selectedContact?.id === c.id;
+                  const contactAvatar = !failedAvatarIds[c.id]
+                    ? getSafeMediaUrl(c.profile_picture_path || c.profile_picture_url)
+                    : null;
+
                   return (
                     <div
                       key={c.id}
@@ -426,10 +496,13 @@ export default function SupportHub() {
                       }`}
                     >
                       <div className="relative shrink-0">
-                        {c.profile_picture_url ? (
+                        {contactAvatar ? (
                           <img
-                            src={c.profile_picture_url}
+                            src={contactAvatar}
                             alt={c.full_name}
+                            onError={() =>
+                              setFailedAvatarIds((prev) => ({ ...prev, [c.id]: true }))
+                            }
                             className="w-12 h-12 rounded-2xl object-cover border border-slate-200"
                           />
                         ) : (
@@ -502,10 +575,16 @@ export default function SupportHub() {
                     </button>
 
                     <div className="relative shrink-0">
-                      {selectedContact.profile_picture_url ? (
+                      {selectedContactAvatar ? (
                         <img
-                          src={selectedContact.profile_picture_url}
+                          src={selectedContactAvatar}
                           alt={selectedContact.full_name}
+                          onError={() =>
+                            setFailedAvatarIds((prev) => ({
+                              ...prev,
+                              [selectedContact.id]: true,
+                            }))
+                          }
                           className="w-10 h-10 rounded-2xl object-cover border border-slate-200"
                         />
                       ) : (
@@ -597,12 +676,13 @@ export default function SupportHub() {
                       const prevDateBadge =
                         idx > 0 ? formatDateBadge(chatMessages[idx - 1].created_at) : null;
                       const showDateDivider = currentDateBadge !== prevDateBadge;
+                      const safeChatAttachment = getSafeMediaUrl(msg.attachment_url);
 
                       return (
                         <React.Fragment key={msg.id || idx}>
                           {showDateDivider && (
                             <div className="flex justify-center my-3">
-                              <span className="px-3 py-1 rounded-full bg-white/90 border border-slate-200 text-[10px] font-extrabold text-slate-500 shadow-2xs">
+                              <span className="px-3 py-1 rounded-full bg-white/95 border border-slate-200 text-[10px] font-extrabold text-slate-600 shadow-2xs">
                                 {currentDateBadge}
                               </span>
                             </div>
@@ -626,14 +706,14 @@ export default function SupportHub() {
                                   : 'bg-white text-slate-800 border border-slate-200/90 rounded-bl-xs'
                               }`}
                             >
-                              {msg.attachment_url && (
+                              {safeChatAttachment && (
                                 <button
                                   type="button"
-                                  onClick={() => setLightboxUrl(msg.attachment_url)}
+                                  onClick={() => setLightboxUrl(safeChatAttachment)}
                                   className="block w-full mb-2 rounded-xl overflow-hidden border border-black/10"
                                 >
                                   <img
-                                    src={msg.attachment_url}
+                                    src={safeChatAttachment}
                                     alt="Attachment"
                                     className="w-full max-h-56 object-cover hover:scale-105 transition-transform"
                                   />
@@ -762,7 +842,7 @@ export default function SupportHub() {
         </div>
       )}
 
-      {/* TAB 2: TENANT COMPLAINTS & MAINTENANCE TICKETS */}
+      {/* TAB 2: TENANT COMPLAINTS & MAINTENANCE TICKETS (WITH DUAL AD/BS DATES & MANAGED SCROLL) */}
       {activeTab === 'COMPLAINTS' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -790,134 +870,154 @@ export default function SupportHub() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredComplaints.length === 0 ? (
-              <div className="col-span-full bg-white rounded-3xl p-12 text-center border border-slate-200/80 space-y-3">
-                <Wrench className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-sm font-extrabold text-slate-700">No maintenance tickets found</p>
-                <p className="text-xs text-slate-400">
-                  Click "Report Issue" above if you need plumbing, electrical, or room assistance.
-                </p>
-              </div>
-            ) : (
-              filteredComplaints.map((c) => (
-                <div
-                  key={c.id}
-                  className="rounded-3xl bg-white p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-4"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2.5">
-                      <span className="text-[11px] font-extrabold text-indigo-600">
-                        Ticket #{c.id} • Room {c.room_number} ({c.tenant_name})
-                      </span>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                          c.priority === 'HIGH'
-                            ? 'bg-rose-100 text-rose-700'
-                            : c.priority === 'MEDIUM'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {c.priority_display}
-                      </span>
-                    </div>
-
-                    <h3 className="text-sm font-extrabold text-slate-900 mb-1">{c.title}</h3>
-                    <p className="text-xs text-slate-600 leading-relaxed mb-3">{c.description}</p>
-
-                    {c.attachment_url && (
-                      <button
-                        type="button"
-                        onClick={() => setLightboxUrl(c.attachment_url)}
-                        className="block w-full mb-3 rounded-2xl overflow-hidden border border-slate-200"
-                      >
-                        <img
-                          src={c.attachment_url}
-                          alt="Complaint Proof"
-                          className="w-full h-36 object-cover hover:scale-105 transition-transform"
-                        />
-                      </button>
-                    )}
-
-                    {c.admin_response && (
-                      <div className="rounded-2xl bg-indigo-50/80 border border-indigo-100 p-3.5 text-xs text-indigo-950">
-                        <strong className="block text-[10px] uppercase tracking-wider text-indigo-600 mb-1">
-                          Landlord Official Response:
-                        </strong>
-                        {c.admin_response}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-100 space-y-3">
-                    {isAdmin && (
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          value={replyTexts[c.id] ?? c.admin_response ?? ''}
-                          onChange={(e) =>
-                            setReplyTexts({ ...replyTexts, [c.id]: e.target.value })
-                          }
-                          placeholder="Write official response..."
-                          className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white outline-none focus:border-indigo-600"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleAdminUpdateComplaint(
-                              c.id,
-                              'IN_PROGRESS',
-                              replyTexts[c.id] ?? c.admin_response
-                            )
-                          }
-                          className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-extrabold"
-                        >
-                          Reply
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-extrabold ${
-                          c.status === 'RESOLVED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : c.status === 'IN_PROGRESS'
-                            ? 'bg-indigo-100 text-indigo-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {c.status === 'RESOLVED' ? (
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                        ) : (
-                          <Clock className="w-3.5 h-3.5" />
-                        )}
-                        {c.status_display}
-                      </span>
-
-                      {isAdmin && c.status !== 'RESOLVED' && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleAdminUpdateComplaint(
-                              c.id,
-                              'RESOLVED',
-                              replyTexts[c.id] ||
-                                c.admin_response ||
-                                'Issue resolved by Landlord.'
-                            )
-                          }
-                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
-                        >
-                          ✓ Mark Resolved
-                        </button>
-                      )}
-                    </div>
-                  </div>
+          <div className="max-h-[680px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredComplaints.length === 0 ? (
+                <div className="col-span-full bg-white rounded-3xl p-12 text-center border border-slate-200/80 space-y-3">
+                  <Wrench className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-sm font-extrabold text-slate-700">
+                    No maintenance tickets found
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Click &ldquo;Report Issue&rdquo; above if you need plumbing, electrical, or room
+                    assistance.
+                  </p>
                 </div>
-              ))
-            )}
+              ) : (
+                filteredComplaints.map((c) => {
+                  const safeTicketAttachment = getSafeMediaUrl(c.attachment_url);
+                  const rawTicketDate = c.created_at
+                    ? new Date(c.created_at).toISOString().split('T')[0]
+                    : null;
+
+                  return (
+                    <div
+                      key={c.id}
+                      className="rounded-3xl bg-white p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-4"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-[11px] font-extrabold text-indigo-600">
+                            Ticket #{c.id} • Room {c.room_number} ({c.tenant_name})
+                          </span>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              c.priority === 'HIGH'
+                                ? 'bg-rose-100 text-rose-700'
+                                : c.priority === 'MEDIUM'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {c.priority_display}
+                          </span>
+                        </div>
+
+                        {rawTicketDate && (
+                          <p className="text-[10px] font-semibold text-slate-400 mb-2">
+                            Reported: {formatDualDate(rawTicketDate)}
+                          </p>
+                        )}
+
+                        <h3 className="text-sm font-extrabold text-slate-900 mb-1">{c.title}</h3>
+                        <p className="text-xs text-slate-600 leading-relaxed mb-3">
+                          {c.description}
+                        </p>
+
+                        {safeTicketAttachment && (
+                          <button
+                            type="button"
+                            onClick={() => setLightboxUrl(safeTicketAttachment)}
+                            className="block w-full mb-3 rounded-2xl overflow-hidden border border-slate-200"
+                          >
+                            <img
+                              src={safeTicketAttachment}
+                              alt="Complaint Proof"
+                              className="w-full h-36 object-cover hover:scale-105 transition-transform"
+                            />
+                          </button>
+                        )}
+
+                        {c.admin_response && (
+                          <div className="rounded-2xl bg-indigo-50/80 border border-indigo-100 p-3.5 text-xs text-indigo-950">
+                            <strong className="block text-[10px] uppercase tracking-wider text-indigo-600 mb-1">
+                              Landlord Official Response:
+                            </strong>
+                            {c.admin_response}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 space-y-3">
+                        {isAdmin && (
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              value={replyTexts[c.id] ?? c.admin_response ?? ''}
+                              onChange={(e) =>
+                                setReplyTexts({ ...replyTexts, [c.id]: e.target.value })
+                              }
+                              placeholder="Write official response..."
+                              className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white outline-none focus:border-indigo-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleAdminUpdateComplaint(
+                                  c.id,
+                                  'IN_PROGRESS',
+                                  replyTexts[c.id] ?? c.admin_response
+                                )
+                              }
+                              className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-extrabold"
+                            >
+                              Reply
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-extrabold ${
+                              c.status === 'RESOLVED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : c.status === 'IN_PROGRESS'
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {c.status === 'RESOLVED' ? (
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            ) : (
+                              <Clock className="w-3.5 h-3.5" />
+                            )}
+                            {c.status_display}
+                          </span>
+
+                          {isAdmin && c.status !== 'RESOLVED' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleAdminUpdateComplaint(
+                                  c.id,
+                                  'RESOLVED',
+                                  replyTexts[c.id] ||
+                                    c.admin_response ||
+                                    'Issue resolved by Landlord.'
+                                )
+                              }
+                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
+                            >
+                              ✓ Mark Resolved
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -934,7 +1034,7 @@ export default function SupportHub() {
             <X className="w-6 h-6" />
           </button>
           <img
-            src={lightboxUrl}
+            src={getSafeMediaUrl(lightboxUrl)}
             alt="Full size preview"
             className="max-w-full max-h-[88vh] rounded-2xl shadow-2xl object-contain"
           />

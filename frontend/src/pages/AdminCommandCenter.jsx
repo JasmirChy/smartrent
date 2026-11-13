@@ -36,6 +36,7 @@ import {
   ImagePlus,
   LogOut,
   Search,
+  Edit3,
 } from 'lucide-react';
 import {
   BarChart,
@@ -98,8 +99,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
   let finalUrl = rawUrl.trim();
 
-  // If the URL contains a /media/ path (even if saved with localhost or http://),
-  // always attach it to the active backendOrigin
   const mediaIndex = finalUrl.indexOf('/media/');
   if (mediaIndex !== -1) {
     finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
@@ -107,7 +106,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
     finalUrl = `${backendOrigin}${finalUrl}`;
   }
 
-  // Upgrade http:// to https:// whenever running on HTTPS (Vercel / Render)
   if (
     finalUrl.startsWith('http://') &&
     !finalUrl.includes('localhost') &&
@@ -130,6 +128,10 @@ export default function AdminCommandCenter() {
   const [activeAdminTab, setActiveAdminTab] = useState('OVERVIEW'); // OVERVIEW | USERS | ADMINS
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [userToDelete, setUserToDelete] = useState(null);
+
+  // Edit Room Sub-Meter Modal States
+  const [editMeterRoom, setEditMeterRoom] = useState(null);
+  const [editMeterValue, setEditMeterValue] = useState('');
 
   // Managed List Filter & Search States
   const [reservationFilter, setReservationFilter] = useState('PENDING'); // PENDING | APPROVED | ALL
@@ -174,7 +176,7 @@ export default function AdminCommandCenter() {
   const [showFineModal, setShowFineModal] = useState(false);
   const [fineTenantId, setFineTenantId] = useState('');
   const [fineBillId, setFineBillId] = useState('');
-  const [fineMode, setFineMode] = useState('SET'); // SET replaces fine so 600 stays 600; ADD adds to existing
+  const [fineMode, setFineMode] = useState('SET');
   const [fineAmount, setFineAmount] = useState('');
   const [fineReason, setFineReason] = useState('');
   const [fineEvidenceFiles, setFineEvidenceFiles] = useState([]);
@@ -299,7 +301,6 @@ export default function AdminCommandCenter() {
   const tenantUsers = adminUsers.filter((u) => u.role !== 'ADMIN');
   const adminTeamUsers = adminUsers.filter((u) => u.role === 'ADMIN');
 
-  // Keep selected user live-synced with latest query data
   const selectedUserModal = selectedUserId
     ? adminUsers.find((u) => u.id === selectedUserId) || null
     : null;
@@ -317,7 +318,6 @@ export default function AdminCommandCenter() {
   const selectableBillsForDropdown =
     unpaidOrPendingBills.length > 0 ? unpaidOrPendingBills : bills;
 
-  // Filtered lists for clean, managed display
   const displayedReservations =
     reservationFilter === 'PENDING'
       ? pendingReservations
@@ -384,11 +384,16 @@ export default function AdminCommandCenter() {
     return true;
   });
 
-  // Map BarChart data to include AD + Nepali BS month labels
   const monthlyTrendChartData = (analytics?.monthly_trend_chart || []).map((item) => ({
     ...item,
     month: formatDualMonthLabel(item.month),
   }));
+
+  const openEditMeterModal = (roomObj) => {
+    if (!roomObj) return;
+    setEditMeterRoom(roomObj);
+    setEditMeterValue(String(roomObj.current_meter_reading ?? 0));
+  };
 
   const openFineModalForUser = (userObj = null, billObj = null) => {
     setFineModalError('');
@@ -614,9 +619,37 @@ export default function AdminCommandCenter() {
     queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
     queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
     queryClient.invalidateQueries({ queryKey: ['complaintTickets'] });
+    queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
   };
 
-  // Mutations
+  // Mutation: Edit Room Initial / Current Sub-Meter Reading
+  const updateRoomMeterMutation = useMutation({
+    mutationFn: async ({ roomId, newMeter }) =>
+      (
+        await axiosClient.patch(`/rooms/${roomId}/`, {
+          current_meter_reading: newMeter,
+        })
+      ).data,
+    onSuccess: (data) => {
+      setBannerMsg({
+        type: 'success',
+        text: data.message || 'Sub-meter reading updated successfully!',
+      });
+      setEditMeterRoom(null);
+      setEditMeterValue('');
+      refreshAllAdminData();
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          'Could not update sub-meter reading.',
+      });
+    },
+  });
+
   const kycAuditMutation = useMutation({
     mutationFn: ({ kycId, action, notes }) => auditKYC(kycId, action, notes),
     onSuccess: (data) => {
@@ -1982,12 +2015,17 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* UNIT TELEMETRY MATRIX (WITH ASSIGNED / VACANT FILTER & DUAL AD/BS DATES) */}
+          {/* UNIT TELEMETRY MATRIX (WITH EDIT SUB-METER BUTTON ON EVERY ROOM CARD) */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h3 className="text-base font-extrabold text-slate-900">
-                Unit Telemetry & Occupancy Matrix
-              </h3>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Unit Telemetry & Occupancy Matrix
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Click &ldquo;Edit Meter&rdquo; on any room card to set or adjust its initial/current sub-meter reading
+                </p>
+              </div>
 
               <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
                 {[
@@ -2041,19 +2079,32 @@ export default function AdminCommandCenter() {
                         <p className="text-xs font-bold text-slate-800 mb-2">
                           {occupied && tenant ? tenant.full_name : 'Available'}
                         </p>
-                        <div className="space-y-1 text-[11px] text-slate-500 mb-4">
-                          <p>
-                            Meter: <strong>{room.current_meter_reading} units</strong>
-                          </p>
+                        <div className="space-y-1.5 text-[11px] text-slate-500 mb-4">
+                          <div className="flex items-center justify-between bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-200/70">
+                            <span>
+                              Sub-Meter:{' '}
+                              <strong className="text-slate-900">
+                                {room.current_meter_reading} units
+                              </strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => openEditMeterModal(room)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 font-extrabold text-[10px] shadow-2xs transition"
+                              title={`Edit Room ${room.room_number} Sub-Meter Reading`}
+                            >
+                              <Edit3 className="w-3 h-3" /> Edit Meter
+                            </button>
+                          </div>
                           {occupied && tenant && (
-                            <p>
+                            <p className="pt-0.5">
                               Next Due:{' '}
                               <strong>{formatDualDate(tenant.next_due_date)}</strong>
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="pt-3 border-t border-slate-100 flex justify-between items-center gap-2">
+                      <div className="pt-3 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
                         {occupied && tenant?.tenant_id && (
                           <button
                             type="button"
@@ -2782,9 +2833,20 @@ export default function AdminCommandCenter() {
                   {/* 4. Assigned Room Telemetry + Emergency & Legal Details */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
-                      <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                        <Home className="w-4 h-4 text-indigo-600" /> Room & Utility Telemetry
-                      </h4>
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                          <Home className="w-4 h-4 text-indigo-600" /> Room & Utility Telemetry
+                        </h4>
+                        {u.room_details && (
+                          <button
+                            type="button"
+                            onClick={() => openEditMeterModal(u.room_details)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] shadow-xs transition"
+                          >
+                            <Edit3 className="w-3 h-3" /> Edit Meter
+                          </button>
+                        )}
+                      </div>
                       {u.room_details ? (
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           <div>
@@ -4234,6 +4296,120 @@ export default function AdminCommandCenter() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 10: EDIT ROOM INITIAL / CURRENT SUB-METER READING MODAL             */}
+      {/* ========================================================================= */}
+      {editMeterRoom && (
+        <div
+          onClick={() => setEditMeterRoom(null)}
+          className="fixed inset-0 z-[58] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 block">
+                    Sub-Meter Calibration
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    Edit Room {editMeterRoom.room_number} Sub-Meter
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditMeterRoom(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-semibold">Room Status:</span>
+                <span className="font-extrabold text-slate-900">
+                  {editMeterRoom.is_occupied
+                    ? `Occupied (${editMeterRoom.active_tenancy?.full_name || 'Active Tenant'})`
+                    : 'Vacant / Available'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-semibold">Previous Saved Reading:</span>
+                <strong className="text-indigo-600">
+                  {editMeterRoom.current_meter_reading ?? 0} units
+                </strong>
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateRoomMeterMutation.mutate({
+                  roomId: editMeterRoom.id,
+                  newMeter: editMeterValue,
+                });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  New Initial / Current Sub-Meter Reading (kWh Units) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={editMeterValue}
+                  onChange={(e) => setEditMeterValue(e.target.value)}
+                  placeholder="e.g. 1250.00"
+                  className="w-full px-4 py-3 text-lg font-black text-slate-900 rounded-xl border-2 border-indigo-200 focus:border-indigo-600 outline-none transition"
+                />
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                  Saving this updates Room {editMeterRoom.room_number}&apos;s sub-meter baseline and
+                  automatically syncs any open/unpaid bill&apos;s previous reading on the tenant
+                  dashboard.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditMeterRoom(null)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateRoomMeterMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-indigo-600/20 transition inline-flex items-center justify-center gap-1.5"
+                >
+                  {updateRoomMeterMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      Save Meter Reading
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

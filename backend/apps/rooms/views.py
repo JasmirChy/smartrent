@@ -3,8 +3,8 @@ import json
 import calendar
 import threading
 import urllib.request
-from datetime import date, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -35,103 +35,19 @@ ALLOWED_BANNER_EXTENSIONS = {
 }
 
 
-def add_one_month(orig_date):
-    """Calculates 1 month ahead from orig_date."""
-    year = orig_date.year
-    month = orig_date.month + 1
-    if month > 12:
-        month = 1
-        year += 1
-    max_day = calendar.monthrange(year, month)[1]
-    return date(year, month, min(orig_date.day, max_day))
-
-
-def calculate_pro_rata_rent(monthly_base_rent, days_lived):
+def cleanup_orphaned_unpaid_bills():
     """
-    Divides monthly room rent by 30 and multiplies by the number of days lived.
-    If days_lived == 30, returns the exact monthly_base_rent.
+    Removes any leftover UNPAID / REJECTED / PENDING_VERIFICATION bills
+    belonging to tenancies that have already ended (is_active=False) or rooms that are vacant.
+    Preserves all APPROVED and PAID_CASH historical receipts.
     """
-    rent_dec = Decimal(str(monthly_base_rent or '0.00'))
-    days = max(1, int(days_lived))
-    if days == 30:
-        return rent_dec
-    daily_rate = rent_dec / Decimal('30.00')
-    return (daily_rate * Decimal(days)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-
-def sync_tenancy_billing_cycles():
-    """
-    1) Deletes orphaned UNPAID/REJECTED bills belonging to closed/vacated tenancies.
-    2) Removes premature auto-created full-month UNPAID bills where < 30 days have elapsed
-       (unless the bill has a fine applied or is a Move-Out / Pro-Rata bill).
-    3) Automatically generates a pending UNPAID monthly bill (base_rent + water_bill)
-       as soon as 30 days (1 full month) are completed for any active tenancy.
-    """
-    today = timezone.localdate()
     try:
-        # 1. Clean up orphaned unpaid bills for inactive tenancies or vacant rooms
         MonthlyBill.objects.filter(
             Q(tenancy__is_active=False) | Q(room__is_occupied=False),
             status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
         ).delete()
-
-        # 2. Check all active tenancies
-        active_tenancies = Tenancy.objects.filter(is_active=True).select_related('room', 'tenant')
-        for tenancy in active_tenancies:
-            open_bills = list(
-                MonthlyBill.objects.filter(
-                    tenancy=tenancy,
-                    status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
-                ).order_by('-created_at')
-            )
-
-            last_paid = (
-                MonthlyBill.objects.filter(
-                    tenancy=tenancy,
-                    status__in=['APPROVED', 'PAID_CASH'],
-                )
-                .order_by('-cycle_end_date', '-paid_at', '-id')
-                .first()
-            )
-
-            cycle_start = last_paid.cycle_end_date if (last_paid and last_paid.cycle_end_date) else tenancy.entry_date
-            days_completed = (today - cycle_start).days
-
-            if open_bills:
-                # If an UNPAID bill was prematurely created before 30 days and is NOT a pro-rata/move-out/fine bill, remove it until 30 days complete
-                for ob in open_bills:
-                    label_str = (ob.billing_month_label or '').upper()
-                    is_special_bill = (
-                        'PRO-RATA' in label_str
-                        or 'MOVE-OUT' in label_str
-                        or 'SETTLEMENT' in label_str
-                        or 'MANUAL' in label_str
-                        or (ob.damage_fine_amount and ob.damage_fine_amount > Decimal('0.00'))
-                        or ob.status == 'PENDING_VERIFICATION'
-                    )
-                    ob_days = (today - (ob.cycle_start_date or cycle_start)).days
-                    if not is_special_bill and ob_days < 30 and today < ob.due_date:
-                        ob.delete()
-            else:
-                # 3. If 30 days (1 month) are completed and no open bill exists, generate the pending monthly bill
-                if days_completed >= 30:
-                    due_date = cycle_start + timedelta(days=30)
-                    MonthlyBill.objects.create(
-                        tenancy=tenancy,
-                        room=tenancy.room,
-                        tenant=tenancy.tenant,
-                        billing_month_label=due_date.strftime("%B %Y"),
-                        cycle_start_date=cycle_start,
-                        cycle_end_date=due_date,
-                        due_date=due_date,
-                        base_rent=tenancy.room.base_rent,
-                        water_bill=tenancy.room.fixed_water_bill,
-                        electricity_rate=tenancy.room.electricity_rate_per_unit,
-                        previous_meter_reading=tenancy.room.current_meter_reading,
-                        status='UNPAID',
-                    )
-    except Exception as e:
-        print(f"[SmartRent Billing Sync Notice]: {e}")
+    except Exception:
+        pass
 
 
 def build_https_safe_uri(request, relative_url):
@@ -157,6 +73,11 @@ def build_https_safe_uri(request, relative_url):
 
 
 def _send_email_worker(recipient_list, subject, message_body):
+    """
+    Background email worker:
+    1) Tries Google Apps Script HTTPS Webhook FIRST (Port 443 — instant on Render)
+    2) Falls back to Django SMTP
+    """
     valid_recipients = [r.strip() for r in recipient_list if r and '@' in str(r)]
     if not valid_recipients:
         return False
@@ -219,6 +140,7 @@ def send_rooms_email(recipients, subject, message_body):
 
 
 def get_admin_emails():
+    """Returns all active Admin email addresses to receive landlord notifications."""
     admin_emails = list(
         User.objects.filter(
             Q(role='ADMIN') | Q(is_superuser=True) | Q(is_staff=True),
@@ -242,11 +164,26 @@ class IsAdminUserRole(permissions.BasePermission):
         )
 
 
+def add_one_month(orig_date):
+    """Calculates exactly 1 month ahead from the tenant's entry_date."""
+    year = orig_date.year
+    month = orig_date.month + 1
+    if month > 12:
+        month = 1
+        year += 1
+    max_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(orig_date.day, max_day))
+
+
 class PublicLandingDataView(APIView):
+    """
+    Single fast endpoint for the Homepage (/api/rooms/landing/):
+    Returns Hero Images, Rooms (A1-A4, B1-B5), House Rules, AND Active Notices!
+    """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        sync_tenancy_billing_cycles()
+        cleanup_orphaned_unpaid_bills()
 
         Room.objects.filter(room_number__istartswith='B').exclude(floor='FIRST').update(floor='FIRST')
         Room.objects.filter(room_number__istartswith='A').exclude(floor='GROUND').update(floor='GROUND')
@@ -290,22 +227,113 @@ class RoomListUpdateView(generics.ListAPIView):
     serializer_class = RoomSerializer
 
     def get_queryset(self):
-        sync_tenancy_billing_cycles()
+        cleanup_orphaned_unpaid_bills()
         return Room.objects.all().prefetch_related('tenancies__tenant', 'reservations')
 
 
 class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
+    """
+    Allows Admin to edit a room's initial/current sub-meter reading (and optional room rates)
+    via PATCH or PUT /api/rooms/<pk>/.
+    Automatically syncs:
+      1) Room.current_meter_reading
+      2) Active Tenancy.starting_meter_reading (if occupied)
+      3) Any open MonthlyBill.previous_meter_reading (recalculating bill totals immediately)
+    """
     permission_classes = [IsAdminUserRole]
     serializer_class = RoomSerializer
     queryset = Room.objects.all()
 
+    @transaction.atomic
+    def _update_room_and_meter(self, request, *args, **kwargs):
+        room = self.get_object()
+        raw_meter = request.data.get('current_meter_reading')
+        if raw_meter is None:
+            raw_meter = request.data.get('starting_meter_reading')
+
+        updated_fields = ['updated_at']
+
+        if raw_meter not in (None, ''):
+            try:
+                new_meter = Decimal(str(raw_meter))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {"error": "Please enter a valid numeric sub-meter reading."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if new_meter < Decimal('0.00'):
+                return Response(
+                    {"error": "Sub-meter reading cannot be negative."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            room.current_meter_reading = new_meter
+            updated_fields.append('current_meter_reading')
+
+            # Sync active tenancy starting meter reading if room is occupied
+            active_tenancy = Tenancy.objects.filter(room=room, is_active=True).first()
+            if active_tenancy:
+                active_tenancy.starting_meter_reading = new_meter
+                active_tenancy.save(update_fields=['starting_meter_reading'])
+
+            # Sync any open/unpaid bills for this room so tenant dashboard updates immediately
+            open_bills = MonthlyBill.objects.select_for_update().filter(
+                room=room,
+                status__in=['UNPAID', 'PENDING_VERIFICATION', 'REJECTED'],
+            )
+            for bill in open_bills:
+                bill.previous_meter_reading = new_meter
+                if bill.current_meter_reading is not None and bill.current_meter_reading < new_meter:
+                    bill.current_meter_reading = new_meter
+                bill.save()
+
+        # Optional room rate overrides if provided
+        if request.data.get('base_rent') not in (None, ''):
+            try:
+                room.base_rent = Decimal(str(request.data.get('base_rent')))
+                updated_fields.append('base_rent')
+            except (InvalidOperation, ValueError):
+                pass
+
+        if request.data.get('fixed_water_bill') not in (None, ''):
+            try:
+                room.fixed_water_bill = Decimal(str(request.data.get('fixed_water_bill')))
+                updated_fields.append('fixed_water_bill')
+            except (InvalidOperation, ValueError):
+                pass
+
+        if request.data.get('electricity_rate_per_unit') not in (None, ''):
+            try:
+                room.electricity_rate_per_unit = Decimal(str(request.data.get('electricity_rate_per_unit')))
+                updated_fields.append('electricity_rate_per_unit')
+            except (InvalidOperation, ValueError):
+                pass
+
+        room.save(update_fields=list(dict.fromkeys(updated_fields)))
+
+        return Response(
+            {
+                "message": (
+                    f"Room {room.room_number} sub-meter reading updated to "
+                    f"{room.current_meter_reading} units and synced across active bills!"
+                ),
+                "room": RoomSerializer(room, context={'request': request}).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def patch(self, request, *args, **kwargs):
+        return self._update_room_and_meter(request, *args, **kwargs)
+
+    def put(self, request, *args, **kwargs):
+        return self._update_room_and_meter(request, *args, **kwargs)
+
 
 class AdminAssignTenantToRoomView(APIView):
     """
-    Assigns a user to a room, sets the initial meter reading & entry_date,
-    and marks the room as occupied.
-     If entry_date is already >= 30 days ago, generates the pending 1-month bill immediately;
-    otherwise, the bill becomes pending once 30 days are completed (or if the tenant requests early move-out).
+    Assigns a user to a room (e.g. A3), sets the initial meter reading & entry_date,
+    marks the room as occupied, and generates their first MonthlyBill cycle.
     """
     permission_classes = [IsAdminUserRole]
 
@@ -319,6 +347,7 @@ class AdminAssignTenantToRoomView(APIView):
         entry_date = serializer.validated_data['entry_date']
         starting_meter = serializer.validated_data['starting_meter_reading']
 
+        # Deactivate any existing active tenancy for this room or tenant
         Tenancy.objects.filter(room=room, is_active=True).update(
             is_active=False,
             move_out_date=timezone.localdate()
@@ -328,16 +357,19 @@ class AdminAssignTenantToRoomView(APIView):
             move_out_date=timezone.localdate()
         )
 
+        # Remove any stale unpaid bills from previous tenancies for this room or tenant
         MonthlyBill.objects.filter(
             Q(room=room) | Q(tenant=tenant),
             status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
         ).delete()
 
+        # Clear any old pending move-out requests for this tenant
         MoveOutRequest.objects.filter(tenant=tenant, status='PENDING').update(
             status='APPROVED',
             resolved_at=timezone.now(),
         )
 
+        # Create the new active Tenancy
         tenancy = Tenancy.objects.create(
             room=room,
             tenant=tenant,
@@ -346,6 +378,7 @@ class AdminAssignTenantToRoomView(APIView):
             is_active=True,
         )
 
+        # Update Room status & initial meter reading
         room.is_occupied = True
         room.current_meter_reading = starting_meter
         room.save(update_fields=['is_occupied', 'current_meter_reading', 'updated_at'])
@@ -354,24 +387,24 @@ class AdminAssignTenantToRoomView(APIView):
             tenant.role = 'TENANT'
             tenant.save(update_fields=['role'])
 
-        first_due_date = entry_date + timedelta(days=30)
+        # Automatically initialize the first MonthlyBill cycle (entry_date -> +1 month)
+        first_due_date = add_one_month(entry_date)
+        month_label = first_due_date.strftime("%B %Y")
 
-        # Only create the pending UNPAID bill immediately if 30 days have already elapsed since entry_date
-        if (timezone.localdate() - entry_date).days >= 30:
-            MonthlyBill.objects.create(
-                tenancy=tenancy,
-                room=room,
-                tenant=tenant,
-                billing_month_label=first_due_date.strftime("%B %Y"),
-                cycle_start_date=entry_date,
-                cycle_end_date=first_due_date,
-                due_date=first_due_date,
-                base_rent=room.base_rent,
-                water_bill=room.fixed_water_bill,
-                electricity_rate=room.electricity_rate_per_unit,
-                previous_meter_reading=starting_meter,
-                status='UNPAID',
-            )
+        MonthlyBill.objects.create(
+            tenancy=tenancy,
+            room=room,
+            tenant=tenant,
+            billing_month_label=month_label,
+            cycle_start_date=entry_date,
+            cycle_end_date=first_due_date,
+            due_date=first_due_date,
+            base_rent=room.base_rent,
+            water_bill=room.fixed_water_bill,
+            electricity_rate=room.electricity_rate_per_unit,
+            previous_meter_reading=starting_meter,
+            status='UNPAID',
+        )
 
         RoomReservation.objects.filter(room=room, status='PENDING').update(
             status='REJECTED',
@@ -391,7 +424,8 @@ class AdminAssignTenantToRoomView(APIView):
                 f"• Base Monthly Rent: Rs. {room.base_rent}\n"
                 f"• Fixed Water Supply: Rs. {room.fixed_water_bill}/month\n"
                 f"• Electricity Rate: Rs. {room.electricity_rate_per_unit}/unit\n"
-                f"• 30-Day Billing Cycle Due Date: {first_due_date}\n\n"
+                f"• First Billing Due Date: {first_due_date}\n\n"
+                f"You can view your live billing telemetry and digital lease in your SmartRent Tenant Dashboard.\n\n"
                 f"— SmartRent House Management"
             ),
         )
@@ -423,6 +457,7 @@ class AdminVacateRoomView(APIView):
             status='APPROVED',
             resolved_at=timezone.now(),
         )
+        # Delete any open UNPAID/REJECTED advance bills for this vacated room
         MonthlyBill.objects.filter(
             room=room,
             status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
@@ -446,7 +481,7 @@ class AdminVacateRoomView(APIView):
 
         return Response(
             {
-                "message": f"Room {room.room_number} is now marked as Available.",
+                "message": f"Room {room.room_number} is now marked as Available and open unpaid bills were cleared.",
                 "room": RoomSerializer(room, context={'request': request}).data,
             },
             status=status.HTTP_200_OK,
@@ -583,6 +618,7 @@ class RoomReservationActionView(APIView):
                 move_out_date=timezone.localdate()
             )
 
+            # Clear any leftover unpaid bills from previous tenancies
             MonthlyBill.objects.filter(
                 Q(room=room) | Q(tenant=tenant),
                 status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
@@ -608,23 +644,23 @@ class RoomReservationActionView(APIView):
                 tenant.role = 'TENANT'
                 tenant.save(update_fields=['role'])
 
-            first_due_date = entry_date + timedelta(days=30)
+            first_due_date = add_one_month(entry_date)
+            month_label = first_due_date.strftime("%B %Y")
 
-            if (timezone.localdate() - entry_date).days >= 30:
-                MonthlyBill.objects.create(
-                    tenancy=tenancy,
-                    room=room,
-                    tenant=tenant,
-                    billing_month_label=first_due_date.strftime("%B %Y"),
-                    cycle_start_date=entry_date,
-                    cycle_end_date=first_due_date,
-                    due_date=first_due_date,
-                    base_rent=room.base_rent,
-                    water_bill=room.fixed_water_bill,
-                    electricity_rate=room.electricity_rate_per_unit,
-                    previous_meter_reading=starting_meter,
-                    status='UNPAID',
-                )
+            MonthlyBill.objects.create(
+                tenancy=tenancy,
+                room=room,
+                tenant=tenant,
+                billing_month_label=month_label,
+                cycle_start_date=entry_date,
+                cycle_end_date=first_due_date,
+                due_date=first_due_date,
+                base_rent=room.base_rent,
+                water_bill=room.fixed_water_bill,
+                electricity_rate=room.electricity_rate_per_unit,
+                previous_meter_reading=starting_meter,
+                status='UNPAID',
+            )
 
             RoomReservation.objects.filter(room=room, status='PENDING').exclude(pk=reservation.pk).update(
                 status='REJECTED',
@@ -641,13 +677,14 @@ class RoomReservationActionView(APIView):
                     f"• Move-In Date: {entry_date}\n"
                     f"• Starting Sub-Meter Reading: {starting_meter} units\n"
                     f"• Monthly Base Rent: Rs. {room.base_rent}\n"
-                    f"• First 30-Day Billing Due Date: {first_due_date}\n\n"
+                    f"• First Billing Due Date: {first_due_date}\n\n"
+                    f"Log in to your SmartRent Tenant Dashboard to view your room telemetry and digital lease.\n\n"
                     f"— SmartRent House Management"
                 ),
             )
 
             return Response({
-                "message": f"Reservation approved! {tenant.full_name or tenant.email} is now assigned to Room {room.room_number}.",
+                "message": f"Reservation approved! {tenant.full_name or tenant.email} is now assigned to Room {room.room_number} & initial bill cycle created.",
                 "reservation": RoomReservationSerializer(reservation, context={'request': request}).data,
                 "room": RoomSerializer(room, context={'request': request}).data,
             })
@@ -656,30 +693,18 @@ class RoomReservationActionView(APIView):
 
 
 # ============================================================================
-# ITEM B: MOVE-OUT & PRO-RATA SETTLEMENT VIEWS
+# MOVE-OUT & DEPOSIT SETTLEMENT VIEWS
 # ============================================================================
 
 class MoveOutStatusView(APIView):
-    """Returns whether the logged-in tenant has an active move-out request and their current cycle day count."""
+    """Returns whether the logged-in tenant has an active move-out request."""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        sync_tenancy_billing_cycles()
         try:
-            active_tenancy = Tenancy.objects.filter(tenant=request.user, is_active=True).select_related('room').first()
+            active_tenancy = Tenancy.objects.filter(tenant=request.user, is_active=True).first()
             if not active_tenancy:
                 return Response({"has_active_request": False, "request": None})
-
-            last_paid = (
-                MonthlyBill.objects.filter(
-                    tenancy=active_tenancy,
-                    status__in=['APPROVED', 'PAID_CASH'],
-                )
-                .order_by('-cycle_end_date', '-paid_at', '-id')
-                .first()
-            )
-            cycle_start = last_paid.cycle_end_date if (last_paid and last_paid.cycle_end_date) else active_tenancy.entry_date
-            days_lived = max(0, (timezone.localdate() - cycle_start).days)
 
             req = MoveOutRequest.objects.filter(
                 tenant=request.user,
@@ -687,16 +712,9 @@ class MoveOutStatusView(APIView):
             ).order_by('-created_at').first()
 
             if not req or req.status == 'REJECTED':
-                return Response({
-                    "has_active_request": False,
-                    "request": None,
-                    "cycle_start_date": str(cycle_start),
-                    "days_lived_in_cycle": days_lived,
-                })
+                return Response({"has_active_request": False, "request": None})
             return Response({
                 "has_active_request": True,
-                "cycle_start_date": str(cycle_start),
-                "days_lived_in_cycle": days_lived,
                 "request": {
                     "id": req.id,
                     "room_number": req.room.room_number,
@@ -711,208 +729,67 @@ class MoveOutStatusView(APIView):
 
 
 class RequestMoveOutView(APIView):
-    """
-    Enforces the strict Move-Out & Pro-Rata Billing rules:
-    1) If the tenant has any unpaid days (e.g. 10 days, 15 days, or 30+ days) or an existing UNPAID bill,
-       calculates their exact bill:
-       - If < 30 days: Pro-Rata Room Rent = (monthly_base_rent / 30) * days_lived + water_bill
-       - If >= 30 days: Full monthly_base_rent (or pro-rata for exact days) + water_bill
-    2) Blocks the Move-Out request until all pending bills are PAID (APPROVED or PAID_CASH).
-    3) Once all pending bills are paid, submits the Move-Out request to Admin Command Center!
-    """
+    """Allows an active tenant to submit a move-out settlement request and emails Admin & Tenant."""
     permission_classes = [permissions.IsAuthenticated]
 
-    @transaction.atomic
     def post(self, request):
-        active_tenancy = (
-            Tenancy.objects.filter(tenant=request.user, is_active=True)
-            .select_related('room')
-            .first()
-        )
+        active_tenancy = Tenancy.objects.filter(tenant=request.user, is_active=True).select_related('room').first()
         if not active_tenancy:
-            return Response(
-                {"error": "You do not have an active room tenancy to vacate."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "You do not have an active room tenancy to vacate."}, status=status.HTTP_400_BAD_REQUEST)
 
-        existing_mo = MoveOutRequest.objects.filter(tenancy=active_tenancy, status='PENDING').first()
-        if existing_mo:
-            return Response(
-                {"error": "You already have a pending move-out request awaiting Admin review."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        try:
+            existing = MoveOutRequest.objects.filter(tenancy=active_tenancy, status='PENDING').first()
+            if existing:
+                return Response({"error": "You already have a pending move-out request."}, status=status.HTTP_400_BAD_REQUEST)
 
-        room = active_tenancy.room
-        today = timezone.localdate()
+            requested_date = request.data.get('requested_date') or timezone.localdate()
+            reason = (request.data.get('reason') or '').strip()
 
-        raw_req_date = request.data.get('requested_date')
-        if raw_req_date:
-            try:
-                requested_date = (
-                    datetime.strptime(str(raw_req_date), "%Y-%m-%d").date()
-                    if isinstance(raw_req_date, str)
-                    else raw_req_date
-                )
-            except Exception:
-                requested_date = today
-        else:
-            requested_date = today
-
-        reason = (request.data.get('reason') or '').strip()
-
-        # Find the last paid bill for this tenancy to determine unpaid cycle_start_date
-        last_paid = (
-            MonthlyBill.objects.filter(
+            mo = MoveOutRequest.objects.create(
                 tenancy=active_tenancy,
-                status__in=['APPROVED', 'PAID_CASH'],
-            )
-            .order_by('-cycle_end_date', '-paid_at', '-id')
-            .first()
-        )
-        cycle_start = (
-            last_paid.cycle_end_date
-            if (last_paid and last_paid.cycle_end_date)
-            else active_tenancy.entry_date
-        )
-
-        # Target end date for stay calculation is whichever is later: today or requested_date
-        target_end_date = max(today, requested_date)
-        raw_days_lived = (target_end_date - cycle_start).days
-
-        # Check if there is an existing open bill
-        open_bill = (
-            MonthlyBill.objects.filter(
-                tenancy=active_tenancy,
-                status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
-            )
-            .order_by('-created_at')
-            .first()
-        )
-
-        # Case 1: Tenant already has a bill awaiting Admin verification
-        if open_bill and open_bill.status == 'PENDING_VERIFICATION':
-            return Response(
-                {
-                    "error": (
-                        f"Your payment proof for Rs. {open_bill.total_payable} ({open_bill.billing_month_label}) "
-                        f"is currently awaiting Admin verification. Once Admin approves your payment, "
-                        f"you can submit your Move-Out request!"
-                    ),
-                    "requires_payment": True,
-                    "bill_id": open_bill.id,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+                room=active_tenancy.room,
+                tenant=request.user,
+                requested_date=requested_date,
+                reason=reason,
+                status='PENDING',
             )
 
-        # Case 2: Tenant has an open UNPAID/REJECTED bill OR has unpaid days lived not yet billed
-        has_paid_current_stay = last_paid is not None and raw_days_lived <= 0
-
-        if open_bill or not has_paid_current_stay:
-            days_to_bill = max(1, raw_days_lived)
-            pro_rata_rent = calculate_pro_rata_rent(room.base_rent, days_to_bill)
-
-            if days_to_bill < 30:
-                bill_label = f"Pro-Rata Move-Out ({days_to_bill} Days)"
-            elif days_to_bill == 30:
-                bill_label = f"Monthly Bill (30 Days • {target_end_date.strftime('%b %Y')})"
-            else:
-                bill_label = f"Move-Out Settlement ({days_to_bill} Days)"
-
-            if open_bill:
-                open_bill.billing_month_label = bill_label
-                open_bill.cycle_start_date = cycle_start
-                open_bill.cycle_end_date = target_end_date
-                open_bill.due_date = today
-                open_bill.base_rent = pro_rata_rent
-                open_bill.water_bill = room.fixed_water_bill
-                open_bill.electricity_rate = room.electricity_rate_per_unit
-                open_bill.save()
-                target_bill = open_bill
-            else:
-                target_bill = MonthlyBill.objects.create(
-                    tenancy=active_tenancy,
-                    room=room,
-                    tenant=request.user,
-                    billing_month_label=bill_label,
-                    cycle_start_date=cycle_start,
-                    cycle_end_date=target_end_date,
-                    due_date=today,
-                    base_rent=pro_rata_rent,
-                    water_bill=room.fixed_water_bill,
-                    electricity_rate=room.electricity_rate_per_unit,
-                    previous_meter_reading=room.current_meter_reading,
-                    status='UNPAID',
-                )
-
-            return Response(
-                {
-                    "error": (
-                        f"Pending Bill Generated for {days_to_bill} Day(s) Stayed: "
-                        f"Room Rent Rs. {target_bill.base_rent} (Rs. {room.base_rent} ÷ 30 × {days_to_bill} days) "
-                        f"+ Water Rs. {target_bill.water_bill}"
-                        + (
-                            f" + Fine Rs. {target_bill.damage_fine_amount}"
-                            if target_bill.damage_fine_amount > 0
-                            else ""
-                        )
-                        + f" = Rs. {target_bill.total_payable} (+ electricity when you enter your meter reading). "
-                        f"Please pay this pending bill first; once paid and approved, you can request Move-Out!"
-                    ),
-                    "requires_payment": True,
-                    "bill_id": target_bill.id,
-                    "days_billed": days_to_bill,
-                    "pro_rata_rent": float(target_bill.base_rent),
-                    "total_payable": float(target_bill.total_payable),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            send_rooms_email(
+                recipients=get_admin_emails(),
+                subject=f"🚪 Move-Out Request Submitted — Room {active_tenancy.room.room_number} ({request.user.full_name})",
+                message_body=(
+                    f"Namaste Admin,\n\n"
+                    f"A tenant has submitted a Move-Out & Final Settlement request:\n\n"
+                    f"• Tenant: {request.user.full_name} ({request.user.email})\n"
+                    f"• Phone: {getattr(request.user, 'phone_number', 'N/A')}\n"
+                    f"• Room: Room {active_tenancy.room.room_number}\n"
+                    f"• Expected Move-Out Date: {requested_date}\n"
+                    f"• Current Room Meter Reading: {active_tenancy.room.current_meter_reading} units\n"
+                    f"• Reason: {reason or 'Not specified'}\n\n"
+                    f"Open your SmartRent Admin Command Center to enter the final sub-meter reading, "
+                    f"settle the final bill, and vacate the room.\n\n"
+                    f"— SmartRent Automated Alert"
+                ),
             )
 
-        # Case 3: All pending bills are PAID (APPROVED / PAID_CASH)! Proceed with Move-Out Request
-        mo = MoveOutRequest.objects.create(
-            tenancy=active_tenancy,
-            room=room,
-            tenant=request.user,
-            requested_date=requested_date,
-            reason=reason,
-            status='PENDING',
-        )
+            send_rooms_email(
+                recipients=[request.user.email],
+                subject=f"SmartRent — Move-Out Request Received (Room {active_tenancy.room.room_number})",
+                message_body=(
+                    f"Namaste {request.user.full_name},\n\n"
+                    f"Your move-out settlement request for Room {active_tenancy.room.room_number} "
+                    f"(Planned Date: {requested_date}) has been submitted to the Admin.\n\n"
+                    f"Admin will verify your final sub-meter reading and process your settlement shortly.\n\n"
+                    f"— SmartRent House Management"
+                ),
+            )
 
-        send_rooms_email(
-            recipients=get_admin_emails(),
-            subject=f"🚪 Move-Out Request Submitted (All Dues Paid) — Room {room.room_number} ({request.user.full_name})",
-            message_body=(
-                f"Namaste Admin,\n\n"
-                f"Tenant {request.user.full_name} ({request.user.email}) has cleared their pending bills "
-                f"and submitted an official Move-Out request:\n\n"
-                f"• Tenant: {request.user.full_name}\n"
-                f"• Phone: {getattr(request.user, 'phone_number', 'N/A')}\n"
-                f"• Room: Room {room.room_number}\n"
-                f"• Expected Move-Out Date: {requested_date}\n"
-                f"• Current Room Meter Reading: {room.current_meter_reading} units\n"
-                f"• Reason: {reason or 'Not specified'}\n\n"
-                f"Open your SmartRent Admin Command Center to approve the move-out and vacate the room.\n\n"
-                f"— SmartRent Automated Alert"
-            ),
-        )
-
-        send_rooms_email(
-            recipients=[request.user.email],
-            subject=f"SmartRent — Move-Out Request Submitted (Room {room.room_number})",
-            message_body=(
-                f"Namaste {request.user.full_name},\n\n"
-                f"Your move-out request for Room {room.room_number} (Planned Date: {requested_date}) "
-                f"has been submitted to the Admin.\n\n"
-                f"— SmartRent House Management"
-            ),
-        )
-
-        return Response(
-            {
-                "message": "Move-out request submitted successfully! Admin has been notified.",
+            return Response({
+                "message": "Move-out request submitted! Admin has been notified via email and dashboard.",
                 "id": mo.id,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"error": f"Could not create move-out request: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PendingMoveOutListView(APIView):
@@ -920,7 +797,7 @@ class PendingMoveOutListView(APIView):
     permission_classes = [IsAdminUserRole]
 
     def get(self, request):
-        sync_tenancy_billing_cycles()
+        cleanup_orphaned_unpaid_bills()
         try:
             qs = MoveOutRequest.objects.filter(status='PENDING').select_related('room', 'tenant').order_by('-created_at')
             data = [
@@ -949,7 +826,8 @@ class PendingMoveOutListView(APIView):
 
 class ProcessMoveOutRequestView(APIView):
     """
-    Allows Admin to approve (vacate room & close tenancy) or reject a move-out request.
+    Allows Admin to approve (settle final bill, remove advance unpaid bills, & vacate room)
+    or reject a move-out request.
     """
     permission_classes = [IsAdminUserRole]
 
@@ -990,13 +868,47 @@ class ProcessMoveOutRequestView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Remove any stray unpaid bills so the vacated tenant has a clean slate
+            existing_open_bills = list(
+                MonthlyBill.objects.filter(
+                    Q(tenancy=mo.tenancy) | Q(tenant=mo.tenant, room=room),
+                    status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
+                )
+            )
+            carried_fine_amount = sum(
+                (b.damage_fine_amount or Decimal('0.00')) for b in existing_open_bills
+            )
+            carried_fine_reasons = ", ".join(
+                [b.damage_fine_reason for b in existing_open_bills if b.damage_fine_reason]
+            )
+
             MonthlyBill.objects.filter(
-                Q(tenancy=mo.tenancy) | Q(tenant=mo.tenant, room=room),
+                Q(tenancy=mo.tenancy) | Q(tenant=mo.tenant),
                 status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
             ).delete()
 
             today = timezone.localdate()
+            final_bill = MonthlyBill.objects.create(
+                tenancy=mo.tenancy,
+                room=room,
+                tenant=mo.tenant,
+                billing_month_label=f"Final Move-Out Settlement ({today.strftime('%b %Y')})",
+                cycle_start_date=mo.tenancy.entry_date,
+                cycle_end_date=today,
+                due_date=today,
+                base_rent=room.base_rent,
+                water_bill=room.fixed_water_bill,
+                electricity_rate=room.electricity_rate_per_unit,
+                previous_meter_reading=prev_meter,
+                current_meter_reading=final_meter,
+                damage_fine_amount=carried_fine_amount,
+                damage_fine_reason=carried_fine_reasons,
+                payment_method='CASH',
+                status='APPROVED',
+                paid_at=timezone.now(),
+                transaction_reference=f"MOVEOUT-{timezone.now().strftime('%Y%m%d%H%M')}",
+                admin_remarks=remarks or 'Final move-out settlement completed and room vacated.',
+            )
+
             mo.tenancy.is_active = False
             mo.tenancy.move_out_date = today
             mo.tenancy.save(update_fields=['is_active', 'move_out_date'])
@@ -1012,21 +924,27 @@ class ProcessMoveOutRequestView(APIView):
 
             send_rooms_email(
                 recipients=[mo.tenant.email],
-                subject=f"✅ Move-Out Approved — Room {room.room_number} Tenancy Closed",
+                subject=f"✅ Move-Out Approved & Final Settlement Receipt — Room {room.room_number}",
                 message_body=(
                     f"Namaste {mo.tenant.full_name},\n\n"
-                    f"Your move-out request for Room {room.room_number} has been APPROVED by the Admin.\n\n"
-                    f"• Room Vacated: Room {room.room_number}\n"
-                    f"• Move-Out Date: {today}\n"
-                    f"• Final Sub-Meter Reading Recorded: {final_meter} units\n"
-                    f"• Admin Remarks: {remarks or 'All dues settled and keys returned.'}\n\n"
-                    f"Thank you for staying with SmartRent!\n"
+                    f"Your move-out request for Room {room.room_number} has been APPROVED and your final settlement receipt has been issued.\n\n"
+                    f"Final Settlement Receipt:\n"
+                    f"• Receipt Ref: {final_bill.transaction_reference}\n"
+                    f"• Room Rent: Rs. {final_bill.base_rent}\n"
+                    f"• Water Bill: Rs. {final_bill.water_bill}\n"
+                    f"• Final Electricity ({prev_meter} → {final_meter} = {final_bill.units_consumed} units × Rs. {final_bill.electricity_rate}): Rs. {final_bill.electricity_amount}\n"
+                    f"• Fines (if any): Rs. {final_bill.damage_fine_amount}\n"
+                    f"• Total Settled: Rs. {final_bill.total_payable}\n\n"
+                    f"Your tenancy for Room {room.room_number} is now officially closed. Thank you for staying with SmartRent!\n"
                     f"— SmartRent House Management"
                 ),
             )
 
             return Response({
-                "message": f"Move-out approved! Room {mo.room.room_number} is now vacant and tenant has been notified."
+                "message": (
+                    f"Move-out approved! Final settlement (Rs. {final_bill.total_payable}) recorded as paid, "
+                    f"open advance bills cleared, and Room {mo.room.room_number} is now vacant."
+                )
             })
 
         return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
