@@ -38,42 +38,44 @@ import axiosClient, {
 } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
 
-function getSafeMediaUrl(rawUrl) {
+function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
 
-  const currentHost = window.location.hostname;
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   let backendOrigin = 'http://localhost:8000';
   try {
     backendOrigin = new URL(apiBase).origin;
   } catch {
-    backendOrigin = `http://${currentHost || 'localhost'}:8000`;
+    backendOrigin = 'http://localhost:8000';
   }
 
-  if (
-    currentHost &&
-    currentHost !== 'localhost' &&
-    currentHost !== '127.0.0.1' &&
-    (backendOrigin.includes('localhost') || backendOrigin.includes('127.0.0.1'))
-  ) {
-    backendOrigin = `http://${currentHost}:8000`;
+  let finalUrl = rawUrl.trim();
+
+  // If the URL contains a /media/ path (even if saved with localhost or http://),
+  // always attach it to the active backendOrigin
+  const mediaIndex = finalUrl.indexOf('/media/');
+  if (mediaIndex !== -1) {
+    finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
+  } else if (finalUrl.startsWith('/')) {
+    finalUrl = `${backendOrigin}${finalUrl}`;
   }
 
-  if (rawUrl.startsWith('/')) {
-    return `${backendOrigin}${rawUrl}`;
-  }
+  // Upgrade http:// to https:// whenever running on HTTPS (Vercel / Render)
   if (
-    currentHost &&
-    currentHost !== 'localhost' &&
-    currentHost !== '127.0.0.1' &&
-    (rawUrl.includes('://localhost:') || rawUrl.includes('://127.0.0.1:'))
+    finalUrl.startsWith('http://') &&
+    !finalUrl.includes('localhost') &&
+    !finalUrl.includes('127.0.0.1') &&
+    !finalUrl.includes('192.168.')
   ) {
-    return rawUrl
-      .replace('://localhost:', `://${currentHost}:`)
-      .replace('://127.0.0.1:', `://${currentHost}:`);
+    finalUrl = 'https://' + finalUrl.substring('http://'.length);
   }
-  return rawUrl;
+
+  if (cacheBuster) {
+    const sep = finalUrl.includes('?') ? '&' : '?';
+    return `${finalUrl}${sep}v=${cacheBuster}`;
+  }
+  return finalUrl;
 }
 
 export default function TenantDashboard() {

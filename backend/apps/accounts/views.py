@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import threading
 import urllib.request
 from decimal import Decimal
 from django.core.mail import send_mail
@@ -40,6 +41,28 @@ BANNERS_DIR = os.path.join(settings.MEDIA_ROOT, 'profile_banners')
 BANNERS_META_FILE = os.path.join(BANNERS_DIR, 'banners_metadata.json')
 
 
+def build_https_safe_uri(request, relative_url):
+    """
+    Builds an absolute URI and automatically upgrades http:// to https://
+    on production hosts (Render / Vercel) so browsers never block images.
+    """
+    if not relative_url:
+        return None
+    try:
+        full_url = request.build_absolute_uri(relative_url)
+    except Exception:
+        full_url = str(relative_url)
+
+    if (
+        full_url.startswith('http://')
+        and 'localhost' not in full_url
+        and '127.0.0.1' not in full_url
+        and '192.168.' not in full_url
+    ):
+        full_url = 'https://' + full_url[len('http://'):]
+    return full_url
+
+
 def _read_banners_map():
     os.makedirs(BANNERS_DIR, exist_ok=True)
     if os.path.exists(BANNERS_META_FILE):
@@ -62,7 +85,7 @@ def get_user_cover_urls(request, user_id):
     rel_path = banners_map.get(str(user_id))
     if rel_path and default_storage.exists(rel_path):
         rel_url = default_storage.url(rel_path)
-        return request.build_absolute_uri(rel_url), rel_url
+        return build_https_safe_uri(request, rel_url), rel_url
     return None, None
 
 
@@ -101,8 +124,8 @@ def build_enriched_user_dossier(request, u):
             "status": b.status,
             "status_display": b.get_status_display(),
             "transaction_reference": b.transaction_reference,
-            "meter_photo_url": request.build_absolute_uri(b.meter_photo_proof.url) if b.meter_photo_proof else None,
-            "payment_screenshot_url": request.build_absolute_uri(b.payment_screenshot_proof.url) if b.payment_screenshot_proof else None,
+            "meter_photo_url": build_https_safe_uri(request, b.meter_photo_proof.url) if b.meter_photo_proof else None,
+            "payment_screenshot_url": build_https_safe_uri(request, b.payment_screenshot_proof.url) if b.payment_screenshot_proof else None,
         })
 
     room_details = None
@@ -139,9 +162,9 @@ def build_enriched_user_dossier(request, u):
         "emergency_contact_phone": getattr(kyc, 'emergency_contact_phone', None) if kyc else None,
         "has_accepted_lease": getattr(kyc, 'has_accepted_lease', False) if kyc else False,
         "lease_accepted_at": kyc.lease_accepted_at.strftime("%b %d, %Y") if kyc and getattr(kyc, 'lease_accepted_at', None) else None,
-        "citizenship_front_url": request.build_absolute_uri(kyc.citizenship_front.url) if kyc and kyc.citizenship_front else None,
-        "citizenship_back_url": request.build_absolute_uri(kyc.citizenship_back.url) if kyc and kyc.citizenship_back else None,
-        "profile_picture_url": request.build_absolute_uri(u.profile_picture.url) if u.profile_picture else None,
+        "citizenship_front_url": build_https_safe_uri(request, kyc.citizenship_front.url) if kyc and kyc.citizenship_front else None,
+        "citizenship_back_url": build_https_safe_uri(request, kyc.citizenship_back.url) if kyc and kyc.citizenship_back else None,
+        "profile_picture_url": build_https_safe_uri(request, u.profile_picture.url) if u.profile_picture else None,
         "profile_picture_path": u.profile_picture.url if u.profile_picture else None,
         "cover_picture_url": cover_abs_url,
         "cover_picture_path": cover_rel_path,
@@ -154,28 +177,16 @@ def build_enriched_user_dossier(request, u):
     return base_data
 
 
-def send_smartrent_email(recipient_email, subject, message_body):
+def _send_smartrent_email_worker(recipient_email, subject, message_body):
     """
-    Tries sending email via:
-    1) Standard Django SMTP (if EMAIL_HOST_USER & EMAIL_HOST_PASSWORD are set in .env)
-    2) Google Apps Script HTTPS Webhook (Port 443 — works on Render Free Tier)
-    Returns True if sent, False otherwise (never crashes the server).
+    Background worker:
+    1) Tries Google Apps Script HTTPS Webhook FIRST (Port 443 — instant on Render Free Tier)
+    2) Falls back to Standard Django SMTP if Webhook is not configured or fails
     """
-    # 1. Try standard SMTP first if credentials exist
-    if getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
-        try:
-            send_mail(
-                subject=subject,
-                message=message_body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[recipient_email],
-                fail_silently=False,
-            )
-            return True
-        except Exception as smtp_err:
-            print(f"[SmartRent SMTP Notice]: {smtp_err}")
+    if not recipient_email:
+        return False
 
-    # 2. Try Google Apps Script HTTPS Webhook (Port 443)
+    # 1. Try Google Apps Script HTTPS Webhook FIRST (Port 443 — never blocked by Render)
     webhook_url = getattr(settings, 'GOOGLE_SCRIPT_WEBHOOK_URL', '').strip()
     webhook_secret = getattr(settings, 'GOOGLE_SCRIPT_SECRET', 'SMARTRENT_SECRET_2026').strip()
     if webhook_url:
@@ -192,14 +203,43 @@ def send_smartrent_email(recipient_email, subject, message_body):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 body = resp.read().decode('utf-8', errors='ignore')
                 if resp.status in (200, 302) and 'Unauthorized' not in body and '<!DOCTYPE html>' not in body:
                     return True
         except Exception as wh_err:
             print(f"[SmartRent Webhook Notice]: {wh_err}")
 
+    # 2. Fallback to standard SMTP (works on localhost or paid SMTP relays)
+    if getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
+        try:
+            send_mail(
+                subject=subject,
+                message=message_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient_email],
+                fail_silently=False,
+            )
+            return True
+        except Exception as smtp_err:
+            print(f"[SmartRent SMTP Notice]: {smtp_err}")
+
     return False
+
+
+def send_smartrent_email(recipient_email, subject, message_body):
+    """
+    Dispatches email asynchronously in a background thread so OTP and notification
+    endpoints respond immediately (<100ms) without hanging the browser.
+    """
+    if not recipient_email:
+        return False
+    threading.Thread(
+        target=_send_smartrent_email_worker,
+        args=(recipient_email, subject, message_body),
+        daemon=True,
+    ).start()
+    return True
 
 
 def generate_and_send_otp(email, purpose='PASSWORD_RESET'):
@@ -217,7 +257,7 @@ def generate_and_send_otp(email, purpose='PASSWORD_RESET'):
 
     email_sent = send_smartrent_email(email, subject, message)
     print(f"\n==========================================")
-    print(f"🔑 SMARTRENT OTP FOR {email}: {otp_code} (Email Sent: {email_sent})")
+    print(f"🔑 SMARTRENT OTP FOR {email}: {otp_code} (Dispatched Async: {email_sent})")
     print(f"==========================================\n")
     return otp_code, email_sent
 
@@ -521,7 +561,7 @@ class AdminEvictOrManageUserView(APIView):
     def post(self, request, user_id):
         target_user = get_object_or_404(User, id=user_id)
         active_tenancies = Tenancy.objects.filter(tenant=target_user, is_active=True).select_related('room')
-        
+
         vacated_rooms = []
         for t in active_tenancies:
             room = t.room

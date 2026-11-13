@@ -1,6 +1,7 @@
 import os
 import json
 import calendar
+import threading
 import urllib.request
 from datetime import date
 from decimal import Decimal
@@ -40,6 +41,24 @@ FINE_PROOFS_DIR = os.path.join(settings.MEDIA_ROOT, 'fine_proofs')
 FINE_METADATA_FILE = os.path.join(FINE_PROOFS_DIR, 'fine_evidence_metadata.json')
 
 
+def build_https_safe_uri(request, relative_url):
+    """Builds an absolute URI and upgrades http:// to https:// on production hosts."""
+    if not relative_url:
+        return None
+    try:
+        full_url = request.build_absolute_uri(relative_url)
+    except Exception:
+        full_url = relative_url
+    if (
+        full_url.startswith('http://')
+        and 'localhost' not in full_url
+        and '127.0.0.1' not in full_url
+        and '192.168.' not in full_url
+    ):
+        full_url = 'https://' + full_url[len('http://'):]
+    return full_url
+
+
 def _read_fine_metadata():
     os.makedirs(FINE_PROOFS_DIR, exist_ok=True)
     if os.path.exists(FINE_METADATA_FILE):
@@ -66,37 +85,18 @@ def enrich_bill_with_fine_evidence(request, bill_dict):
     urls = []
     for p in rel_paths:
         if p and default_storage.exists(p):
-            try:
-                urls.append(request.build_absolute_uri(default_storage.url(p)))
-            except Exception:
-                urls.append(default_storage.url(p))
+            urls.append(build_https_safe_uri(request, default_storage.url(p)))
     bill_dict['fine_evidence_urls'] = urls
     bill_dict['fine_applied_at'] = entry.get('applied_at')
     return bill_dict
 
 
-def send_billing_notification_email(recipient_email, subject, message_body):
+def _send_email_worker(recipient_email, subject, message_body):
     """
-    Sends billing/fine emails via:
-    1) Standard Django SMTP (if configured)
-    2) Google Apps Script HTTPS Webhook (Port 443 — works on Render Free Tier)
+    Background worker:
+    1) Tries Google Apps Script HTTPS Webhook FIRST (Port 443 — instant on Render Free Tier)
+    2) Falls back to Django SMTP with a short timeout
     """
-    if not recipient_email:
-        return False
-
-    if getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
-        try:
-            send_mail(
-                subject=subject,
-                message=message_body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[recipient_email],
-                fail_silently=False,
-            )
-            return True
-        except Exception as smtp_err:
-            print(f"[SmartRent Billing SMTP Notice]: {smtp_err}")
-
     webhook_url = getattr(settings, 'GOOGLE_SCRIPT_WEBHOOK_URL', '').strip()
     webhook_secret = getattr(settings, 'GOOGLE_SCRIPT_SECRET', 'SMARTRENT_SECRET_2026').strip()
     if webhook_url:
@@ -113,14 +113,39 @@ def send_billing_notification_email(recipient_email, subject, message_body):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=12) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 body = resp.read().decode('utf-8', errors='ignore')
                 if resp.status in (200, 302) and 'Unauthorized' not in body:
                     return True
         except Exception as wh_err:
             print(f"[SmartRent Billing Webhook Notice]: {wh_err}")
 
+    if getattr(settings, 'EMAIL_HOST_USER', '') and getattr(settings, 'EMAIL_HOST_PASSWORD', ''):
+        try:
+            send_mail(
+                subject=subject,
+                message=message_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient_email],
+                fail_silently=False,
+            )
+            return True
+        except Exception as smtp_err:
+            print(f"[SmartRent Billing SMTP Notice]: {smtp_err}")
+
     return False
+
+
+def send_billing_notification_email(recipient_email, subject, message_body):
+    """Dispatches email asynchronously in a background thread so API responses return in <100ms."""
+    if not recipient_email:
+        return False
+    threading.Thread(
+        target=_send_email_worker,
+        args=(recipient_email, subject, message_body),
+        daemon=True,
+    ).start()
+    return True
 
 
 def validate_uploaded_image(file_obj, label):
@@ -147,12 +172,6 @@ def add_one_month_safe(orig_date):
 
 
 class PaymentQRConfigView(APIView):
-    """
-    Zero-migration Payment QR Code manager:
-    - GET: Returns the current QR image URL, merchant/account name, and note for Tenants & Admin.
-    - POST: Allows Admin to upload/replace the QR code image and payment details.
-    - DELETE: Allows Admin to remove the current QR code.
-    """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -183,7 +202,7 @@ class PaymentQRConfigView(APIView):
         qr_url = None
         qr_path = cfg.get("qr_path")
         if qr_path and default_storage.exists(qr_path):
-            qr_url = request.build_absolute_uri(default_storage.url(qr_path))
+            qr_url = build_https_safe_uri(request, default_storage.url(qr_path))
         return {
             "qr_image_url": qr_url,
             "merchant_name": cfg.get("merchant_name") or "SmartRent Official QR",
@@ -271,16 +290,12 @@ class PaymentQRConfigView(APIView):
 
 
 class BillListView(generics.ListAPIView):
-    """
-    Returns all bills for Admin, or only the logged-in Tenant's bills,
-    enriched with any attached fine evidence photo URLs.
-    """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = MonthlyBillSerializer
 
     def get_queryset(self):
         try:
-            dispatch_due_rent_email_reminders()
+            threading.Thread(target=dispatch_due_rent_email_reminders, daemon=True).start()
         except Exception:
             pass
 
@@ -302,9 +317,6 @@ class BillListView(generics.ListAPIView):
 
 
 class TenantSubmitOnlineBillView(APIView):
-    """
-    Tenant enters new meter reading + uploads meter image + payment screenshot.
-    """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
@@ -374,9 +386,6 @@ class TenantSubmitOnlineBillView(APIView):
 
 
 class AdminAuditBillView(APIView):
-    """
-    Admin inspects meter photo & payment screenshot and either APPROVES or REJECTS.
-    """
     permission_classes = [IsAdminUserRole]
 
     @transaction.atomic
@@ -459,10 +468,6 @@ class AdminAuditBillView(APIView):
 
 
 def _get_or_create_open_bill_for_tenant(target_user):
-    """
-    Finds an existing open bill for target_user, or automatically creates one
-    so Admin can apply a fine or cash override even if the user hasn't had a bill generated yet!
-    """
     open_bill = (
         MonthlyBill.objects.select_for_update()
         .select_related('room', 'tenant', 'tenancy')
@@ -536,9 +541,6 @@ def _get_or_create_open_bill_for_tenant(target_user):
 
 
 class AdminCashOverrideView(APIView):
-    """
-    Allows Admin to record a cash payment by selecting either an existing bill_id OR a tenant_id.
-    """
     permission_classes = [IsAdminUserRole]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -667,11 +669,6 @@ class BulkGenerateBillsView(APIView):
 
 
 class AdminApplyFineView(APIView):
-    """
-    Allows Admin to apply a fine (SET or ADD mode) OR completely UNDO/REMOVE a fine.
-    Supports selecting either bill_id or tenant_id, uploading evidence photos,
-    and sending automated email notifications to the tenant.
-    """
     permission_classes = [IsAdminUserRole]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -696,9 +693,6 @@ class AdminApplyFineView(APIView):
 
         mode = str(request.data.get('fine_mode') or 'SET').upper()
 
-        # -------------------------------------------------------------
-        # UNDO / REMOVE FINE LOGIC
-        # -------------------------------------------------------------
         if mode == 'UNDO':
             bill.damage_fine_amount = Decimal('0.00')
             bill.damage_fine_reason = ''
@@ -741,9 +735,6 @@ class AdminApplyFineView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        # -------------------------------------------------------------
-        # SET / ADD FINE LOGIC
-        # -------------------------------------------------------------
         raw_amount = request.data.get('damage_fine_amount')
         reason = str(request.data.get('damage_fine_reason') or '').strip()
 
@@ -766,13 +757,11 @@ class AdminApplyFineView(APIView):
             else:
                 bill.damage_fine_reason = reason
         else:
-            # Default 'SET': replaces fine amount directly so 600 stays 600
             bill.damage_fine_amount = fine_amount
             bill.damage_fine_reason = reason
 
         bill.save()
 
-        # Process optional uploaded evidence images
         evidence_files = (
             request.FILES.getlist('evidence_images')
             or request.FILES.getlist('evidence_image')
@@ -784,7 +773,6 @@ class AdminApplyFineView(APIView):
         existing_entry = meta_map.get(bill_key, {"paths": []})
         saved_paths = list(existing_entry.get("paths", [])) if mode == 'ADD' else []
 
-        # If replacing fine (SET) and new files are uploaded, clean up old evidence files
         if mode == 'SET' and evidence_files:
             for old_p in existing_entry.get("paths", []):
                 if old_p and default_storage.exists(old_p):
@@ -817,10 +805,7 @@ class AdminApplyFineView(APIView):
         evidence_urls = []
         for p in saved_paths:
             if default_storage.exists(p):
-                try:
-                    evidence_urls.append(request.build_absolute_uri(default_storage.url(p)))
-                except Exception:
-                    pass
+                evidence_urls.append(build_https_safe_uri(request, default_storage.url(p)))
 
         evidence_email_section = ""
         if evidence_urls:
@@ -858,12 +843,7 @@ class AdminApplyFineView(APIView):
             {
                 "message": (
                     f"Fine of Rs. {bill.damage_fine_amount} applied to {bill.tenant.full_name} "
-                    f"(Room {bill.room.room_number})"
-                    + (
-                        f" and email notification sent to {bill.tenant.email}!"
-                        if email_sent
-                        else "!"
-                    )
+                    f"(Room {bill.room.room_number}) and email notification dispatched!"
                 ),
                 "email_sent": email_sent,
                 "bill": serialized_bill,
@@ -968,7 +948,7 @@ class TriggerDueRemindersView(APIView):
     permission_classes = [IsAdminUserRole]
 
     def post(self, request):
-        sent_count = dispatch_due_rent_email_reminders()
+        threading.Thread(target=dispatch_due_rent_email_reminders, daemon=True).start()
         return Response({
-            "message": f"Checked all active tenancies. Sent {sent_count} rental reminder email(s)."
+            "message": "Rental reminder email check started in background!"
         })
