@@ -35,6 +35,7 @@ import {
   Loader2,
   ImagePlus,
   LogOut,
+  Search,
 } from 'lucide-react';
 import {
   BarChart,
@@ -124,6 +125,13 @@ export default function AdminCommandCenter() {
   const [activeAdminTab, setActiveAdminTab] = useState('OVERVIEW'); // OVERVIEW | USERS | ADMINS
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [userToDelete, setUserToDelete] = useState(null);
+
+  // Managed List Filter & Search States
+  const [reservationFilter, setReservationFilter] = useState('PENDING'); // PENDING | APPROVED | ALL
+  const [billQueueFilter, setBillQueueFilter] = useState('OPEN'); // OPEN | APPROVED | ALL
+  const [roomMatrixFilter, setRoomMatrixFilter] = useState('ALL'); // ALL | OCCUPIED | VACANT
+  const [tenantListFilter, setTenantListFilter] = useState('ALL'); // ALL | ASSIGNED | UNASSIGNED | KYC_VERIFIED
+  const [tenantSearchQuery, setTenantSearchQuery] = useState('');
 
   // Fullscreen Photo Lightbox States
   const [lightboxState, setLightboxState] = useState({
@@ -293,11 +301,31 @@ export default function AdminCommandCenter() {
 
   const pendingQueue = bills.filter((b) => b.status === 'PENDING_VERIFICATION');
   const pendingReservations = reservations.filter((r) => r.status === 'PENDING');
+  const approvedReservations = reservations.filter((r) => r.status === 'APPROVED');
+
   const unpaidOrPendingBills = bills.filter(
     (b) => b.status !== 'APPROVED' && b.status !== 'PAID_CASH'
   );
+  const approvedOrPaidBills = bills.filter(
+    (b) => b.status === 'APPROVED' || b.status === 'PAID_CASH'
+  );
   const selectableBillsForDropdown =
     unpaidOrPendingBills.length > 0 ? unpaidOrPendingBills : bills;
+
+  // Filtered lists for clean, managed display
+  const displayedReservations =
+    reservationFilter === 'PENDING'
+      ? pendingReservations
+      : reservationFilter === 'APPROVED'
+      ? approvedReservations
+      : reservations;
+
+  const displayedBillsQueue =
+    billQueueFilter === 'OPEN'
+      ? unpaidOrPendingBills
+      : billQueueFilter === 'APPROVED'
+      ? approvedOrPaidBills
+      : bills;
 
   const filteredBillsForFine = fineTenantId
     ? bills.filter(
@@ -322,6 +350,34 @@ export default function AdminCommandCenter() {
     : Array.isArray(roomsData?.results)
     ? roomsData.results
     : [];
+
+  const occupiedRoomsCount = roomsList.filter((r) => r.is_occupied).length;
+  const vacantRoomsCount = roomsList.length - occupiedRoomsCount;
+
+  const displayedRoomsList = roomsList.filter((r) => {
+    if (roomMatrixFilter === 'OCCUPIED') return r.is_occupied;
+    if (roomMatrixFilter === 'VACANT') return !r.is_occupied;
+    return true;
+  });
+
+  const assignedTenantsCount = tenantUsers.filter((u) => Boolean(u.room_number)).length;
+  const unassignedTenantsCount = tenantUsers.length - assignedTenantsCount;
+
+  const filteredTenantUsers = tenantUsers.filter((u) => {
+    if (tenantListFilter === 'ASSIGNED' && !u.room_number) return false;
+    if (tenantListFilter === 'UNASSIGNED' && u.room_number) return false;
+    if (tenantListFilter === 'KYC_VERIFIED' && u.kyc_status !== 'VERIFIED') return false;
+
+    if (tenantSearchQuery.trim()) {
+      const q = tenantSearchQuery.toLowerCase().trim();
+      const matchName = (u.full_name || '').toLowerCase().includes(q);
+      const matchEmail = (u.email || '').toLowerCase().includes(q);
+      const matchPhone = (u.phone_number || '').toLowerCase().includes(q);
+      const matchRoom = (u.room_number || '').toLowerCase().includes(q);
+      return matchName || matchEmail || matchPhone || matchRoom;
+    }
+    return true;
+  });
 
   const openFineModalForUser = (userObj = null, billObj = null) => {
     setFineModalError('');
@@ -876,9 +932,17 @@ export default function AdminCommandCenter() {
   };
 
   const activeAuditBill =
-    selectedBillForAudit || pendingQueue[0] || bills.find((b) => b.status === 'UNPAID') || null;
+    (selectedBillForAudit &&
+      displayedBillsQueue.find((b) => b.id === selectedBillForAudit.id)) ||
+    displayedBillsQueue[0] ||
+    null;
+
   const activeReviewReservation =
-    selectedReservation || pendingReservations[0] || reservations[0] || null;
+    (selectedReservation &&
+      displayedReservations.find((r) => r.id === selectedReservation.id)) ||
+    displayedReservations[0] ||
+    null;
+
   const activeReviewMoveOut = selectedMoveOut || pendingMoveOuts[0] || null;
 
   return (
@@ -995,10 +1059,10 @@ export default function AdminCommandCenter() {
         ))}
       </div>
 
-      {/* TAB 2: TENANTS DIRECTORY WITH RICH PREVIEW CARDS */}
+      {/* TAB 2: TENANTS DIRECTORY WITH SEARCH, FILTER & SCROLLABLE MANAGED CONTAINER */}
       {activeAdminTab === 'USERS' && (
         <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-slate-900">
                 Registered Users & Tenants Directory
@@ -1015,202 +1079,256 @@ export default function AdminCommandCenter() {
                   setResetModalError('');
                   setResetStep(1);
                 }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition self-start lg:self-auto"
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Wipe All Tenants & Reset DB
               </button>
             )}
           </div>
 
-          {tenantUsers.length === 0 ? (
+          {/* Search & Managed Filter Bar */}
+          {tenantUsers.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                {[
+                  { key: 'ALL', label: `All (${tenantUsers.length})` },
+                  { key: 'ASSIGNED', label: `Assigned Room (${assignedTenantsCount})` },
+                  { key: 'UNASSIGNED', label: `Unassigned (${unassignedTenantsCount})` },
+                  {
+                    key: 'KYC_VERIFIED',
+                    label: `KYC Verified (${
+                      tenantUsers.filter((u) => u.kyc_status === 'VERIFIED').length
+                    })`,
+                  },
+                ].map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setTenantListFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition ${
+                      tenantListFilter === f.key
+                        ? 'bg-white text-indigo-600 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={tenantSearchQuery}
+                  onChange={(e) => setTenantSearchQuery(e.target.value)}
+                  placeholder="Search name, room, phone..."
+                  className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                />
+                {tenantSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setTenantSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {filteredTenantUsers.length === 0 ? (
             <div className="py-12 text-center rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
               <p className="text-sm font-extrabold text-slate-700">
-                No tenants registered in the database
+                No tenants match the current filter
               </p>
               <p className="text-xs text-slate-400">
-                The database is clean and ready for new tenant signups.
+                Try switching the filter tab or clearing your search query.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {tenantUsers.map((u) => {
-                const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
-                const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
-                const galleryItems = buildUserGalleryItems(u);
+            <div className="max-h-[680px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredTenantUsers.map((u) => {
+                  const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
+                  const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
+                  const galleryItems = buildUserGalleryItems(u);
 
-                return (
-                  <div
-                    key={u.id}
-                    className="rounded-3xl border border-slate-200/90 bg-white hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
-                  >
-                    <div>
-                      {/* Mini Cover Banner on Card */}
-                      <div
-                        onClick={() => setSelectedUserId(u.id)}
-                        className="h-24 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative cursor-pointer overflow-hidden"
-                      >
-                        {coverUrl && (
-                          <img
-                            src={coverUrl}
-                            alt="Cover"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 to-transparent" />
-
-                        {/* Top Right Room / Status Pill */}
-                        <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                          {u.room_number ? (
-                            <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold shadow-sm">
-                              Room {u.room_number}
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-full bg-slate-900/60 backdrop-blur-xs text-white text-[10px] font-bold">
-                              No Room
-                            </span>
+                  return (
+                    <div
+                      key={u.id}
+                      className="rounded-3xl border border-slate-200/90 bg-white hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
+                    >
+                      <div>
+                        {/* Mini Cover Banner on Card */}
+                        <div
+                          onClick={() => setSelectedUserId(u.id)}
+                          className="h-24 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative cursor-pointer overflow-hidden"
+                        >
+                          {coverUrl && (
+                            <img
+                              src={coverUrl}
+                              alt="Cover"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
                           )}
-                        </div>
-                      </div>
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 to-transparent" />
 
-                      {/* Avatar + Identity */}
-                      <div className="px-5 pb-4">
-                        <div className="flex items-end justify-between -mt-9 mb-3 relative z-10">
-                          <div
-                            onClick={() => {
-                              if (avatarUrl) {
-                                openPhotoLightbox(galleryItems, 0);
-                              } else {
-                                setSelectedUserId(u.id);
-                              }
-                            }}
-                            className="w-16 h-16 rounded-2xl bg-white p-1 shadow-md border border-slate-200 cursor-pointer relative group/avatar"
-                            title={avatarUrl ? 'Click to view photo fullscreen' : 'View Profile'}
-                          >
-                            {avatarUrl ? (
-                              <>
-                                <img
-                                  src={avatarUrl}
-                                  alt={u.full_name}
-                                  className="w-full h-full rounded-xl object-cover"
-                                />
-                                <div className="absolute inset-0 rounded-xl bg-black/35 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center transition">
-                                  <ZoomIn className="w-4 h-4 text-white" />
-                                </div>
-                              </>
-                            ) : (
-                              <div className="w-full h-full rounded-xl bg-indigo-600 text-white font-black text-xl flex items-center justify-center">
-                                {u.full_name?.charAt(0)?.toUpperCase() || 'T'}
-                              </div>
-                            )}
-                          </div>
-
-                          <span
-                            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase ${
-                              u.kyc_status === 'VERIFIED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : u.kyc_status === 'PENDING'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            KYC: {u.kyc_status}
-                          </span>
-                        </div>
-
-                        <h4 className="text-base font-extrabold text-slate-900 truncate">
-                          {u.full_name}
-                        </h4>
-                        <p className="text-xs text-slate-500 truncate">{u.email}</p>
-                        {u.phone_number && (
-                          <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                            📞 {u.phone_number}
-                          </p>
-                        )}
-
-                        {/* Quick Financial & Room Summary Strip */}
-                        <div className="grid grid-cols-2 gap-2 mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                              Pending Dues
-                            </span>
-                            {u.pending_bills_count > 0 ? (
-                              <span className="font-black text-rose-600">
-                                Rs. {Number(u.total_pending_amount || 0).toLocaleString()} (
-                                {u.pending_bills_count})
+                          {/* Top Right Room / Status Pill */}
+                          <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                            {u.room_number ? (
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold shadow-sm">
+                                Room {u.room_number}
                               </span>
                             ) : (
-                              <span className="font-extrabold text-emerald-600">All Clear ✓</span>
+                              <span className="px-2.5 py-1 rounded-full bg-slate-900/60 backdrop-blur-xs text-white text-[10px] font-bold">
+                                No Room
+                              </span>
                             )}
                           </div>
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                              Uploaded Photos
+                        </div>
+
+                        {/* Avatar + Identity */}
+                        <div className="px-5 pb-4">
+                          <div className="flex items-end justify-between -mt-9 mb-3 relative z-10">
+                            <div
+                              onClick={() => {
+                                if (avatarUrl) {
+                                  openPhotoLightbox(galleryItems, 0);
+                                } else {
+                                  setSelectedUserId(u.id);
+                                }
+                              }}
+                              className="w-16 h-16 rounded-2xl bg-white p-1 shadow-md border border-slate-200 cursor-pointer relative group/avatar"
+                              title={avatarUrl ? 'Click to view photo fullscreen' : 'View Profile'}
+                            >
+                              {avatarUrl ? (
+                                <>
+                                  <img
+                                    src={avatarUrl}
+                                    alt={u.full_name}
+                                    className="w-full h-full rounded-xl object-cover"
+                                  />
+                                  <div className="absolute inset-0 rounded-xl bg-black/35 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center transition">
+                                    <ZoomIn className="w-4 h-4 text-white" />
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="w-full h-full rounded-xl bg-indigo-600 text-white font-black text-xl flex items-center justify-center">
+                                  {u.full_name?.charAt(0)?.toUpperCase() || 'T'}
+                                </div>
+                              )}
+                            </div>
+
+                            <span
+                              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase ${
+                                u.kyc_status === 'VERIFIED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : u.kyc_status === 'PENDING'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              KYC: {u.kyc_status}
                             </span>
-                            <span className="font-extrabold text-indigo-600">
-                              {galleryItems.length} Photo(s)
-                            </span>
+                          </div>
+
+                          <h4 className="text-base font-extrabold text-slate-900 truncate">
+                            {u.full_name}
+                          </h4>
+                          <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                          {u.phone_number && (
+                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                              📞 {u.phone_number}
+                            </p>
+                          )}
+
+                          {/* Quick Financial & Room Summary Strip */}
+                          <div className="grid grid-cols-2 gap-2 mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                Pending Dues
+                              </span>
+                              {u.pending_bills_count > 0 ? (
+                                <span className="font-black text-rose-600">
+                                  Rs. {Number(u.total_pending_amount || 0).toLocaleString()} (
+                                  {u.pending_bills_count})
+                                </span>
+                              ) : (
+                                <span className="font-extrabold text-emerald-600">All Clear ✓</span>
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                Uploaded Photos
+                              </span>
+                              <span className="font-extrabold text-indigo-600">
+                                {galleryItems.length} Photo(s)
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Action Footer */}
-                    <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUserId(u.id)}
-                        className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center justify-center gap-1.5"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> Dossier
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openFineModalForUser(u, null)}
-                        className="py-2.5 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition inline-flex items-center gap-1"
-                        title="Apply Fine to Tenant"
-                      >
-                        <AlertTriangle className="w-3.5 h-3.5" /> Fine
-                      </button>
-                      {galleryItems.length > 0 && (
+                      {/* Action Footer */}
+                      <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between gap-1.5">
                         <button
                           type="button"
-                          onClick={() => openPhotoLightbox(galleryItems, 0)}
-                          className="py-2.5 px-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
-                          title="Open Photo Viewer"
+                          onClick={() => setSelectedUserId(u.id)}
+                          className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center justify-center gap-1.5"
                         >
-                          <Camera className="w-3.5 h-3.5" />
+                          <Eye className="w-3.5 h-3.5" /> Dossier
                         </button>
-                      )}
-                      {u.room_number && (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`
-                              )
-                            ) {
-                              evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
-                            }
-                          }}
-                          className="py-2.5 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-extrabold transition"
-                          title="Vacate Room (Keeps User Account)"
+                          onClick={() => openFineModalForUser(u, null)}
+                          className="py-2.5 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                          title="Apply Fine to Tenant"
                         >
-                          Vacate
+                          <AlertTriangle className="w-3.5 h-3.5" /> Fine
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setUserToDelete(u)}
-                        className="py-2.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
-                        title="Permanently Delete Tenant & All Data"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        {galleryItems.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openPhotoLightbox(galleryItems, 0)}
+                            className="py-2.5 px-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                            title="Open Photo Viewer"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {u.room_number && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`
+                                )
+                              ) {
+                                evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
+                              }
+                            }}
+                            className="py-2.5 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-extrabold transition"
+                            title="Vacate Room (Keeps User Account)"
+                          >
+                            Vacate
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setUserToDelete(u)}
+                          className="py-2.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
+                          title="Permanently Delete Tenant & All Data"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -1482,41 +1600,77 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* ROOM RESERVATION & VISIT BOOKING QUEUE */}
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
-            <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              Room Reservations & Visit Requests
-              {pendingReservations.length > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
-                  {pendingReservations.length} Pending
-                </span>
-              )}
-            </h3>
-            {reservations.length === 0 ? (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                No room reservations submitted yet.
+          {/* ROOM RESERVATION & VISIT BOOKING QUEUE (WITH MANAGED FILTER TABS) */}
+          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                Room Reservations & Visit Requests
+                {pendingReservations.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
+                    {pendingReservations.length} Pending
+                  </span>
+                )}
+              </h3>
+
+              <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                {[
+                  { key: 'PENDING', label: `Pending (${pendingReservations.length})` },
+                  {
+                    key: 'APPROVED',
+                    label: `Approved & Assigned (${approvedReservations.length})`,
+                  },
+                  { key: 'ALL', label: `All (${reservations.length})` },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setReservationFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                      reservationFilter === tab.key
+                        ? 'bg-white text-indigo-600 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {displayedReservations.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                No {reservationFilter === 'PENDING' ? 'pending ' : reservationFilter === 'APPROVED' ? 'approved & assigned ' : ''}
+                room reservations to display.
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-5 space-y-2 max-h-[360px] overflow-y-auto pr-1">
-                  {reservations.map((res) => (
+                <div className="lg:col-span-5 space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                  {displayedReservations.map((res) => (
                     <div
                       key={res.id}
                       onClick={() => {
                         setSelectedReservation(res);
                         setStartingMeterOverride(String(res.current_meter_reading || 0));
                       }}
-                      className={`p-4 rounded-2xl border cursor-pointer ${
+                      className={`p-3.5 rounded-2xl border cursor-pointer transition ${
                         activeReviewReservation?.id === res.id
                           ? 'border-indigo-600 bg-indigo-50/50'
-                          : 'border-slate-200 bg-white'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-900 text-xs">
+                        <span className="font-bold text-slate-900 text-xs truncate pr-2">
                           Room {res.room_number} • {res.user_full_name || res.user_email}
                         </span>
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                            res.status === 'APPROVED'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : res.status === 'PENDING'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
                           {res.status_display}
                         </span>
                       </div>
@@ -1529,11 +1683,33 @@ export default function AdminCommandCenter() {
 
                 {activeReviewReservation && (
                   <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
-                    <h4 className="text-sm font-extrabold text-slate-900">
-                      Room {activeReviewReservation.room_number} —{' '}
-                      {activeReviewReservation.user_full_name}
-                    </h4>
-                    {activeReviewReservation.status === 'PENDING' && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900">
+                          Room {activeReviewReservation.room_number} —{' '}
+                          {activeReviewReservation.user_full_name || activeReviewReservation.user_email}
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Expected Move-In: {activeReviewReservation.expected_move_in_date}
+                          {activeReviewReservation.phone_number
+                            ? ` • 📞 ${activeReviewReservation.phone_number}`
+                            : ''}
+                        </p>
+                      </div>
+                      <span
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase ${
+                          activeReviewReservation.status === 'APPROVED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : activeReviewReservation.status === 'PENDING'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-700'
+                        }`}
+                      >
+                        {activeReviewReservation.status_display}
+                      </span>
+                    </div>
+
+                    {activeReviewReservation.status === 'PENDING' ? (
                       <div className="space-y-3">
                         <input
                           type="number"
@@ -1575,6 +1751,38 @@ export default function AdminCommandCenter() {
                             Approve & Assign
                           </button>
                         </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2
+                            className={`w-5 h-5 shrink-0 ${
+                              activeReviewReservation.status === 'APPROVED'
+                                ? 'text-emerald-600'
+                                : 'text-slate-400'
+                            }`}
+                          />
+                          <div>
+                            <p className="font-extrabold text-slate-900">
+                              {activeReviewReservation.status === 'APPROVED'
+                                ? `Approved & Assigned to Room ${activeReviewReservation.room_number}`
+                                : `Request ${activeReviewReservation.status_display}`}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {activeReviewReservation.admin_remarks ||
+                                'Processed by Landlord Admin'}
+                            </p>
+                          </div>
+                        </div>
+                        {activeReviewReservation.user && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserId(activeReviewReservation.user)}
+                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px] shrink-0"
+                          >
+                            Inspect Tenant
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1761,140 +1969,209 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* UNIT TELEMETRY MATRIX */}
+          {/* UNIT TELEMETRY MATRIX (WITH ASSIGNED / VACANT FILTER & MANAGED SCROLL) */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
-            <h3 className="text-base font-extrabold text-slate-900">
-              Unit Telemetry & Occupancy Matrix
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {roomsList.map((room) => {
-                const occupied = room.is_occupied;
-                const tenant = room.active_tenancy;
-                return (
-                  <div
-                    key={room.id}
-                    className={`p-4 rounded-2xl border flex flex-col justify-between ${
-                      occupied ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-slate-50'
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h3 className="text-base font-extrabold text-slate-900">
+                Unit Telemetry & Occupancy Matrix
+              </h3>
+
+              <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                {[
+                  { key: 'ALL', label: `All Units (${roomsList.length})` },
+                  { key: 'OCCUPIED', label: `Assigned / Occupied (${occupiedRoomsCount})` },
+                  { key: 'VACANT', label: `Vacant (${vacantRoomsCount})` },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setRoomMatrixFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                      roomMatrixFilter === tab.key
+                        ? 'bg-white text-indigo-600 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-extrabold text-slate-900">
-                          Room {room.room_number}
-                        </h4>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            occupied
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {occupied ? 'Occupied' : 'Vacant'}
-                        </span>
-                      </div>
-                      <p className="text-xs font-bold text-slate-800 mb-2">
-                        {occupied && tenant ? tenant.full_name : 'Available'}
-                      </p>
-                      <div className="space-y-1 text-[11px] text-slate-500 mb-4">
-                        <p>
-                          Meter: <strong>{room.current_meter_reading} units</strong>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="max-h-[480px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {displayedRoomsList.map((room) => {
+                  const occupied = room.is_occupied;
+                  const tenant = room.active_tenancy;
+                  return (
+                    <div
+                      key={room.id}
+                      className={`p-4 rounded-2xl border flex flex-col justify-between ${
+                        occupied ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-slate-50'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-extrabold text-slate-900">
+                            Room {room.room_number}
+                          </h4>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              occupied
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {occupied ? 'Occupied' : 'Vacant'}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-800 mb-2">
+                          {occupied && tenant ? tenant.full_name : 'Available'}
                         </p>
-                        {occupied && tenant && (
+                        <div className="space-y-1 text-[11px] text-slate-500 mb-4">
                           <p>
-                            Next Due: <strong>{tenant.next_due_date}</strong>
+                            Meter: <strong>{room.current_meter_reading} units</strong>
                           </p>
+                          {occupied && tenant && (
+                            <p>
+                              Next Due: <strong>{tenant.next_due_date}</strong>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="pt-3 border-t border-slate-100 flex justify-between items-center gap-2">
+                        {occupied && tenant?.tenant_id && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserId(tenant.tenant_id)}
+                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold"
+                          >
+                            Inspect Tenant
+                          </button>
+                        )}
+                        {occupied ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Mark Room ${room.room_number} as vacant?`)) {
+                                axiosClient.post(`/rooms/${room.id}/vacate/`).then(() => {
+                                  refreshAllAdminData();
+                                });
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold ml-auto"
+                          >
+                            Vacate Room
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignModalRoom(room);
+                              setStartingMeter(String(room.current_meter_reading || 0));
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold ml-auto"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" /> Assign Tenant
+                          </button>
                         )}
                       </div>
                     </div>
-                    <div className="pt-3 border-t border-slate-100 flex justify-between items-center gap-2">
-                      {occupied && tenant?.tenant_id && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedUserId(tenant.tenant_id)}
-                          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold"
-                        >
-                          Inspect Tenant
-                        </button>
-                      )}
-                      {occupied ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm(`Mark Room ${room.room_number} as vacant?`)) {
-                              axiosClient.post(`/rooms/${room.id}/vacate/`).then(() => {
-                                refreshAllAdminData();
-                              });
-                            }
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold ml-auto"
-                        >
-                          Vacate Room
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAssignModalRoom(room);
-                            setStartingMeter(String(room.current_meter_reading || 0));
-                          }}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold ml-auto"
-                        >
-                          <UserPlus className="w-3.5 h-3.5" /> Assign Tenant
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* REMITTANCE & METER AUDIT CLEARING QUEUE */}
+          {/* REMITTANCE & METER AUDIT CLEARING QUEUE (WITH MANAGED FILTER TABS) */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
-            <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              Remittance & Meter Audit Clearing
-              {pendingQueue.length > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                  {pendingQueue.length} Pending
-                </span>
-              )}
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                Remittance & Meter Audit Clearing
+                {pendingQueue.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+                    {pendingQueue.length} Pending Audit
+                  </span>
+                )}
+              </h3>
 
-            {bills.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-xs">
-                No bills generated yet.
+              <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                {[
+                  {
+                    key: 'OPEN',
+                    label: `Open / Pending (${unpaidOrPendingBills.length})`,
+                  },
+                  {
+                    key: 'APPROVED',
+                    label: `Approved & Paid (${approvedOrPaidBills.length})`,
+                  },
+                  { key: 'ALL', label: `All (${bills.length})` },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setBillQueueFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                      billQueueFilter === tab.key
+                        ? 'bg-white text-indigo-600 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {displayedBillsQueue.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                No {billQueueFilter === 'OPEN' ? 'open or pending ' : billQueueFilter === 'APPROVED' ? 'approved ' : ''}
+                bills in this view.
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-5 space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                  {bills.map((b) => (
-                    <div
-                      key={b.id}
-                      onClick={() => setSelectedBillForAudit(b)}
-                      className={`p-4 rounded-2xl border cursor-pointer ${
-                        activeAuditBill?.id === b.id
-                          ? 'border-indigo-600 bg-indigo-50/50'
-                          : 'border-slate-200 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-900 text-xs">
-                          Room {b.room_number} • {b.tenant_name}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600">
-                          {b.status_display}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Rs. {Number(b.total_payable).toLocaleString()}</span>
-                        {Number(b.damage_fine_amount || 0) > 0 && (
-                          <span className="text-rose-600 font-bold">
-                            Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
+                <div className="lg:col-span-5 space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                  {displayedBillsQueue.map((b) => {
+                    const isSettled = b.status === 'APPROVED' || b.status === 'PAID_CASH';
+                    return (
+                      <div
+                        key={b.id}
+                        onClick={() => setSelectedBillForAudit(b)}
+                        className={`p-3.5 rounded-2xl border cursor-pointer transition ${
+                          activeAuditBill?.id === b.id
+                            ? 'border-indigo-600 bg-indigo-50/50'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-slate-900 text-xs truncate pr-2">
+                            Room {b.room_number} • {b.tenant_name}
                           </span>
-                        )}
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                              isSettled
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : b.status === 'PENDING_VERIFICATION'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {b.status_display}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <span>
+                            {b.billing_month_label} • Rs. {Number(b.total_payable).toLocaleString()}
+                          </span>
+                          {Number(b.damage_fine_amount || 0) > 0 && !isSettled && (
+                            <span className="text-rose-600 font-bold">
+                              Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {activeAuditBill && (
@@ -1912,13 +2189,15 @@ export default function AdminCommandCenter() {
                         <span className="text-sm font-extrabold text-indigo-600 block">
                           Total: Rs. {Number(activeAuditBill.total_payable).toLocaleString()}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => openFineModalForUser(null, activeAuditBill)}
-                          className="text-[11px] font-extrabold text-rose-600 hover:underline"
-                        >
-                          + Add / Edit Fine
-                        </button>
+                        {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
+                          <button
+                            type="button"
+                            onClick={() => openFineModalForUser(null, activeAuditBill)}
+                            className="text-[11px] font-extrabold text-rose-600 hover:underline"
+                          >
+                            + Add / Edit Fine
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1936,14 +2215,16 @@ export default function AdminCommandCenter() {
                                 {activeAuditBill.fine_applied_at}
                               </span>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => handleUndoFine(activeAuditBill.id)}
-                              disabled={applyFineMutation.isPending}
-                              className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition text-[10px] font-extrabold shadow-xs"
-                            >
-                              Undo Fine
-                            </button>
+                            {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
+                              <button
+                                type="button"
+                                onClick={() => handleUndoFine(activeAuditBill.id)}
+                                disabled={applyFineMutation.isPending}
+                                className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition text-[10px] font-extrabold shadow-xs"
+                              >
+                                Undo Fine
+                              </button>
+                            )}
                           </div>
                         </div>
                         <p className="text-rose-700 font-medium">
@@ -2034,41 +2315,56 @@ export default function AdminCommandCenter() {
                         </div>
                       </div>
                     </div>
-                    <input
-                      type="text"
-                      value={adminRemarks}
-                      onChange={(e) => setAdminRemarks(e.target.value)}
-                      placeholder="Remarks..."
-                      className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
-                    />
-                    <div className="flex items-center gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          auditMutation.mutate({
-                            billId: activeAuditBill.id,
-                            action: 'REJECT',
-                            remarks: adminRemarks || 'Please re-upload.',
-                          })
-                        }
-                        className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          auditMutation.mutate({
-                            billId: activeAuditBill.id,
-                            action: 'APPROVE',
-                            remarks: adminRemarks || 'Verified.',
-                          })
-                        }
-                        className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
-                      >
-                        Approve
-                      </button>
-                    </div>
+
+                    {['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) ? (
+                      <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          Payment Verified & Settled ({activeAuditBill.status_display})
+                        </span>
+                        <span className="text-[11px] text-emerald-700 font-semibold">
+                          Ref: {activeAuditBill.transaction_reference || 'Verified'}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          value={adminRemarks}
+                          onChange={(e) => setAdminRemarks(e.target.value)}
+                          placeholder="Remarks..."
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
+                        />
+                        <div className="flex items-center gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              auditMutation.mutate({
+                                billId: activeAuditBill.id,
+                                action: 'REJECT',
+                                remarks: adminRemarks || 'Please re-upload.',
+                              })
+                            }
+                            className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              auditMutation.mutate({
+                                billId: activeAuditBill.id,
+                                action: 'APPROVE',
+                                remarks: adminRemarks || 'Verified.',
+                              })
+                            }
+                            className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
+                          >
+                            Approve
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
