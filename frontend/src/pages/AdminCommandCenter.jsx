@@ -36,6 +36,8 @@ import {
   LogOut,
   Search,
   Edit3,
+  Layers,
+  Wallet,
 } from 'lucide-react';
 import {
   BarChart,
@@ -138,7 +140,11 @@ export default function AdminCommandCenter() {
   const queryClient = useQueryClient();
   const { isNepali, t, td } = useLanguage();
 
+  // Top-level Admin Navigation Tabs
   const [activeAdminTab, setActiveAdminTab] = useState('OVERVIEW'); // OVERVIEW | USERS | ADMINS
+  // Unified Action Center Sub-Tab (Inside Overview)
+  const [actionQueueTab, setActionQueueTab] = useState('BILLS'); // BILLS | BOOKINGS | MOVEOUTS
+
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [userToDelete, setUserToDelete] = useState(null);
 
@@ -1020,10 +1026,7 @@ export default function AdminCommandCenter() {
       const msg =
         err.response?.data?.error ||
         err.response?.data?.detail ||
-        t(
-          'Backend reset endpoint failed.',
-          'डाटाबेस रिसेट गर्न सकिएन।'
-        );
+        t('Backend reset endpoint failed.', 'डाटाबेस रिसेट गर्न सकिएन।');
       setResetModalError(msg);
       setBannerMsg({ type: 'error', text: msg });
     },
@@ -1073,6 +1076,11 @@ export default function AdminCommandCenter() {
     vacant_rooms: 9,
   };
 
+  const occupancyPercent =
+    kpis.total_rooms > 0
+      ? Math.round((Number(kpis.occupied_rooms || 0) / Number(kpis.total_rooms)) * 100)
+      : 0;
+
   const activeAuditBill =
     (selectedBillForAudit &&
       displayedBillsQueue.find((b) => b.id === selectedBillForAudit.id)) ||
@@ -1088,117 +1096,263 @@ export default function AdminCommandCenter() {
   const activeReviewMoveOut = selectedMoveOut || pendingMoveOuts[0] || null;
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
-      {/* HEADER BANNER */}
-      <div className="rounded-3xl bg-indigo-600 text-white p-6 sm:p-8 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-xs font-bold">
-              <ShieldAlert className="w-3.5 h-3.5" />{' '}
-              {t('LANDLORD COMMAND DECK', 'घरधनी कमाण्ड सेन्टर')}
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/20 text-emerald-200 text-[11px] font-extrabold border border-emerald-400/30">
-              <Radio className="w-3 h-3 text-emerald-300 animate-pulse" />{' '}
-              {t('LIVE 4S AUTO-SYNC', 'लाइभ ४-सेकेन्ड अटो-सिंक')}
-            </span>
+    <div className="max-w-7xl mx-auto p-3 sm:p-6 lg:p-8 space-y-6">
+      {/* ========================================================================= */}
+      {/* 1. EXECUTIVE COMMAND HEADER & RESPONSIVE QUICK-ACTION DOCK                */}
+      {/* ========================================================================= */}
+      <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-7 shadow-xl border border-indigo-500/20 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-200 text-[10px] font-extrabold uppercase tracking-wider">
+                <ShieldAlert className="w-3.5 h-3.5 text-indigo-400" />{' '}
+                {t('LANDLORD COMMAND DECK', 'घरधनी कमाण्ड सेन्टर')}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-[10px] font-extrabold">
+                <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />{' '}
+                {t('LIVE 4S AUTO-SYNC', 'लाइभ ४-सेकेन्ड अटो-सिंक')}
+              </span>
+            </div>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
+              {t('Executive Command Center', 'प्रमुख व्यवस्थापन तथा नियन्त्रण कक्ष')}
+            </h1>
+            <p className="text-xs text-slate-300/90 max-w-2xl">
+              {t(
+                'Real-time sub-meter calibration, remittance audit clearing, room occupancy, and automated tenant billing.',
+                'प्रत्यक्ष सब-मिटर रिडिङ, बिल प्रमाणीकरण, कोठा बसोबास र स्वचालित भाडा व्यवस्थापन।'
+              )}
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            {t('Executive Command Center', 'प्रमुख व्यवस्थापन तथा नियन्त्रण कक्ष')}
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setShowQRModal(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-xs font-extrabold shadow-sm transition"
-          >
-            <QrCode className="w-3.5 h-3.5" />{' '}
-            {t('Payment QR Setup', 'भुक्तानी QR सेटअप')}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerBulkGenerateBills()
-                .then((res) => {
-                  setBannerMsg({ type: 'success', text: res.message });
-                  refreshAllAdminData();
-                })
-                .catch(() => {
-                  setBannerMsg({
-                    type: 'error',
-                    text: t('Bulk generate endpoint error.', 'बिल तयार गर्न समस्या भयो।'),
+
+          {/* Responsive 2x3 / Flex Quick Action Dock */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowQRModal(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <QrCode className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('QR Setup', 'QR सेटअप')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                triggerBulkGenerateBills()
+                  .then((res) => {
+                    setBannerMsg({ type: 'success', text: res.message });
+                    refreshAllAdminData();
+                  })
+                  .catch(() => {
+                    setBannerMsg({
+                      type: 'error',
+                      text: t('Bulk generate endpoint error.', 'बिल तयार गर्न समस्या भयो।'),
+                    });
                   });
-                });
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition"
-          >
-            <Zap className="w-3.5 h-3.5" />{' '}
-            {t('Auto-Generate Bills', 'स्वचालित बिल तयार')}
-          </button>
-          <button
-            type="button"
-            onClick={() => reminderMutation.mutate()}
-            disabled={reminderMutation.isPending}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold border border-indigo-400 transition"
-          >
-            <BellRing className="w-3.5 h-3.5" />{' '}
-            {t('Send Alerts', 'स्मरण इमेल पठाउनुहोस्')}
-          </button>
-          <button
-            type="button"
-            onClick={() => openFineModalForUser(null, null)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-sm transition"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />{' '}
-            {t('+ Apply Fine', '+ जरिवाना लगाउनुहोस्')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowCashModal(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white text-indigo-600 hover:bg-indigo-50 text-xs font-bold shadow-md transition"
-          >
-            {t('+ Cash Override', '+ नगद भुक्तानी')}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setResetConfirmText('');
-              setResetModalError('');
-              setResetStep(1);
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-950/90 hover:bg-rose-900 text-rose-100 border border-rose-400/40 text-xs font-extrabold shadow-sm transition"
-            title={t(
-              'Factory Reset Database (Keeps Admin)',
-              'डाटाबेस रिसेट गर्नुहोस् (एडमिन सुरक्षित रहनेछ)'
-            )}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />{' '}
-            {t('Reset Database', 'डाटाबेस रिसेट')}
-          </button>
+              }}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('Auto-Bills', 'स्वचालित बिल')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => reminderMutation.mutate()}
+              disabled={reminderMutation.isPending}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold border border-white/15 transition cursor-pointer"
+            >
+              <BellRing className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+              <span className="truncate">{t('Send Alerts', 'स्मरण इमेल')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openFineModalForUser(null, null)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('+ Apply Fine', '+ जरिवाना')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCashModal(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white text-slate-900 hover:bg-indigo-50 text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <Wallet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span className="truncate">{t('+ Cash Pay', '+ नगद भुक्तानी')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setResetConfirmText('');
+                setResetModalError('');
+                setResetStep(1);
+              }}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-950/90 hover:bg-rose-900 text-rose-200 border border-rose-500/30 text-xs font-extrabold transition cursor-pointer"
+              title={t(
+                'Factory Reset Database (Keeps Admin)',
+                'डाटाबेस रिसेट गर्नुहोस् (एडमिन सुरक्षित रहनेछ)'
+              )}
+            >
+              <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('Reset DB', 'रिसेट')}</span>
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* FEEDBACK TOAST BANNER */}
       {bannerMsg.text && (
         <div
-          className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between ${
+          className={`p-4 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between shadow-xs ${
             bannerMsg.type === 'error'
               ? 'bg-rose-50 border-rose-200 text-rose-700'
               : 'bg-emerald-50 border-emerald-200 text-emerald-800'
           }`}
         >
-          <span>{bannerMsg.text}</span>
+          <div className="flex items-center gap-2.5">
+            {bannerMsg.type === 'error' ? (
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            )}
+            <span>{bannerMsg.text}</span>
+          </div>
           <button onClick={() => setBannerMsg({ type: '', text: '' })}>
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* ADMIN TAB SWITCHER */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
+      {/* ========================================================================= */}
+      {/* 2. TOP 4 EXECUTIVE KPI CARDS (WITH INTERACTIVE QUICK-JUMP)                */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5">
+        {/* KPI 1: Total Revenue */}
+        <div className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('TOTAL REVENUE', 'कुल आम्दानी')}
+            </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <DollarSign className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <p className="text-lg sm:text-2xl font-black text-slate-900">
+              {t('Rs.', 'रु.')} {Number(kpis.total_revenue).toLocaleString()}
+            </p>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium">
+              {t(
+                `${approvedOrPaidBills.length} Settled Invoices`,
+                `${approvedOrPaidBills.length} चुक्ता बिलहरू`
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* KPI 2: Action Items (Pending Audits, Bookings & Move-Outs) */}
+        <div
+          onClick={() => {
+            setActiveAdminTab('OVERVIEW');
+            if (pendingQueue.length > 0) setActionQueueTab('BILLS');
+            else if (pendingReservations.length > 0) setActionQueueTab('BOOKINGS');
+            else if (pendingMoveOuts.length > 0) setActionQueueTab('MOVEOUTS');
+          }}
+          className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 hover:border-indigo-300 shadow-2xs cursor-pointer transition flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('ACTION QUEUE', 'प्रमाणीकरण र बुकिङ')}
+            </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <CalendarCheck className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <p className="text-lg sm:text-2xl font-black text-slate-900">
+              {pendingQueue.length + pendingReservations.length + pendingMoveOuts.length}{' '}
+              <span className="text-xs font-bold text-slate-500">
+                {t('Pending', 'बाँकी')}
+              </span>
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              <span className="text-[10px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                {pendingQueue.length} {t('Bills', 'बिल')}
+              </span>
+              <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                {pendingReservations.length} {t('Book', 'बुकिङ')}
+              </span>
+              {pendingMoveOuts.length > 0 && (
+                <span className="text-[10px] font-extrabold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
+                  {pendingMoveOuts.length} {t('Exit', 'छोड्ने')}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 3: Occupancy Rate with Progress Bar */}
+        <div className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('OCCUPANCY', 'कोठा बसोबास')}
+            </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <Building className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className="flex items-baseline justify-between">
+              <p className="text-lg sm:text-2xl font-black text-slate-900">
+                {kpis.occupied_rooms} / {kpis.total_rooms}
+              </p>
+              <span className="text-xs font-extrabold text-emerald-600">
+                {occupancyPercent}%
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                style={{ width: `${occupancyPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 4: Net Profit */}
+        <div className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('NET PROFIT', 'खुद नाफा')}
+            </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <p className="text-lg sm:text-2xl font-black text-indigo-600">
+              {t('Rs.', 'रु.')} {Number(kpis.net_profit).toLocaleString()}
+            </p>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium">
+              {t('Expenses: Rs.', 'खर्च: रु.')}{' '}
+              {Number(kpis.total_expenses || 0).toLocaleString()}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. SEGMENTED WORKSPACE SWITCHER                                           */}
+      {/* ========================================================================= */}
+      <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-2xs overflow-x-auto">
         {[
           {
             key: 'OVERVIEW',
-            label: t('📊 Executive Command Overview', '📊 प्रमुख सिंहावलोकन तथा नियन्त्रण'),
+            label: t('📊 Command Deck & Rooms', '📊 कमाण्ड सेन्टर र कोठाहरू'),
           },
           {
             key: 'USERS',
@@ -1210,18 +1364,18 @@ export default function AdminCommandCenter() {
           {
             key: 'ADMINS',
             label: t(
-              `🛡️ Admin Team Management (${adminTeamUsers.length})`,
-              `🛡️ एडमिन टोली व्यवस्थापन (${adminTeamUsers.length})`
+              `🛡️ Admin Team (${adminTeamUsers.length})`,
+              `🛡️ एडमिन टोली (${adminTeamUsers.length})`
             ),
           },
         ].map((tabItem) => (
           <button
             key={tabItem.key}
             onClick={() => setActiveAdminTab(tabItem.key)}
-            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-extrabold transition ${
+            className={`flex-1 sm:flex-initial whitespace-nowrap px-4 sm:px-5 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
               activeAdminTab === tabItem.key
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
             {tabItem.label}
@@ -1229,9 +1383,11 @@ export default function AdminCommandCenter() {
         ))}
       </div>
 
-      {/* TAB 2: TENANTS DIRECTORY WITH SEARCH, FILTER & SCROLLABLE MANAGED CONTAINER */}
+      {/* ========================================================================= */}
+      {/* TAB 2: TENANTS DIRECTORY WITH SEARCH & FILTER                             */}
+      {/* ========================================================================= */}
       {activeAdminTab === 'USERS' && (
-        <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+        <div className="rounded-3xl bg-white p-5 sm:p-8 border border-slate-200/80 shadow-2xs space-y-6">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-slate-900">
@@ -1263,7 +1419,6 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* Search & Managed Filter Bar */}
           {tenantUsers.length > 0 && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
               <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
@@ -1275,7 +1430,7 @@ export default function AdminCommandCenter() {
                   {
                     key: 'ASSIGNED',
                     label: t(
-                      `Assigned Room (${assignedTenantsCount})`,
+                      `Assigned (${assignedTenantsCount})`,
                       `कोठा तोकिएको (${assignedTenantsCount})`
                     ),
                   },
@@ -1283,7 +1438,7 @@ export default function AdminCommandCenter() {
                     key: 'UNASSIGNED',
                     label: t(
                       `Unassigned (${unassignedTenantsCount})`,
-                      `कोठा नतोकिएको (${unassignedTenantsCount})`
+                      `नतोकिएको (${unassignedTenantsCount})`
                     ),
                   },
                   {
@@ -1352,7 +1507,7 @@ export default function AdminCommandCenter() {
             </div>
           ) : (
             <div className="max-h-[680px] overflow-y-auto pr-1">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {filteredTenantUsers.map((u) => {
                   const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
                   const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
@@ -1361,7 +1516,7 @@ export default function AdminCommandCenter() {
                   return (
                     <div
                       key={u.id}
-                      className="rounded-3xl border border-slate-200/90 bg-white hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
+                      className="rounded-3xl border border-slate-200/90 bg-white hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col justify-between group"
                     >
                       <div>
                         <div
@@ -1542,9 +1697,11 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* TAB 3: ADMIN TEAM */}
+      {/* ========================================================================= */}
+      {/* TAB 3: ADMIN TEAM MANAGEMENT                                              */}
+      {/* ========================================================================= */}
       {activeAdminTab === 'ADMINS' && (
-        <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+        <div className="rounded-3xl bg-white p-5 sm:p-8 border border-slate-200/80 shadow-2xs space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-slate-900">
@@ -1566,7 +1723,7 @@ export default function AdminCommandCenter() {
                 setShowNewAdminPassword(false);
                 setShowAddAdminModal(true);
               }}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition"
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition self-start sm:self-auto"
             >
               {t('+ Add New Administrator', '+ नयाँ एडमिन थप्नुहोस्')}
             </button>
@@ -1651,615 +1808,28 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-      {/* TAB 1: OVERVIEW */}
+      {/* ========================================================================= */}
+      {/* TAB 1: OVERVIEW (ROOMS MATRIX + UNIFIED ACTION CENTER + ANALYTICS)        */}
+      {/* ========================================================================= */}
       {activeAdminTab === 'OVERVIEW' && (
-        <>
-          {/* TOP KPI CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {t('TOTAL REVENUE', 'कुल आम्दानी')}
-                </span>
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <DollarSign className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-2xl font-extrabold text-slate-900">
-                {t('Rs.', 'रु.')} {Number(kpis.total_revenue).toLocaleString()}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {t('BOOKINGS & MOVE-OUTS', 'बुकिङ र कोठा छोड्ने')}
-                </span>
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <CalendarCheck className="w-4 h-4" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between gap-2">
-                <p className="text-2xl font-extrabold text-slate-900">
-                  {pendingReservations.length} {t('Bookings', 'बुकिङ')}
-                </p>
-                {pendingMoveOuts.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-extrabold">
-                    {pendingMoveOuts.length} {t('Move-Out', 'छोड्ने')}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {t('OCCUPANCY', 'कोठा बसोबास')}
-                </span>
-                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <Building className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-2xl font-extrabold text-slate-900">
-                {kpis.occupied_rooms} / {kpis.total_rooms} {t('Rooms', 'कोठाहरू')}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {t('NET PROFIT', 'खुद नाफा')}
-                </span>
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <Zap className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-2xl font-extrabold text-indigo-600">
-                {t('Rs.', 'रु.')} {Number(kpis.net_profit).toLocaleString()}
-              </p>
-            </div>
-          </div>
-
-          {/* NOTICE BOARD PUBLISHER */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
-              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2 mb-1">
-                <Megaphone className="w-5 h-5 text-indigo-600" />{' '}
-                {t('Broadcast House Notice', 'घरको आधिकारिक सूचना प्रकाशन गर्नुहोस्')}
-              </h3>
-              <p className="text-xs text-slate-500 mb-5">
-                {t(
-                  "Publish announcements, maintenance schedules, or urgent alerts directly to all tenants' dashboards and emails.",
-                  'सबै भाडावालहरूको ड्यासबोर्ड र इमेलमा सिधै सूचना, मर्मत तालिका वा जरुरी जानकारी पठाउनुहोस्।'
-                )}
-              </p>
-              <form onSubmit={handlePostNotice} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                      {t('NOTICE TITLE', 'सूचनाको शीर्षक')}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={noticeTitle}
-                      onChange={(e) => setNoticeTitle(e.target.value)}
-                      placeholder={t(
-                        'e.g., Water Tank Cleaning This Sunday',
-                        'जस्तै: यो आइतबार पानी ट्यांकी सफा गरिने'
-                      )}
-                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                      {t('CATEGORY', 'प्रकार')}
-                    </label>
-                    <select
-                      value={noticeCategory}
-                      onChange={(e) => setNoticeCategory(e.target.value)}
-                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
-                    >
-                      <option value="GENERAL">{t('General Notice', 'सामान्य सूचना')}</option>
-                      <option value="MAINTENANCE">{t('Maintenance', 'मर्मत सम्भार')}</option>
-                      <option value="URGENT">{t('Urgent Alert', 'जरुरी सूचना')}</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                    {t('NOTICE CONTENT', 'सूचनाको विस्तृत विवरण')}
-                  </label>
-                  <textarea
-                    required
-                    rows="3"
-                    value={noticeContent}
-                    onChange={(e) => setNoticeContent(e.target.value)}
-                    placeholder={t(
-                      'Details of the announcement...',
-                      'सूचनाको पूरा विवरण लेख्नुहोस्...'
-                    )}
-                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={createNoticeMutation.isPending}
-                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition"
-                >
-                  {createNoticeMutation.isPending
-                    ? t('Publishing...', 'प्रकाशन हुँदैछ...')
-                    : t('Publish Notice to Tenants', 'भाडावालहरूलाई सूचना पठाउनुहोस्')}
-                </button>
-              </form>
-            </div>
-
-            <div className="lg:col-span-4 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 overflow-y-auto max-h-[350px]">
-              <h3 className="text-sm font-extrabold text-slate-900 mb-4">
-                {t('Active Broadcasts', 'प्रकाशित सक्रिय सूचनाहरू')}
-              </h3>
-              {notices.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-4">
-                  {t('No active notices.', 'कुनै सक्रिय सूचना छैन।')}
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {notices.map((n) => (
-                    <div
-                      key={n.id}
-                      className="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span
-                          className={`text-[10px] font-bold ${
-                            n.category === 'URGENT' ? 'text-rose-600' : 'text-indigo-600'
-                          }`}
-                        >
-                          {td(n.category_display || n.category)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => deleteNoticeMutation.mutate(n.id)}
-                          className="text-slate-400 hover:text-rose-600 transition"
-                          title={t('Delete Notice', 'सूचना हटाउनुहोस्')}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <p className="text-xs font-bold text-slate-900">{n.title}</p>
-                      <p className="text-[11px] text-slate-500 mt-1">{n.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ROOM RESERVATION & VISIT BOOKING QUEUE */}
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                {t('Room Reservations & Visit Requests', 'कोठा बुकिङ र अवलोकन अनुरोधहरू')}
-                {pendingReservations.length > 0 && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
-                    {pendingReservations.length} {t('Pending', 'बाँकी')}
-                  </span>
-                )}
-              </h3>
-
-              <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
-                {[
-                  {
-                    key: 'PENDING',
-                    label: t(
-                      `Pending (${pendingReservations.length})`,
-                      `प्रतीक्षामा (${pendingReservations.length})`
-                    ),
-                  },
-                  {
-                    key: 'APPROVED',
-                    label: t(
-                      `Approved & Assigned (${approvedReservations.length})`,
-                      `स्वीकृत र तोकिएको (${approvedReservations.length})`
-                    ),
-                  },
-                  {
-                    key: 'ALL',
-                    label: t(`All (${reservations.length})`, `सबै (${reservations.length})`),
-                  },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setReservationFilter(tab.key)}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
-                      reservationFilter === tab.key
-                        ? 'bg-white text-indigo-600 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {displayedReservations.length === 0 ? (
-              <div className="py-8 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
-                {t(
-                  'No room reservations to display in this tab.',
-                  'यस ट्याबमा कुनै कोठा बुकिङ अनुरोध छैन।'
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-5 space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                  {displayedReservations.map((res) => (
-                    <div
-                      key={res.id}
-                      onClick={() => {
-                        setSelectedReservation(res);
-                        setStartingMeterOverride(String(res.current_meter_reading || 0));
-                      }}
-                      className={`p-3.5 rounded-2xl border cursor-pointer transition ${
-                        activeReviewReservation?.id === res.id
-                          ? 'border-indigo-600 bg-indigo-50/50'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-900 text-xs truncate pr-2">
-                          {t('Room', 'कोठा')} {res.room_number} •{' '}
-                          {res.user_full_name || res.user_email}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
-                            res.status === 'APPROVED'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : res.status === 'PENDING'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {td(res.status_display)}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">
-                        {t('Move-in:', 'सर्ने मिति:')}{' '}
-                        {formatDualDate(res.expected_move_in_date)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                {activeReviewReservation && (
-                  <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
-                      <div>
-                        <h4 className="text-sm font-extrabold text-slate-900">
-                          {t('Room', 'कोठा')} {activeReviewReservation.room_number} —{' '}
-                          {activeReviewReservation.user_full_name ||
-                            activeReviewReservation.user_email}
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          {t('Expected Move-In:', 'सर्ने मिति:')}{' '}
-                          {formatDualDate(activeReviewReservation.expected_move_in_date)}
-                          {activeReviewReservation.phone_number
-                            ? ` • 📞 ${activeReviewReservation.phone_number}`
-                            : ''}
-                        </p>
-                      </div>
-                      <span
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase ${
-                          activeReviewReservation.status === 'APPROVED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : activeReviewReservation.status === 'PENDING'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-700'
-                        }`}
-                      >
-                        {td(activeReviewReservation.status_display)}
-                      </span>
-                    </div>
-
-                    {activeReviewReservation.status === 'PENDING' ? (
-                      <div className="space-y-3">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={startingMeterOverride}
-                          onChange={(e) => setStartingMeterOverride(e.target.value)}
-                          placeholder={t(
-                            'Initial Sub-Meter Reading',
-                            'सुरुवाती सब-मिटर रिडिङ'
-                          )}
-                          className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200"
-                        />
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              reservationActionMutation.mutate({
-                                id: activeReviewReservation.id,
-                                payload: {
-                                  action: 'REJECT',
-                                  admin_remarks: 'Rejected by Landlord',
-                                },
-                              })
-                            }
-                            className="flex-1 py-2.5 rounded-xl bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200"
-                          >
-                            {t('Reject', 'अस्वीकार गर्नुहोस्')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              reservationActionMutation.mutate({
-                                id: activeReviewReservation.id,
-                                payload: {
-                                  action: 'APPROVE',
-                                  starting_meter_reading:
-                                    startingMeterOverride ||
-                                    activeReviewReservation.current_meter_reading,
-                                  entry_date: activeReviewReservation.expected_move_in_date,
-                                },
-                              })
-                            }
-                            className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
-                          >
-                            {t('Approve & Assign', 'स्वीकृत गरी कोठा तोक्नुहोस्')}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-4 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-2.5">
-                          <CheckCircle2
-                            className={`w-5 h-5 shrink-0 ${
-                              activeReviewReservation.status === 'APPROVED'
-                                ? 'text-emerald-600'
-                                : 'text-slate-400'
-                            }`}
-                          />
-                          <div>
-                            <p className="font-extrabold text-slate-900">
-                              {activeReviewReservation.status === 'APPROVED'
-                                ? t(
-                                    `Approved & Assigned to Room ${activeReviewReservation.room_number}`,
-                                    `स्वीकृत भई कोठा ${activeReviewReservation.room_number} मा तोकिएको छ`
-                                  )
-                                : `${t('Request', 'अनुरोध')} ${td(
-                                    activeReviewReservation.status_display
-                                  )}`}
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              {activeReviewReservation.admin_remarks ||
-                                t('Processed by Landlord Admin', 'घरधनी एडमिनद्वारा सम्पन्न')}
-                            </p>
-                          </div>
-                        </div>
-                        {activeReviewReservation.user && (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedUserId(activeReviewReservation.user)}
-                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px] shrink-0"
-                          >
-                            {t('Inspect Tenant', 'भाडावाल हेर्नुहोस्')}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE */}
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                <LogOut className="w-5 h-5 text-rose-600" />
-                {t(
-                  'Tenant Move-Out & Final Settlement Queue',
-                  'कोठा छोड्ने र अन्तिम हिसाब फरफारक सूची'
-                )}
-                {pendingMoveOuts.length > 0 && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-xs font-extrabold">
-                    {pendingMoveOuts.length} {t('Pending', 'बाँकी')}
-                  </span>
-                )}
-              </h3>
-              <span className="text-xs text-slate-500">
-                {t(
-                  'Verify final sub-meter reading to generate settlement bill & vacate room',
-                  'अन्तिम सब-मिटर रिडिङ जाँच गरी हिसाब फरफारक र कोठा खाली गर्नुहोस्'
-                )}
-              </span>
-            </div>
-
-            {pendingMoveOuts.length === 0 ? (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                {t(
-                  'No pending move-out requests from tenants right now.',
-                  'अहिले कोठा छोड्ने कुनै अनुरोध बाँकी छैन।'
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-5 space-y-2 max-h-[340px] overflow-y-auto pr-1">
-                  {pendingMoveOuts.map((mo) => (
-                    <div
-                      key={mo.id}
-                      onClick={() => {
-                        setSelectedMoveOut(mo);
-                        setFinalMeterOverride(String(mo.current_meter_reading ?? ''));
-                      }}
-                      className={`p-4 rounded-2xl border cursor-pointer transition ${
-                        activeReviewMoveOut?.id === mo.id
-                          ? 'border-rose-600 bg-rose-50/50'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-900 text-xs">
-                          {t('Room', 'कोठा')} {mo.room_number} • {mo.tenant_name}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800">
-                          {td(mo.status_display || 'Pending')}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 font-semibold">
-                        {t('Planned Departure:', 'छोड्ने मिति:')}{' '}
-                        {formatDualDate(mo.requested_date)}
-                      </p>
-                      {mo.reason && (
-                        <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                          {t('Reason:', 'कारण:')} {mo.reason}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {activeReviewMoveOut && (
-                  <div className="lg:col-span-7 rounded-2xl bg-rose-50/40 border border-rose-200/80 p-5 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200/60 pb-3">
-                      <div>
-                        <h4 className="text-sm font-extrabold text-slate-900">
-                          {t('Room', 'कोठा')} {activeReviewMoveOut.room_number} —{' '}
-                          {activeReviewMoveOut.tenant_name}
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          {activeReviewMoveOut.tenant_email}
-                          {activeReviewMoveOut.tenant_phone
-                            ? ` • 📞 ${activeReviewMoveOut.tenant_phone}`
-                            : ''}
-                        </p>
-                      </div>
-                      <span className="px-2.5 py-1 rounded-lg bg-white text-rose-700 font-extrabold text-xs border border-rose-200">
-                        {t('Departure:', 'छोड्ने मिति:')}{' '}
-                        {formatDualDate(activeReviewMoveOut.requested_date)}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      <div className="p-3 rounded-xl bg-white border border-slate-200">
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          {t('Previous Sub-Meter Reading', 'अघिल्लो सब-मिटर रिडिङ')}
-                        </span>
-                        <strong className="text-sm text-indigo-600">
-                          {activeReviewMoveOut.current_meter_reading ?? 0}{' '}
-                          {t('units', 'युनिट')}
-                        </strong>
-                      </div>
-                      <div className="p-3 rounded-xl bg-white border border-slate-200">
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          {t('Tenant Reason', 'भाडावालको कारण')}
-                        </span>
-                        <strong className="text-slate-800">
-                          {activeReviewMoveOut.reason || t('Not specified', 'उल्लेख छैन')}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
-                          {t('Final Sub-Meter Reading (Units) *', 'अन्तिम सब-मिटर रिडिङ (युनिट) *')}
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min={activeReviewMoveOut.current_meter_reading || 0}
-                          value={
-                            finalMeterOverride !== ''
-                              ? finalMeterOverride
-                              : String(activeReviewMoveOut.current_meter_reading ?? 0)
-                          }
-                          onChange={(e) => setFinalMeterOverride(e.target.value)}
-                          className="w-full px-3 py-2.5 text-xs font-bold rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
-                          {t('Admin Settlement Remarks', 'फरफारक कैफियत (ऐच्छिक)')}
-                        </label>
-                        <input
-                          type="text"
-                          value={moveOutRemarks}
-                          onChange={(e) => setMoveOutRemarks(e.target.value)}
-                          placeholder={t(
-                            'e.g. Keys returned & deposit settled',
-                            'जस्तै: साँचो बुझियो र हिसाब फरफारक भयो'
-                          )}
-                          className="w-full px-3 py-2.5 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3 pt-1">
-                      <button
-                        type="button"
-                        disabled={moveOutActionMutation.isPending}
-                        onClick={() =>
-                          moveOutActionMutation.mutate({
-                            id: activeReviewMoveOut.id,
-                            payload: {
-                              action: 'REJECT',
-                              admin_remarks:
-                                moveOutRemarks || 'Please clear pending dues before move-out.',
-                            },
-                          })
-                        }
-                        className="flex-1 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200 transition"
-                      >
-                        {t('Reject Request', 'अस्वीकार गर्नुहोस्')}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={moveOutActionMutation.isPending}
-                        onClick={() =>
-                          moveOutActionMutation.mutate({
-                            id: activeReviewMoveOut.id,
-                            payload: {
-                              action: 'APPROVE',
-                              final_meter_reading:
-                                finalMeterOverride !== ''
-                                  ? finalMeterOverride
-                                  : activeReviewMoveOut.current_meter_reading,
-                              admin_remarks:
-                                moveOutRemarks || 'Final move-out settlement invoice.',
-                            },
-                          })
-                        }
-                        className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-sm transition"
-                      >
-                        {moveOutActionMutation.isPending
-                          ? t('Processing...', 'प्रक्रियामा...')
-                          : t(
-                              'Approve, Settle & Vacate',
-                              'स्वीकृत गरी हिसाब मिलान र कोठा खाली गर्नुहोस्'
-                            )}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* UNIT TELEMETRY MATRIX */}
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
+        <div className="space-y-6">
+          {/* SECTION A: UNIT TELEMETRY & OCCUPANCY MATRIX */}
+          <div className="rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-extrabold text-slate-900">
+                <div className="flex items-center gap-2">
+                  <Building className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    {t(
+                      'Unit Telemetry & Occupancy Matrix',
+                      'कोठा सब-मिटर र बसोबास विवरण'
+                    )}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
                   {t(
-                    'Unit Telemetry & Occupancy Matrix',
-                    'कोठा सब-मिटर र बसोबास विवरण'
-                  )}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {t(
-                    'Click "Edit Meter" on any room card to set or adjust its initial/current sub-meter reading',
-                    'कुनै पनि कोठाको सुरुवाती वा हालको सब-मिटर रिडिङ सच्याउन "मिटर सच्याउनुहोस्" मा थिच्नुहोस्'
+                    'Click "Edit Meter" on any unit to calibrate its sub-meter reading',
+                    'सब-मिटर रिडिङ सच्याउन "मिटर सच्याउनुहोस्" बटनमा थिच्नुहोस्'
                   )}
                 </p>
               </div>
@@ -2268,25 +1838,25 @@ export default function AdminCommandCenter() {
                 {[
                   {
                     key: 'ALL',
-                    label: t(`All Units (${roomsList.length})`, `सबै कोठा (${roomsList.length})`),
+                    label: t(`All (${roomsList.length})`, `सबै (${roomsList.length})`),
                   },
                   {
                     key: 'OCCUPIED',
                     label: t(
-                      `Assigned / Occupied (${occupiedRoomsCount})`,
-                      `बसोबास भएको (${occupiedRoomsCount})`
+                      `Occupied (${occupiedRoomsCount})`,
+                      `बसोबास छ (${occupiedRoomsCount})`
                     ),
                   },
                   {
                     key: 'VACANT',
-                    label: t(`Vacant (${vacantRoomsCount})`, `खाली कोठा (${vacantRoomsCount})`),
+                    label: t(`Vacant (${vacantRoomsCount})`, `खाली (${vacantRoomsCount})`),
                   },
                 ].map((tab) => (
                   <button
                     key={tab.key}
                     type="button"
                     onClick={() => setRoomMatrixFilter(tab.key)}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition cursor-pointer ${
                       roomMatrixFilter === tab.key
                         ? 'bg-white text-indigo-600 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
@@ -2306,17 +1876,29 @@ export default function AdminCommandCenter() {
                   return (
                     <div
                       key={room.id}
-                      className={`p-4 rounded-2xl border flex flex-col justify-between ${
-                        occupied ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-slate-50'
+                      className={`rounded-2xl border transition flex flex-col justify-between overflow-hidden ${
+                        occupied
+                          ? 'border-indigo-200/90 bg-white shadow-2xs hover:border-indigo-400'
+                          : 'border-slate-200/90 bg-slate-50/60 hover:bg-white'
                       }`}
                     >
-                      <div>
+                      <div className="p-4">
                         <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-extrabold text-slate-900">
-                            {t('Room', 'कोठा')} {room.room_number}
-                          </h4>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full ${
+                                occupied ? 'bg-emerald-500' : 'bg-slate-300'
+                              }`}
+                            />
+                            <h4 className="text-sm font-black text-slate-900">
+                              {t('Room', 'कोठा')} {room.room_number}
+                            </h4>
+                            <span className="text-[10px] font-bold text-slate-400">
+                              • {t('Rs.', 'रु.')} {Number(room.base_rent || 0).toLocaleString()}
+                            </span>
+                          </div>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                               occupied
                                 ? 'bg-emerald-100 text-emerald-700'
                                 : 'bg-slate-200 text-slate-700'
@@ -2327,42 +1909,50 @@ export default function AdminCommandCenter() {
                               : t('Vacant', 'खाली छ')}
                           </span>
                         </div>
-                        <p className="text-xs font-bold text-slate-800 mb-2">
+
+                        <p className="text-xs font-extrabold text-slate-800 truncate mb-3">
                           {occupied && tenant
                             ? tenant.full_name
-                            : t('Available', 'उपलब्ध')}
+                            : t('Ready for Assignment', 'भाडाका लागि खाली')}
                         </p>
-                        <div className="space-y-1.5 text-[11px] text-slate-500 mb-4">
-                          <div className="flex items-center justify-between bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-200/70">
-                            <span>
-                              {t('Sub-Meter:', 'सब-मिटर:')}{' '}
-                              <strong className="text-slate-900">
-                                {room.current_meter_reading} {t('units', 'युनिट')}
-                              </strong>
+
+                        {/* Digital Sub-Meter Readout Bar */}
+                        <div className="flex items-center justify-between bg-slate-900 text-white px-3 py-2 rounded-xl mb-2.5">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span className="text-[10px] text-slate-400 uppercase font-bold">
+                              {t('Meter:', 'मिटर:')}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => openEditMeterModal(room)}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 font-extrabold text-[10px] shadow-2xs transition"
-                            >
-                              <Edit3 className="w-3 h-3" />{' '}
-                              {t('Edit Meter', 'मिटर सच्याउनुहोस्')}
-                            </button>
+                            <strong className="font-black text-white">
+                              {room.current_meter_reading} {t('kWh', 'युनिट')}
+                            </strong>
                           </div>
-                          {occupied && tenant && (
-                            <p className="pt-0.5">
-                              {t('Next Due:', 'अर्को मिति:')}{' '}
-                              <strong>{formatDualDate(tenant.next_due_date)}</strong>
-                            </p>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => openEditMeterModal(room)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/15 hover:bg-indigo-500 text-white font-extrabold text-[10px] transition cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />{' '}
+                            {t('Edit Meter', 'सच्याउनुहोस्')}
+                          </button>
                         </div>
+
+                        {occupied && tenant && (
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {t('Next Due:', 'अर्को मिति:')}{' '}
+                            <strong className="text-slate-700">
+                              {formatDualDate(tenant.next_due_date)}
+                            </strong>
+                          </p>
+                        )}
                       </div>
-                      <div className="pt-3 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
+
+                      <div className="px-4 py-2.5 bg-slate-50/90 border-t border-slate-100 flex items-center justify-between gap-2">
                         {occupied && tenant?.tenant_id && (
                           <button
                             type="button"
                             onClick={() => setSelectedUserId(tenant.tenant_id)}
-                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold"
+                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-extrabold transition"
                           >
                             {t('Inspect Tenant', 'भाडावाल हेर्नुहोस्')}
                           </button>
@@ -2384,9 +1974,9 @@ export default function AdminCommandCenter() {
                                 });
                               }
                             }}
-                            className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold ml-auto"
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold ml-auto transition"
                           >
-                            {t('Vacate Room', 'कोठा खाली गर्नुहोस्')}
+                            {t('Vacate Room', 'खाली गर्नुहोस्')}
                           </button>
                         ) : (
                           <button
@@ -2395,7 +1985,7 @@ export default function AdminCommandCenter() {
                               setAssignModalRoom(room);
                               setStartingMeter(String(room.current_meter_reading || 0));
                             }}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold ml-auto"
+                            className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-2xs transition"
                           >
                             <UserPlus className="w-3.5 h-3.5" />{' '}
                             {t('Assign Tenant', 'भाडावाल तोक्नुहोस्')}
@@ -2409,317 +1999,788 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* REMITTANCE & METER AUDIT CLEARING QUEUE */}
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                {t('Remittance & Meter Audit Clearing', 'भुक्तानी र सब-मिटर प्रमाणीकरण कक्ष')}
-                {pendingQueue.length > 0 && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                    {pendingQueue.length} {t('Pending Audit', 'प्रमाणीकरण बाँकी')}
-                  </span>
-                )}
-              </h3>
+          {/* SECTION B: UNIFIED 3-IN-1 EXECUTIVE ACTION CENTER (BILLS | BOOKINGS | MOVE-OUTS) */}
+          <div className="rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    {t(
+                      'Executive Action & Verification Center',
+                      'प्रमाणीकरण, बुकिङ र कोठा छोड्ने कार्य कक्ष'
+                    )}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {t(
+                    'Switch between payment proof audits, room bookings, and move-out settlements',
+                    'बिल प्रमाणीकरण, कोठा बुकिङ र कोठा छोड्ने अनुरोधहरू एकै ठाउँबाट व्यवस्थापन गर्नुहोस्'
+                  )}
+                </p>
+              </div>
 
-              <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
-                {[
-                  {
-                    key: 'OPEN',
-                    label: t(
-                      `Open / Pending (${unpaidOrPendingBills.length})`,
-                      `बाँकी / प्रतीक्षामा (${unpaidOrPendingBills.length})`
-                    ),
-                  },
-                  {
-                    key: 'APPROVED',
-                    label: t(
-                      `Approved & Paid (${approvedOrPaidBills.length})`,
-                      `स्वीकृत र चुक्ता (${approvedOrPaidBills.length})`
-                    ),
-                  },
-                  {
-                    key: 'ALL',
-                    label: t(`All (${bills.length})`, `सबै (${bills.length})`),
-                  },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setBillQueueFilter(tab.key)}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
-                      billQueueFilter === tab.key
-                        ? 'bg-white text-indigo-600 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+              {/* 3-Queue Switcher Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setActionQueueTab('BILLS')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    actionQueueTab === 'BILLS'
+                      ? 'bg-white text-indigo-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>{t('Bill Audits', 'बिल प्रमाणीकरण')}</span>
+                  {pendingQueue.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px]">
+                      {pendingQueue.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActionQueueTab('BOOKINGS')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    actionQueueTab === 'BOOKINGS'
+                      ? 'bg-white text-indigo-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <CalendarCheck className="w-3.5 h-3.5" />
+                  <span>{t('Room Bookings', 'कोठा बुकिङ')}</span>
+                  {pendingReservations.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px]">
+                      {pendingReservations.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActionQueueTab('MOVEOUTS')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    actionQueueTab === 'MOVEOUTS'
+                      ? 'bg-white text-rose-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{t('Move-Outs', 'कोठा छोड्ने')}</span>
+                  {pendingMoveOuts.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px]">
+                      {pendingMoveOuts.length}
+                    </span>
+                  )}
+                </button>
               </div>
             </div>
 
-            {displayedBillsQueue.length === 0 ? (
-              <div className="py-10 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
-                {t('No bills in this view.', 'यस दृश्यमा कुनै बिल छैन।')}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-5 space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                  {displayedBillsQueue.map((b) => {
-                    const isSettled = b.status === 'APPROVED' || b.status === 'PAID_CASH';
-                    return (
-                      <div
-                        key={b.id}
-                        onClick={() => setSelectedBillForAudit(b)}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition ${
-                          activeAuditBill?.id === b.id
-                            ? 'border-indigo-600 bg-indigo-50/50'
-                            : 'border-slate-200 bg-white hover:bg-slate-50'
+            {/* SUB-TAB 1: REMITTANCE & METER AUDIT CLEARING */}
+            {actionQueueTab === 'BILLS' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-extrabold text-slate-600">
+                    {t('Filter Invoices:', 'बिल छान्नुहोस्:')}
+                  </span>
+                  <div className="inline-flex bg-slate-100 p-1 rounded-xl">
+                    {[
+                      {
+                        key: 'OPEN',
+                        label: t(
+                          `Open / Pending (${unpaidOrPendingBills.length})`,
+                          `बाँकी / प्रतीक्षामा (${unpaidOrPendingBills.length})`
+                        ),
+                      },
+                      {
+                        key: 'APPROVED',
+                        label: t(
+                          `Approved & Paid (${approvedOrPaidBills.length})`,
+                          `स्वीकृत र चुक्ता (${approvedOrPaidBills.length})`
+                        ),
+                      },
+                      {
+                        key: 'ALL',
+                        label: t(`All (${bills.length})`, `सबै (${bills.length})`),
+                      },
+                    ].map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setBillQueueFilter(tab.key)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                          billQueueFilter === tab.key
+                            ? 'bg-white text-indigo-600 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-slate-900 text-xs truncate pr-2">
-                            {t('Room', 'कोठा')} {b.room_number} • {b.tenant_name}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
-                              isSettled
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : b.status === 'PENDING_VERIFICATION'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {td(b.status_display)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-slate-500">
-                          <span>
-                            {formatDualMonthLabel(b.billing_month_label)} •{' '}
-                            {t('Rs.', 'रु.')} {Number(b.total_payable).toLocaleString()}
-                          </span>
-                          {Number(b.damage_fine_amount || 0) > 0 && !isSettled && (
-                            <span className="text-rose-600 font-bold">
-                              {t('Fine: Rs.', 'जरिवाना: रु.')}{' '}
-                              {Number(b.damage_fine_amount).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {activeAuditBill && (
-                  <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
-                      <div>
-                        <h4 className="text-sm font-extrabold text-slate-900">
-                          {t('Room', 'कोठा')} {activeAuditBill.room_number} —{' '}
-                          {activeAuditBill.tenant_name}
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          {t('Cycle:', 'बिलिङ चक्र:')}{' '}
-                          {formatDualMonthLabel(activeAuditBill.billing_month_label)}
-                          {activeAuditBill.due_date
-                            ? ` • ${t('Due:', 'तिर्नुपर्ने:')} ${formatDualDate(
-                                activeAuditBill.due_date
-                              )}`
-                            : ''}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-sm font-extrabold text-indigo-600 block">
-                          {t('Total: Rs.', 'जम्मा: रु.')}{' '}
-                          {Number(activeAuditBill.total_payable).toLocaleString()}
-                        </span>
-                        {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
-                          <button
-                            type="button"
-                            onClick={() => openFineModalForUser(null, activeAuditBill)}
-                            className="text-[11px] font-extrabold text-rose-600 hover:underline"
+                {displayedBillsQueue.length === 0 ? (
+                  <div className="py-10 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                    {t('No bills in this view.', 'यस दृश्यमा कुनै बिल छैन।')}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-5 space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      {displayedBillsQueue.map((b) => {
+                        const isSettled = b.status === 'APPROVED' || b.status === 'PAID_CASH';
+                        return (
+                          <div
+                            key={b.id}
+                            onClick={() => setSelectedBillForAudit(b)}
+                            className={`p-3.5 rounded-2xl border cursor-pointer transition ${
+                              activeAuditBill?.id === b.id
+                                ? 'border-indigo-600 bg-indigo-50/50'
+                                : 'border-slate-200 bg-white hover:bg-slate-50'
+                            }`}
                           >
-                            {t('+ Add / Edit Fine', '+ जरिवाना थप्नुहोस् / सच्याउनुहोस्')}
-                          </button>
-                        )}
-                      </div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-bold text-slate-900 text-xs truncate pr-2">
+                                {t('Room', 'कोठा')} {b.room_number} • {b.tenant_name}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                  isSettled
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : b.status === 'PENDING_VERIFICATION'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {td(b.status_display)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-500">
+                              <span>
+                                {formatDualMonthLabel(b.billing_month_label)} •{' '}
+                                {t('Rs.', 'रु.')} {Number(b.total_payable).toLocaleString()}
+                              </span>
+                              {Number(b.damage_fine_amount || 0) > 0 && !isSettled && (
+                                <span className="text-rose-600 font-bold">
+                                  {t('Fine: Rs.', 'जरिवाना: रु.')}{' '}
+                                  {Number(b.damage_fine_amount).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    {Number(activeAuditBill.damage_fine_amount || 0) > 0 && (
-                      <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs space-y-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-extrabold text-rose-800 flex items-center gap-1.5">
-                            <AlertTriangle className="w-4 h-4 text-rose-600" />
-                            {t('Applied Fine: Rs.', 'लगाइएको जरिवाना: रु.')}{' '}
-                            {Number(activeAuditBill.damage_fine_amount).toLocaleString()}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            {activeAuditBill.fine_applied_at && (
-                              <span className="text-[10px] text-rose-600 font-semibold">
-                                {formatDualDate(activeAuditBill.fine_applied_at)}
-                              </span>
-                            )}
+                    {activeAuditBill && (
+                      <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-slate-900">
+                              {t('Room', 'कोठा')} {activeAuditBill.room_number} —{' '}
+                              {activeAuditBill.tenant_name}
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              {t('Cycle:', 'बिलिङ चक्र:')}{' '}
+                              {formatDualMonthLabel(activeAuditBill.billing_month_label)}
+                              {activeAuditBill.due_date
+                                ? ` • ${t('Due:', 'तिर्नुपर्ने:')} ${formatDualDate(
+                                    activeAuditBill.due_date
+                                  )}`
+                                : ''}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-sm font-extrabold text-indigo-600 block">
+                              {t('Total: Rs.', 'जम्मा: रु.')}{' '}
+                              {Number(activeAuditBill.total_payable).toLocaleString()}
+                            </span>
                             {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
                               <button
                                 type="button"
-                                onClick={() => handleUndoFine(activeAuditBill.id)}
-                                disabled={applyFineMutation.isPending}
-                                className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition text-[10px] font-extrabold shadow-xs"
+                                onClick={() => openFineModalForUser(null, activeAuditBill)}
+                                className="text-[11px] font-extrabold text-rose-600 hover:underline"
                               >
-                                {t('Undo Fine', 'जरिवाना हटाउनुहोस्')}
+                                {t('+ Add / Edit Fine', '+ जरिवाना थप्नुहोस् / सच्याउनुहोस्')}
                               </button>
                             )}
                           </div>
                         </div>
-                        <p className="text-rose-700 font-medium">
-                          {t('Reason:', 'कारण:')}{' '}
-                          {activeAuditBill.damage_fine_reason || 'Rule / damage violation'}
-                        </p>
-                        {Array.isArray(activeAuditBill.fine_evidence_urls) &&
-                          activeAuditBill.fine_evidence_urls.length > 0 && (
-                            <div className="flex items-center gap-2 pt-1 overflow-x-auto">
-                              {activeAuditBill.fine_evidence_urls.map((evUrl, idx) => {
-                                const safeEv = getSafeMediaUrl(evUrl);
-                                return (
-                                  <img
-                                    key={idx}
-                                    src={safeEv}
-                                    alt="Fine Evidence"
-                                    onClick={() =>
-                                      openPhotoLightbox(
-                                        activeAuditBill.fine_evidence_urls.map((u, i) => ({
-                                          url: getSafeMediaUrl(u),
-                                          title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
-                                            i + 1
-                                          } — ${t('Room', 'कोठा')} ${activeAuditBill.room_number}`,
-                                          subtitle: activeAuditBill.damage_fine_reason,
-                                        })),
-                                        idx
-                                      )
-                                    }
-                                    className="w-14 h-14 rounded-xl object-cover border border-rose-300 cursor-pointer hover:scale-105 transition"
-                                  />
-                                );
-                              })}
+
+                        {Number(activeAuditBill.damage_fine_amount || 0) > 0 && (
+                          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-extrabold text-rose-800 flex items-center gap-1.5">
+                                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                                {t('Applied Fine: Rs.', 'लगाइएको जरिवाना: रु.')}{' '}
+                                {Number(activeAuditBill.damage_fine_amount).toLocaleString()}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {activeAuditBill.fine_applied_at && (
+                                  <span className="text-[10px] text-rose-600 font-semibold">
+                                    {formatDualDate(activeAuditBill.fine_applied_at)}
+                                  </span>
+                                )}
+                                {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUndoFine(activeAuditBill.id)}
+                                    disabled={applyFineMutation.isPending}
+                                    className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition text-[10px] font-extrabold shadow-xs"
+                                  >
+                                    {t('Undo Fine', 'जरिवाना हटाउनुहोस्')}
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          )}
+                            <p className="text-rose-700 font-medium">
+                              {t('Reason:', 'कारण:')}{' '}
+                              {activeAuditBill.damage_fine_reason || 'Rule / damage violation'}
+                            </p>
+                            {Array.isArray(activeAuditBill.fine_evidence_urls) &&
+                              activeAuditBill.fine_evidence_urls.length > 0 && (
+                                <div className="flex items-center gap-2 pt-1 overflow-x-auto">
+                                  {activeAuditBill.fine_evidence_urls.map((evUrl, idx) => {
+                                    const safeEv = getSafeMediaUrl(evUrl);
+                                    return (
+                                      <img
+                                        key={idx}
+                                        src={safeEv}
+                                        alt="Fine Evidence"
+                                        onClick={() =>
+                                          openPhotoLightbox(
+                                            activeAuditBill.fine_evidence_urls.map((u, i) => ({
+                                              url: getSafeMediaUrl(u),
+                                              title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
+                                                i + 1
+                                              } — ${t('Room', 'कोठा')} ${activeAuditBill.room_number}`,
+                                              subtitle: activeAuditBill.damage_fine_reason,
+                                            })),
+                                            idx
+                                          )
+                                        }
+                                        className="w-14 h-14 rounded-xl object-cover border border-rose-300 cursor-pointer hover:scale-105 transition"
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              )}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                              {t('Zone 1: Sub-Meter', 'क्षेत्र १: सब-मिटर फोटो')}
+                            </p>
+                            <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                              {activeAuditBill.meter_photo_url ? (
+                                <img
+                                  src={getSafeMediaUrl(activeAuditBill.meter_photo_url)}
+                                  alt="Meter"
+                                  onClick={() =>
+                                    openPhotoLightbox([
+                                      {
+                                        url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
+                                        title: `${t('Room', 'कोठा')} ${
+                                          activeAuditBill.room_number
+                                        } — ${t('Meter Photo', 'मिटर फोटो')}`,
+                                        subtitle: formatDualMonthLabel(
+                                          activeAuditBill.billing_month_label
+                                        ),
+                                      },
+                                    ])
+                                  }
+                                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                                  {t('No Meter Photo', 'मिटर फोटो छैन')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                              {t('Zone 2: Payment Receipt', 'क्षेत्र २: भुक्तानी भौचर')}
+                            </p>
+                            <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                              {activeAuditBill.payment_screenshot_url ? (
+                                <img
+                                  src={getSafeMediaUrl(activeAuditBill.payment_screenshot_url)}
+                                  alt="Payment"
+                                  onClick={() =>
+                                    openPhotoLightbox([
+                                      {
+                                        url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
+                                        title: `${t('Room', 'कोठा')} ${
+                                          activeAuditBill.room_number
+                                        } — ${t('Payment Screenshot', 'भुक्तानी भौचर')}`,
+                                        subtitle: formatDualMonthLabel(
+                                          activeAuditBill.billing_month_label
+                                        ),
+                                      },
+                                    ])
+                                  }
+                                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                                  {t('No Payment Slip', 'भुक्तानी भौचर छैन')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) ? (
+                          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              {t('Payment Verified & Settled', 'भुक्तानी प्रमाणित र चुक्ता भयो')} (
+                              {td(activeAuditBill.status_display)})
+                            </span>
+                            <span className="text-[11px] text-emerald-700 font-semibold">
+                              Ref:{' '}
+                              {activeAuditBill.transaction_reference || t('Verified', 'प्रमाणित')}
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              type="text"
+                              value={adminRemarks}
+                              onChange={(e) => setAdminRemarks(e.target.value)}
+                              placeholder={t('Remarks...', 'कैफियत लेख्नुहोस्...')}
+                              className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
+                            />
+                            <div className="flex items-center gap-3 pt-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  auditMutation.mutate({
+                                    billId: activeAuditBill.id,
+                                    action: 'REJECT',
+                                    remarks: adminRemarks || 'Please re-upload.',
+                                  })
+                                }
+                                className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
+                              >
+                                {t('Reject', 'अस्वीकार गर्नुहोस्')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  auditMutation.mutate({
+                                    billId: activeAuditBill.id,
+                                    action: 'APPROVE',
+                                    remarks: adminRemarks || 'Verified.',
+                                  })
+                                }
+                                className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
+                              >
+                                {t('Approve', 'स्वीकृत गर्नुहोस्')}
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+            )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                          {t('Zone 1: Sub-Meter', 'क्षेत्र १: सब-मिटर फोटो')}
-                        </p>
-                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
-                          {activeAuditBill.meter_photo_url ? (
-                            <img
-                              src={getSafeMediaUrl(activeAuditBill.meter_photo_url)}
-                              alt="Meter"
-                              onClick={() =>
-                                openPhotoLightbox([
-                                  {
-                                    url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
-                                    title: `${t('Room', 'कोठा')} ${
-                                      activeAuditBill.room_number
-                                    } — ${t('Meter Photo', 'मिटर फोटो')}`,
-                                    subtitle: formatDualMonthLabel(
-                                      activeAuditBill.billing_month_label
-                                    ),
-                                  },
-                                ])
-                              }
-                              className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                              {t('No Meter Photo', 'मिटर फोटो छैन')}
-                            </div>
-                          )}
+            {/* SUB-TAB 2: ROOM RESERVATIONS & VISIT REQUESTS */}
+            {actionQueueTab === 'BOOKINGS' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-extrabold text-slate-600">
+                    {t('Filter Booking Requests:', 'बुकिङ छान्नुहोस्:')}
+                  </span>
+                  <div className="inline-flex bg-slate-100 p-1 rounded-xl">
+                    {[
+                      {
+                        key: 'PENDING',
+                        label: t(
+                          `Pending (${pendingReservations.length})`,
+                          `प्रतीक्षामा (${pendingReservations.length})`
+                        ),
+                      },
+                      {
+                        key: 'APPROVED',
+                        label: t(
+                          `Approved & Assigned (${approvedReservations.length})`,
+                          `स्वीकृत र तोकिएको (${approvedReservations.length})`
+                        ),
+                      },
+                      {
+                        key: 'ALL',
+                        label: t(`All (${reservations.length})`, `सबै (${reservations.length})`),
+                      },
+                    ].map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setReservationFilter(tab.key)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                          reservationFilter === tab.key
+                            ? 'bg-white text-indigo-600 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {displayedReservations.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                    {t(
+                      'No room reservations to display in this tab.',
+                      'यस ट्याबमा कुनै कोठा बुकिङ अनुरोध छैन।'
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-5 space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                      {displayedReservations.map((res) => (
+                        <div
+                          key={res.id}
+                          onClick={() => {
+                            setSelectedReservation(res);
+                            setStartingMeterOverride(String(res.current_meter_reading || 0));
+                          }}
+                          className={`p-3.5 rounded-2xl border cursor-pointer transition ${
+                            activeReviewReservation?.id === res.id
+                              ? 'border-indigo-600 bg-indigo-50/50'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-900 text-xs truncate pr-2">
+                              {t('Room', 'कोठा')} {res.room_number} •{' '}
+                              {res.user_full_name || res.user_email}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                res.status === 'APPROVED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : res.status === 'PENDING'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {td(res.status_display)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {t('Move-in:', 'सर्ने मिति:')}{' '}
+                            {formatDualDate(res.expected_move_in_date)}
+                          </p>
                         </div>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                          {t('Zone 2: Payment Receipt', 'क्षेत्र २: भुक्तानी भौचर')}
-                        </p>
-                        <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
-                          {activeAuditBill.payment_screenshot_url ? (
-                            <img
-                              src={getSafeMediaUrl(activeAuditBill.payment_screenshot_url)}
-                              alt="Payment"
-                              onClick={() =>
-                                openPhotoLightbox([
-                                  {
-                                    url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
-                                    title: `${t('Room', 'कोठा')} ${
-                                      activeAuditBill.room_number
-                                    } — ${t('Payment Screenshot', 'भुक्तानी भौचर')}`,
-                                    subtitle: formatDualMonthLabel(
-                                      activeAuditBill.billing_month_label
-                                    ),
-                                  },
-                                ])
-                              }
-                              className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                              {t('No Payment Slip', 'भुक्तानी भौचर छैन')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      ))}
                     </div>
 
-                    {['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) ? (
-                      <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold flex items-center justify-between">
-                        <span className="flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          {t('Payment Verified & Settled', 'भुक्तानी प्रमाणित र चुक्ता भयो')} (
-                          {td(activeAuditBill.status_display)})
-                        </span>
-                        <span className="text-[11px] text-emerald-700 font-semibold">
-                          Ref: {activeAuditBill.transaction_reference || t('Verified', 'प्रमाणित')}
-                        </span>
+                    {activeReviewReservation && (
+                      <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-slate-900">
+                              {t('Room', 'कोठा')} {activeReviewReservation.room_number} —{' '}
+                              {activeReviewReservation.user_full_name ||
+                                activeReviewReservation.user_email}
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              {t('Expected Move-In:', 'सर्ने मिति:')}{' '}
+                              {formatDualDate(activeReviewReservation.expected_move_in_date)}
+                              {activeReviewReservation.phone_number
+                                ? ` • 📞 ${activeReviewReservation.phone_number}`
+                                : ''}
+                            </p>
+                          </div>
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase ${
+                              activeReviewReservation.status === 'APPROVED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : activeReviewReservation.status === 'PENDING'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-700'
+                            }`}
+                          >
+                            {td(activeReviewReservation.status_display)}
+                          </span>
+                        </div>
+
+                        {activeReviewReservation.status === 'PENDING' ? (
+                          <div className="space-y-3">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={startingMeterOverride}
+                              onChange={(e) => setStartingMeterOverride(e.target.value)}
+                              placeholder={t(
+                                'Initial Sub-Meter Reading',
+                                'सुरुवाती सब-मिटर रिडिङ'
+                              )}
+                              className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200"
+                            />
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  reservationActionMutation.mutate({
+                                    id: activeReviewReservation.id,
+                                    payload: {
+                                      action: 'REJECT',
+                                      admin_remarks: 'Rejected by Landlord',
+                                    },
+                                  })
+                                }
+                                className="flex-1 py-2.5 rounded-xl bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200"
+                              >
+                                {t('Reject', 'अस्वीकार गर्नुहोस्')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  reservationActionMutation.mutate({
+                                    id: activeReviewReservation.id,
+                                    payload: {
+                                      action: 'APPROVE',
+                                      starting_meter_reading:
+                                        startingMeterOverride ||
+                                        activeReviewReservation.current_meter_reading,
+                                      entry_date: activeReviewReservation.expected_move_in_date,
+                                    },
+                                  })
+                                }
+                                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
+                              >
+                                {t('Approve & Assign', 'स्वीकृत गरी कोठा तोक्नुहोस्')}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-4 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2.5">
+                              <CheckCircle2
+                                className={`w-5 h-5 shrink-0 ${
+                                  activeReviewReservation.status === 'APPROVED'
+                                    ? 'text-emerald-600'
+                                    : 'text-slate-400'
+                                }`}
+                              />
+                              <div>
+                                <p className="font-extrabold text-slate-900">
+                                  {activeReviewReservation.status === 'APPROVED'
+                                    ? t(
+                                        `Approved & Assigned to Room ${activeReviewReservation.room_number}`,
+                                        `स्वीकृत भई कोठा ${activeReviewReservation.room_number} मा तोकिएको छ`
+                                      )
+                                    : `${t('Request', 'अनुरोध')} ${td(
+                                        activeReviewReservation.status_display
+                                      )}`}
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  {activeReviewReservation.admin_remarks ||
+                                    t('Processed by Landlord Admin', 'घरधनी एडमिनद्वारा सम्पन्न')}
+                                </p>
+                              </div>
+                            </div>
+                            {activeReviewReservation.user && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedUserId(activeReviewReservation.user)}
+                                className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px] shrink-0"
+                              >
+                                {t('Inspect Tenant', 'भाडावाल हेर्नुहोस्')}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <>
-                        <input
-                          type="text"
-                          value={adminRemarks}
-                          onChange={(e) => setAdminRemarks(e.target.value)}
-                          placeholder={t('Remarks...', 'कैफियत लेख्नुहोस्...')}
-                          className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
-                        />
-                        <div className="flex items-center gap-3 pt-2">
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUB-TAB 3: TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE */}
+            {actionQueueTab === 'MOVEOUTS' && (
+              <div className="space-y-4">
+                {pendingMoveOuts.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                    {t(
+                      'No pending move-out requests from tenants right now.',
+                      'अहिले कोठा छोड्ने कुनै अनुरोध बाँकी छैन।'
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-5 space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                      {pendingMoveOuts.map((mo) => (
+                        <div
+                          key={mo.id}
+                          onClick={() => {
+                            setSelectedMoveOut(mo);
+                            setFinalMeterOverride(String(mo.current_meter_reading ?? ''));
+                          }}
+                          className={`p-4 rounded-2xl border cursor-pointer transition ${
+                            activeReviewMoveOut?.id === mo.id
+                              ? 'border-rose-600 bg-rose-50/50'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-900 text-xs">
+                              {t('Room', 'कोठा')} {mo.room_number} • {mo.tenant_name}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800">
+                              {td(mo.status_display || 'Pending')}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 font-semibold">
+                            {t('Planned Departure:', 'छोड्ने मिति:')}{' '}
+                            {formatDualDate(mo.requested_date)}
+                          </p>
+                          {mo.reason && (
+                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                              {t('Reason:', 'कारण:')} {mo.reason}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {activeReviewMoveOut && (
+                      <div className="lg:col-span-7 rounded-2xl bg-rose-50/40 border border-rose-200/80 p-5 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200/60 pb-3">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-slate-900">
+                              {t('Room', 'कोठा')} {activeReviewMoveOut.room_number} —{' '}
+                              {activeReviewMoveOut.tenant_name}
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              {activeReviewMoveOut.tenant_email}
+                              {activeReviewMoveOut.tenant_phone
+                                ? ` • 📞 ${activeReviewMoveOut.tenant_phone}`
+                                : ''}
+                            </p>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-lg bg-white text-rose-700 font-extrabold text-xs border border-rose-200">
+                            {t('Departure:', 'छोड्ने मिति:')}{' '}
+                            {formatDualDate(activeReviewMoveOut.requested_date)}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div className="p-3 rounded-xl bg-white border border-slate-200">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                              {t('Previous Sub-Meter Reading', 'अघिल्लो सब-मिटर रिडिङ')}
+                            </span>
+                            <strong className="text-sm text-indigo-600">
+                              {activeReviewMoveOut.current_meter_reading ?? 0}{' '}
+                              {t('units', 'युनिट')}
+                            </strong>
+                          </div>
+                          <div className="p-3 rounded-xl bg-white border border-slate-200">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                              {t('Tenant Reason', 'भाडावालको कारण')}
+                            </span>
+                            <strong className="text-slate-800">
+                              {activeReviewMoveOut.reason || t('Not specified', 'उल्लेख छैन')}
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
+                              {t(
+                                'Final Sub-Meter Reading (Units) *',
+                                'अन्तिम सब-मिटर रिडिङ (युनिट) *'
+                              )}
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={activeReviewMoveOut.current_meter_reading || 0}
+                              value={
+                                finalMeterOverride !== ''
+                                  ? finalMeterOverride
+                                  : String(activeReviewMoveOut.current_meter_reading ?? 0)
+                              }
+                              onChange={(e) => setFinalMeterOverride(e.target.value)}
+                              className="w-full px-3 py-2.5 text-xs font-bold rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
+                              {t('Admin Settlement Remarks', 'फरफारक कैफियत (ऐच्छिक)')}
+                            </label>
+                            <input
+                              type="text"
+                              value={moveOutRemarks}
+                              onChange={(e) => setMoveOutRemarks(e.target.value)}
+                              placeholder={t(
+                                'e.g. Keys returned & deposit settled',
+                                'जस्तै: साँचो बुझियो र हिसाब फरफारक भयो'
+                              )}
+                              className="w-full px-3 py-2.5 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-3 pt-1">
                           <button
                             type="button"
+                            disabled={moveOutActionMutation.isPending}
                             onClick={() =>
-                              auditMutation.mutate({
-                                billId: activeAuditBill.id,
-                                action: 'REJECT',
-                                remarks: adminRemarks || 'Please re-upload.',
+                              moveOutActionMutation.mutate({
+                                id: activeReviewMoveOut.id,
+                                payload: {
+                                  action: 'REJECT',
+                                  admin_remarks:
+                                    moveOutRemarks || 'Please clear pending dues before move-out.',
+                                },
                               })
                             }
-                            className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
+                            className="flex-1 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200 transition"
                           >
-                            {t('Reject', 'अस्वीकार गर्नुहोस्')}
+                            {t('Reject Request', 'अस्वीकार गर्नुहोस्')}
                           </button>
                           <button
                             type="button"
+                            disabled={moveOutActionMutation.isPending}
                             onClick={() =>
-                              auditMutation.mutate({
-                                billId: activeAuditBill.id,
-                                action: 'APPROVE',
-                                remarks: adminRemarks || 'Verified.',
+                              moveOutActionMutation.mutate({
+                                id: activeReviewMoveOut.id,
+                                payload: {
+                                  action: 'APPROVE',
+                                  final_meter_reading:
+                                    finalMeterOverride !== ''
+                                      ? finalMeterOverride
+                                      : activeReviewMoveOut.current_meter_reading,
+                                  admin_remarks:
+                                    moveOutRemarks || 'Final move-out settlement invoice.',
+                                },
                               })
                             }
-                            className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
+                            className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-sm transition"
                           >
-                            {t('Approve', 'स्वीकृत गर्नुहोस्')}
+                            {moveOutActionMutation.isPending
+                              ? t('Processing...', 'प्रक्रियामा...')
+                              : t(
+                                  'Approve, Settle & Vacate',
+                                  'स्वीकृत गरी हिसाब मिलान र कोठा खाली गर्नुहोस्'
+                                )}
                           </button>
                         </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2727,16 +2788,16 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* CHARTS SECTION */}
+          {/* SECTION C: FINANCIAL VELOCITY CHARTS & WHOLE-HOUSE EXPENSE LOGGER */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
+            <div className="lg:col-span-8 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs">
               <h3 className="text-base font-extrabold text-slate-900 mb-1">
                 {t(
                   'Financial Velocity (Bar Chart • AD / BS)',
                   'मासिक आम्दानी र खर्च (बार चार्ट • AD / BS)'
                 )}
               </h3>
-              <div className="w-full h-72 mt-4">
+              <div className="w-full h-64 mt-4">
                 {!analyticsLoading && (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyTrendChartData}>
@@ -2761,7 +2822,8 @@ export default function AdminCommandCenter() {
                 )}
               </div>
             </div>
-            <div className="lg:col-span-4 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+
+            <div className="lg:col-span-4 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
               <h3 className="text-base font-extrabold text-slate-900 mb-1">
                 {t('Utility Outflow (Pie Chart)', 'खर्च विवरण (पाई चार्ट)')}
               </h3>
@@ -2789,89 +2851,194 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* RECORD BUILDING OUTFLOW */}
-          <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
-            <h3 className="text-base font-extrabold text-slate-900 mb-1">
-              {t('Record Whole-House Expense', 'घरको कुल खर्च टिपोट गर्नुहोस्')}
-            </h3>
-            <form
-              onSubmit={handleLogExpense}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-start mt-4"
-            >
+          {/* SECTION D: RECORD WHOLE-HOUSE EXPENSE & BROADCAST HOUSE NOTICE */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left 5 Cols: Record Whole-House Expense */}
+            <div className="lg:col-span-5 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
               <div>
-                <label className="block text-[11px] font-bold mb-1">
-                  {t('CATEGORY', 'विधा')}
-                </label>
-                <select
-                  value={expenseCategory}
-                  onChange={(e) => setExpenseCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
-                >
-                  <option value="ELECTRICITY_MAIN">
-                    {t('Main Electricity (NEA)', 'मुख्य बिजुली बिल (NEA)')}
-                  </option>
-                  <option value="WATER_SUPPLY">
-                    {t('Water Supply / Tanker', 'पानी आपूर्ति / ट्यांकर')}
-                  </option>
-                  <option value="MAINTENANCE">
-                    {t('Plumbing & Repairs', 'मर्मत सम्भार')}
-                  </option>
-                </select>
+                <h3 className="text-base font-extrabold text-slate-900 mb-1">
+                  {t('Record Whole-House Expense', 'घरको कुल खर्च टिपोट गर्नुहोस्')}
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  {t(
+                    'Log main NEA electricity, water tanker, or plumbing costs',
+                    'मुख्य बिजुली, पानी ट्यांकर वा मर्मत खर्च टिपोट गर्नुहोस्'
+                  )}
+                </p>
               </div>
-              <div>
-                <label className="block text-[11px] font-bold mb-1">
-                  {t('TITLE', 'खर्च शीर्षक')}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={expenseTitle}
-                  onChange={(e) => setExpenseTitle(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold mb-1">
-                  {t('AMOUNT', 'रकम (रु.)')}
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={expenseAmount}
-                  onChange={(e) => setExpenseAmount(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold mb-1">
-                  {t('DATE (AD / BS)', 'मिति (AD / BS)')}
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={expenseDate}
-                  onChange={(e) => setExpenseDate(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
-                />
-                {expenseDate && (
-                  <p className="text-[10px] font-extrabold text-indigo-600 mt-1">
-                    📅 {t('BS:', 'बि.सं.:')} {formatBSOnly(expenseDate)}
-                  </p>
-                )}
-              </div>
-              <div className="pt-5">
+
+              <form onSubmit={handleLogExpense} className="space-y-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('CATEGORY', 'विधा')}
+                    </label>
+                    <select
+                      value={expenseCategory}
+                      onChange={(e) => setExpenseCategory(e.target.value)}
+                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    >
+                      <option value="ELECTRICITY_MAIN">
+                        {t('Main Electricity (NEA)', 'मुख्य बिजुली बिल (NEA)')}
+                      </option>
+                      <option value="WATER_SUPPLY">
+                        {t('Water Supply / Tanker', 'पानी आपूर्ति / ट्यांकर')}
+                      </option>
+                      <option value="MAINTENANCE">
+                        {t('Plumbing & Repairs', 'मर्मत सम्भार')}
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('AMOUNT (NPR)', 'रकम (रु.)')}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value)}
+                      placeholder="e.g. 1500"
+                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('TITLE', 'खर्च शीर्षक')}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={expenseTitle}
+                      onChange={(e) => setExpenseTitle(e.target.value)}
+                      placeholder={t('e.g. NEA Main Bill', 'जस्तै: मुख्य बिजुली बिल')}
+                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('DATE (AD / BS)', 'मिति (AD / BS)')}
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={expenseDate}
+                      onChange={(e) => setExpenseDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                    {expenseDate && (
+                      <p className="text-[10px] font-extrabold text-indigo-600 mt-1">
+                        📅 {formatBSOnly(expenseDate)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   disabled={expenseMutation.isPending}
-                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs"
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-sm transition"
                 >
-                  {t('Commit Expense', 'खर्च सुरक्षित गर्नुहोस्')}
+                  {expenseMutation.isPending
+                    ? t('Saving...', 'सुरक्षित हुँदैछ...')
+                    : t('Commit Expense', 'खर्च सुरक्षित गर्नुहोस्')}
                 </button>
+              </form>
+            </div>
+
+            {/* Right 7 Cols: Broadcast House Notice + Active Broadcasts */}
+            <div className="lg:col-span-7 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs grid grid-cols-1 md:grid-cols-12 gap-5">
+              <div className="md:col-span-7 space-y-3">
+                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-indigo-600" />{' '}
+                  {t('Broadcast House Notice', 'घरको सूचना प्रकाशन')}
+                </h3>
+                <form onSubmit={handlePostNotice} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <input
+                      type="text"
+                      required
+                      value={noticeTitle}
+                      onChange={(e) => setNoticeTitle(e.target.value)}
+                      placeholder={t('Notice Title...', 'सूचनाको शीर्षक...')}
+                      className="sm:col-span-2 px-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                    <select
+                      value={noticeCategory}
+                      onChange={(e) => setNoticeCategory(e.target.value)}
+                      className="px-2.5 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    >
+                      <option value="GENERAL">{t('General', 'सामान्य')}</option>
+                      <option value="MAINTENANCE">{t('Maintenance', 'मर्मत')}</option>
+                      <option value="URGENT">{t('Urgent', 'जरुरी')}</option>
+                    </select>
+                  </div>
+                  <textarea
+                    required
+                    rows="3"
+                    value={noticeContent}
+                    onChange={(e) => setNoticeContent(e.target.value)}
+                    placeholder={t(
+                      'Write announcement for all tenants...',
+                      'सबै भाडावालका लागि सूचना लेख्नुहोस्...'
+                    )}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={createNoticeMutation.isPending}
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm transition"
+                  >
+                    {createNoticeMutation.isPending
+                      ? t('Publishing...', 'प्रकाशन हुँदैछ...')
+                      : t('Publish Notice to Tenants', 'सूचना प्रकाशन गर्नुहोस्')}
+                  </button>
+                </form>
               </div>
-            </form>
+
+              <div className="md:col-span-5 rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 overflow-y-auto max-h-[240px] space-y-2.5">
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                  {t('Active Broadcasts', 'प्रकाशित सूचनाहरू')} ({notices.length})
+                </h4>
+                {notices.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">
+                    {t('No active notices.', 'कुनै सक्रिय सूचना छैन।')}
+                  </p>
+                ) : (
+                  notices.map((n) => (
+                    <div
+                      key={n.id}
+                      className="bg-white p-3 rounded-xl shadow-2xs border border-slate-200/80"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`text-[10px] font-extrabold ${
+                            n.category === 'URGENT' ? 'text-rose-600' : 'text-indigo-600'
+                          }`}
+                        >
+                          {td(n.category_display || n.category)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => deleteNoticeMutation.mutate(n.id)}
+                          className="text-slate-400 hover:text-rose-600 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <p className="text-xs font-bold text-slate-900 line-clamp-1">{n.title}</p>
+                      <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{n.content}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* ========================================================================= */}
@@ -3057,7 +3224,6 @@ export default function AdminCommandCenter() {
                     </div>
                   </div>
 
-                  {/* 3. 4-Card Telemetry Summary Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mb-6">
                     <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 block">
@@ -3132,7 +3298,6 @@ export default function AdminCommandCenter() {
                     </div>
                   </div>
 
-                  {/* 4. Assigned Room Telemetry + Emergency & Legal Details */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
                       <div className="flex items-center justify-between">
@@ -3235,7 +3400,6 @@ export default function AdminCommandCenter() {
                     </div>
                   </div>
 
-                  {/* 5. Interactive Photo Gallery */}
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -3323,7 +3487,6 @@ export default function AdminCommandCenter() {
                     </div>
                   </div>
 
-                  {/* 6. Tenant Billing & Proof History Table */}
                   <div>
                     <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                       <FileText className="w-4 h-4 text-indigo-600" />{' '}
@@ -3486,7 +3649,6 @@ export default function AdminCommandCenter() {
                 </div>
               </div>
 
-              {/* Sticky Modal Footer */}
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   {u.room_number && (
