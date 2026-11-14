@@ -1,431 +1,101 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ShieldCheck,
+  ShieldAlert,
+  DollarSign,
+  Building,
   Zap,
-  Droplets,
-  CheckCircle2,
-  ChevronDown,
+  UserPlus,
+  BellRing,
+  AlertTriangle,
+  X,
+  CalendarCheck,
+  Megaphone,
+  Trash2,
+  Radio,
+  RotateCcw,
+  ShieldCheck,
+  QrCode,
+  Download,
+  Upload,
+  Eye,
+  EyeOff,
+  ZoomIn,
+  ZoomOut,
   ChevronLeft,
   ChevronRight,
-  Upload,
-  Trash2,
-  ImagePlus,
-  Building,
-  Sparkles,
-  Moon,
-  AlertTriangle,
-  ArrowRight,
-  Loader2,
-  X,
-  BellRing,
-  Play,
-  Pause,
-  ZoomIn,
-  Layers,
-  Wrench,
-  Lock,
-  Car,
-  Users,
-  CreditCard,
-  MessageSquare,
-  Ban,
-  LogOut,
-  HeartHandshake,
-  FileCheck2,
+  Phone,
+  Mail,
   Home,
+  FileText,
+  CheckCircle2,
+  CreditCard,
+  Camera,
+  Loader2,
+  ImagePlus,
+  LogOut,
+  Search,
+  Edit3,
+  Layers,
+  Wallet,
 } from 'lucide-react';
-import axiosClient, { createReservation, acceptDigitalLease } from '../api/axiosClient';
-import { useAuth } from '../context/AuthContext';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from 'recharts';
+import axiosClient, {
+  fetchReservations,
+  processReservationAction,
+  fetchPendingMoveOuts,
+  processMoveOutRequest,
+  triggerBulkGenerateBills,
+  fetchNotices,
+  createNotice,
+  deleteNotice,
+  fetchAdminUsersManagement,
+  adminEvictOrManageUser,
+  manageAdminRole,
+  resetSmartRentDatabase,
+  fetchPaymentQRConfig,
+  updatePaymentQRConfig,
+  deletePaymentQRConfig,
+  downloadFileFromUrl,
+  auditKYC,
+} from '../api/axiosClient';
 import { useLanguage } from '../context/LanguageContext';
-import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
+import {
+  formatDualDate,
+  formatDualMonthLabel,
+  formatBSOnly,
+} from '../utils/nepaliDate';
 
-const DEFAULT_HERO_IMAGE =
-  'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=85';
+const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+const MAX_EVIDENCE_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-const MAX_BANNER_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
-
-const HOUSE_RULES_CATEGORIES = [
+const FINE_REASON_PRESETS = [
   {
-    id: 1,
-    title: '1. Cleanliness & Hygiene',
-    titleNe: '१. सरसफाइ र स्वच्छता',
-    subtitle: 'Sanitation standards for rooms, kitchens, drains, and shared spaces',
-    subtitleNe: 'कोठा, भान्सा, नाली र साझा स्थानहरूको सरसफाइ मापदण्ड',
-    icon: Sparkles,
-    iconBg: 'bg-emerald-50 text-emerald-600',
-    items: [
-      'Keep rooms, bathrooms, and shared spaces clean.',
-      'Dispose of garbage in designated dustbins.',
-      'Clean kitchens and shared facilities after use.',
-      'Do not throw waste, sanitary products, or food into drains or toilets.',
-      'Maintain cleanliness around the building.',
-    ],
-    itemsNe: [
-      'कोठा, बाथरुम र साझा स्थानहरू सधैं सफा राख्नुहोस्।',
-      'फोहोरमैला तोकिएको डस्टबिनमा मात्र फाल्नुहोस्।',
-      'भान्सा र साझा सुविधाहरू प्रयोग गरेपछि सफा राख्नुहोस्।',
-      'नाली वा शौचालयमा फोहोर, सेनिटरी सामान वा खाना नफाल्नुहोस्।',
-      'घर वरिपरिको वातावरण सफा र स्वच्छ राख्नुहोस्।',
-    ],
+    en: 'Unclean surroundings / corridor dirt violation',
+    ne: 'वरिपरि वा प्यासेजमा फोहोर गरेको जरिवाना',
   },
   {
-    id: 2,
-    title: '2. Property Damage & Maintenance',
-    titleNe: '२. सम्पत्ति सुरक्षा र मर्मत सम्भार',
-    subtitle: 'Care of walls, fixtures, and reporting of maintenance issues',
-    subtitleNe: 'भित्ता, ढोका, फर्निचरको सुरक्षा र मर्मत सम्बन्धी जानकारी',
-    icon: Wrench,
-    iconBg: 'bg-indigo-50 text-indigo-600',
-    items: [
-      'Take proper care of walls, doors, furniture, and fixtures.',
-      'Do not modify, drill, or repaint property without permission.',
-      'Report leaks, breakages, and maintenance issues immediately.',
-      'Tenants are responsible for damage caused by negligence or misuse.',
-      'Normal wear and tear is not chargeable.',
-    ],
-    itemsNe: [
-      'भित्ता, ढोका, फर्निचर र बत्ती/धाराका सामानहरूको उचित हेरचाह गर्नुहोस्।',
-      'अनुमति बिना भित्तामा प्वाल पार्ने, रङ लगाउने वा संरचना परिवर्तन नगर्नुहोस्।',
-      'पानी चुहिने, सामान टुटफुट हुने वा मर्मत समस्या भएमा तुरुन्तै जानकारी गराउनुहोस्।',
-      'लापरबाही वा गलत प्रयोगले भएको क्षतिको जिम्मेवारी भाडावाल स्वयंको हुनेछ।',
-      'सामान्य प्रयोगका क्रममा हुने प्राकृतिक खिइवटमा जरिवाना लाग्ने छैन।',
-    ],
+    en: 'Broken room fixture / property damage',
+    ne: 'कोठाको सामान टुटफुट वा क्षति पुर्याएको',
   },
   {
-    id: 3,
-    title: '3. Electricity & Water Usage',
-    titleNe: '३. बिजुली र पानीको प्रयोग',
-    subtitle: 'Responsible utility consumption and sub-meter integrity',
-    subtitleNe: 'बिजुली र पानीको सही सदुपयोग तथा सब-मिटर सुरक्षा',
-    icon: Zap,
-    iconBg: 'bg-amber-50 text-amber-600',
-    items: [
-      'Switch off lights and appliances when not in use.',
-      'Avoid unnecessary electricity and water wastage.',
-      'Use high-power appliances responsibly.',
-      'Do not tamper with meters, wiring, or connections.',
-      'Pay utility bills within the agreed deadline.',
-    ],
-    itemsNe: [
-      'प्रयोग नभएको बेला बत्ती र विद्युतीय उपकरणहरू बन्द गर्नुहोस्।',
-      'बिजुली र पानीको अनावश्यक खेर नफाल्नुहोस्।',
-      'उच्च क्षमताका विद्युतीय उपकरणहरू जिम्मेवारीपूर्वक प्रयोग गर्नुहोस्।',
-      'सब-मिटर, तार वा जडानमा कुनै पनि छेडछाड नगर्नुहोस्।',
-      'तोकिएको समयसीमा भित्र बिजुली र पानीको बिल भुक्तानी गर्नुहोस्।',
-    ],
+    en: 'Late night noise / discipline rule violation',
+    ne: 'राति होहल्ला वा अनुशासन नियम उल्लंघन',
   },
   {
-    id: 4,
-    title: '4. Noise & Peaceful Environment',
-    titleNe: '४. शान्त र मर्यादित वातावरण',
-    subtitle: 'Quiet hours (10:00 PM – 6:00 AM) and neighborly conduct',
-    subtitleNe: 'राति १०:०० देखि बिहान ६:०० सम्म शान्त समय र शिष्ट व्यवहार',
-    icon: Moon,
-    iconBg: 'bg-violet-50 text-violet-600',
-    items: [
-      'Avoid loud music, shouting, and unnecessary disturbances.',
-      'Maintain quiet hours from 10:00 PM to 6:00 AM.',
-      'Respect neighbors and other tenants.',
-      'Fighting, threatening, or disruptive behavior is prohibited.',
-    ],
-    itemsNe: [
-      'चर्को स्वरमा गीत बजाउने, कराउने र अनावश्यक होहल्ला नगर्नुहोस्।',
-      'राति १०:०० बजेदेखि बिहान ६:०० बजेसम्म पूर्ण शान्त वातावरण कायम राख्नुहोस्।',
-      'छिमेकी र अन्य भाडावालहरूलाई सम्मान गर्नुहोस्।',
-      'झगडा गर्ने, धम्की दिने वा अशान्ति फैलाउने कार्य पूर्णतः निषेधित छ।',
-    ],
-  },
-  {
-    id: 5,
-    title: '5. Security & Safety',
-    titleNe: '५. सुरक्षा र सावधानी',
-    subtitle: 'Access control, appliance safety, and emergency awareness',
-    subtitleNe: 'ढोका/ताला सुरक्षा, खाना पकाउँदा सावधानी र आपतकालीन सतर्कता',
-    icon: Lock,
-    iconBg: 'bg-teal-50 text-teal-600',
-    items: [
-      'Lock rooms and entrances when leaving.',
-      'Do not share keys or access codes with unauthorized people.',
-      'Inform the owner about overnight guests.',
-      'Never leave cooking appliances unattended.',
-      'Do not keep hazardous or illegal materials on the property.',
-      'Report suspicious activities and emergencies immediately.',
-    ],
-    itemsNe: [
-      'बाहिर जाँदा कोठा र मूल गेटमा राम्ररी ताला लगाउनुहोस्।',
-      'अपरिचित वा अनधिकृत व्यक्तिलाई साँचो वा प्रवेश कोड नदिनुहोस्।',
-      'रातभरि बस्ने पाहुना आउँदा घरधनीलाई जानकारी गराउनुहोस्।',
-      'खाना पकाउने ग्यास वा हिटर बालेर कोठा छोडेर नहिँड्नुहोस्।',
-      'घरमा कुनै पनि जोखिमपूर्ण वा गैरकानुनी वस्तुहरू नराख्नुहोस्।',
-      'शंकास्पद गतिविधि वा आपतकालीन अवस्था देखिएमा तुरुन्त खबर गर्नुहोस्।',
-    ],
-  },
-  {
-    id: 6,
-    title: '6. Parking & Common Areas',
-    titleNe: '६. पार्किङ र साझा क्षेत्रहरू',
-    subtitle: 'Designated parking and unobstructed corridors & staircases',
-    subtitleNe: 'तोकिएको स्थानमा पार्किङ र प्यासेज/भर्याङ खुला राख्ने नियम',
-    icon: Car,
-    iconBg: 'bg-sky-50 text-sky-600',
-    items: [
-      'Park vehicles only in designated spaces.',
-      'Keep corridors, staircases, and balconies clean.',
-      'Do not block entrances or other vehicles.',
-      'Do not misuse or damage shared facilities.',
-      'Keep common areas accessible to everyone.',
-    ],
-    itemsNe: [
-      'सवारी साधन तोकिएको पार्किङ स्थानमा मात्र राख्नुहोस्।',
-      'प्यासेज, भर्याङ र बाल्कोनी सधैं सफा राख्नुहोस्।',
-      'मूल ढोका वा अन्य सवारी साधन छेकिएर पार्किङ नगर्नुहोस्।',
-      'साझा सुविधाहरूको दुरुपयोग वा नोक्सानी नगर्नुहोस्।',
-      'साझा क्षेत्रहरू सबैका लागि सहज र खुला राख्नुहोस्।',
-    ],
-  },
-  {
-    id: 7,
-    title: '7. Visitors & Guests',
-    titleNe: '७. पाहुना र आगन्तुकहरू',
-    subtitle: 'Guest conduct and prior notice for overnight stays',
-    subtitleNe: 'पाहुनाको मर्यादित व्यवहार र राति बस्ने पाहुनाको जानकारी',
-    icon: Users,
-    iconBg: 'bg-indigo-50 text-indigo-600',
-    items: [
-      "Tenants are responsible for their visitors' behavior.",
-      'Inform the owner about overnight or extended stays.',
-      'Ensure guests respect other residents and house rules.',
-      'Visitors must not damage property or disturb others.',
-    ],
-    itemsNe: [
-      'आफ्ना पाहुनाहरूको व्यवहारप्रति भाडावाल स्वयं जिम्मेवार हुनेछन्।',
-      'पाहुना रातभरि वा लामो समय बस्ने भएमा घरधनीलाई जानकारी गराउनुहोस्।',
-      'पाहुनाहरूले अन्य भाडावाल र घरको नियमको पालना गरेको सुनिश्चित गर्नुहोस्।',
-      'पाहुनाहरूबाट घरको सम्पत्तिमा क्षति वा अन्यलाई डिस्टर्ब हुनु हुँदैन।',
-    ],
-  },
-  {
-    id: 8,
-    title: '8. Rent & Bill Payments',
-    titleNe: '८. कोठा भाडा र बिल भुक्तानी',
-    subtitle: 'Timely monthly settlement and receipt record-keeping',
-    subtitleNe: 'समयमै मासिक भाडा तथा बिल भुक्तानी र रसिद सुरक्षित राख्ने',
-    icon: CreditCard,
-    iconBg: 'bg-emerald-50 text-emerald-600',
-    items: [
-      'Pay monthly rent and utility bills on time.',
-      'Clear outstanding payments within the agreed period.',
-      'Inform the owner about possible payment delays.',
-      'Keep payment receipts for future reference.',
-      'Follow agreed rent and billing arrangements.',
-    ],
-    itemsNe: [
-      'मासिक कोठा भाडा र बिजुली/पानीको बिल समयमै भुक्तानी गर्नुहोस्।',
-      'बाँकी बक्यौता तोकिएको समयसीमा भित्रै चुक्ता गर्नुहोस्।',
-      'भुक्तानीमा केहि ढिलाइ हुने अवस्था आएमा समयमै घरधनीलाई जानकारी दिनुहोस्।',
-      'भुक्तानी गरेका रसिदहरू भविष्यको प्रयोजनका लागि सुरक्षित राख्नुहोस्।',
-      'सहमति अनुसारको भाडा र बिलिङ नियम पालना गर्नुहोस्।',
-    ],
-  },
-  {
-    id: 9,
-    title: '9. Maintenance & Communication',
-    titleNe: '९. मर्मत सम्भार र संवाद',
-    subtitle: 'Official reporting channels and inspection cooperation',
-    subtitleNe: 'वेबसाइट वा घरधनीमार्फत समस्या टिपाउने र निरीक्षणमा सहयोग',
-    icon: MessageSquare,
-    iconBg: 'bg-blue-50 text-blue-600',
-    items: [
-      'Report maintenance problems and damages promptly.',
-      'Obtain permission before making repairs or modifications.',
-      'Cooperate with scheduled inspections after prior notice.',
-      'Report complaints through the website or directly to the owner.',
-      'Allow necessary access during emergencies.',
-    ],
-    itemsNe: [
-      'मर्मत सम्भारका समस्या र टुटफुट तुरुन्तै जानकारी गराउनुहोस्।',
-      'कुनै मर्मत वा परिवर्तन गर्नुअघि घरधनीको अनुमति लिनुहोस्।',
-      'पूर्व जानकारी गराई गरिने कोठा निरीक्षणमा सहयोग गर्नुहोस्।',
-      'गुनासो वा समस्या स्मार्टरेन्ट वेबसाइट वा सिधै घरधनीलाई टिपाउनुहोस्।',
-      'आपतकालीन अवस्थामा आवश्यक जाँचका लागि प्रवेश सहज बनाउनुहोस्।',
-    ],
-  },
-  {
-    id: 10,
-    title: '10. Additional Restrictions',
-    titleNe: '१०. थप प्रतिबन्धहरू',
-    subtitle: 'Policies on pets, subletting, commercial use, and privacy',
-    subtitleNe: 'घरपालुवा जनावर, सब-लेटिङ, व्यापारिक प्रयोग र गोपनीयता',
-    icon: Ban,
-    iconBg: 'bg-rose-50 text-rose-600',
-    items: [
-      'Illegal activities are strictly prohibited.',
-      'Pets require prior owner approval.',
-      'Subletting requires written permission.',
-      'Unauthorized commercial activities are not allowed.',
-      "Respect everyone's privacy and personal belongings.",
-    ],
-    itemsNe: [
-      'गैरकानुनी गतिविधिहरू पूर्ण रूपमा निषेधित छन्।',
-      'घरपालुवा जनावर राख्न घरधनीको पूर्व अनुमति अनिवार्य छ।',
-      'लिखित अनुमति बिना कोठा अरुलाई भाडामा (Sublet) दिन पाइने छैन।',
-      'अनधिकृत व्यापारिक गतिविधि सञ्चालन गर्न पाइने छैन।',
-      'सबैको व्यक्तिगत गोपनीयता र सामानको सम्मान गर्नुहोस्।',
-    ],
-  },
-  {
-    id: 11,
-    title: '11. Damage Fines & Penalties',
-    titleNe: '११. क्षति जरिवाना र दण्डहरू',
-    subtitle: 'Official penalty schedule and transparent fine enforcement rules',
-    subtitleNe: 'नियम उल्लंघन वा क्षतिमा लाग्ने आधिकारिक जरिवाना तालिका',
-    icon: AlertTriangle,
-    iconBg: 'bg-rose-100 text-rose-600',
-    isHighlightedFineCategory: true,
-    items: [
-      'Every fine must include a clear reason.',
-      'Photographic evidence should be attached whenever possible.',
-      'Tenants receive notifications for issued fines.',
-      'Tenants can review and dispute fines.',
-      'Repair costs must have supporting evidence.',
-      'No fines for normal wear and tear.',
-      'All penalties must be reasonable and follow the rental agreement and applicable law.',
-    ],
-    itemsNe: [
-      'प्रत्येक जरिवानामा स्पष्ट कारण उल्लेख गरिएको हुनेछ।',
-      'सम्भव भएसम्म फोटो प्रमाण संलग्न गरिनेछ।',
-      'जरिवाना जारी हुँदा भाडावालले इमेल र ड्यासबोर्डमा सूचना पाउनेछन्।',
-      'भाडावालले जरिवानाको विवरण हेर्न र कुरा राख्न सक्नेछन्।',
-      'मर्मत खर्चमा आवश्यक बिल/प्रमाण समावेश हुनेछ।',
-      'सामान्य प्राकृतिक खिइवटमा कुनै जरिवाना लाग्ने छैन।',
-      'सबै जरिवानाहरू न्यायोचित र भाडा सम्झौता अनुरूप हुनेछन्।',
-    ],
-  },
-  {
-    id: 12,
-    title: '12. Moving In & Moving Out',
-    titleNe: '१२. कोठामा सर्दा र कोठा छोड्दा',
-    subtitle: 'Registration, handover inspection, advance notice, and final settlement',
-    subtitleNe: 'दर्ता, कोठा बुझबुझारथ, पूर्व सूचना र अन्तिम हिसाब फरफारक',
-    icon: LogOut,
-    iconBg: 'bg-amber-50 text-amber-600',
-    items: [
-      'Complete registration before occupying the room.',
-      'Inspect and report existing damages during handover.',
-      'Provide advance notice before vacating.',
-      'Clear outstanding rent and bills before departure.',
-      'Return keys and owner-provided belongings.',
-      'Complete the final inspection before deposit settlement.',
-    ],
-    itemsNe: [
-      'कोठामा सर्नुअघि अनलाइन दर्ता र केवाईसी (KYC) पूरा गर्नुहोस्।',
-      'कोठा बुझ्दा पहिले नै कुनै क्षति भएमा तुरुन्तै जानकारी गराउनुहोस्।',
-      'कोठा छोड्नुअघि पूर्व सूचना (Move-Out Request) दिनुहोस्।',
-      'कोठा छोड्नुअघि बाँकी भाडा र बिजुली/पानीको बिल चुक्ता गर्नुहोस्।',
-      'कोठाको साँचो र घरधनीले उपलब्ध गराएका सामानहरू फिर्ता गर्नुहोस्।',
-      'अन्तिम मिटर रिडिङ र निरीक्षण पछि मात्र हिसाब फरफारक गरिनेछ।',
-    ],
-  },
-  {
-    id: 13,
-    title: '13. General Responsibilities',
-    titleNe: '१३. सामान्य जिम्मेवारीहरू',
-    subtitle: 'Community harmony, announcements, and agreement compliance',
-    subtitleNe: 'आपसी सद्भाव, घरधनीको सूचना पालना र सम्झौताको सम्मान',
-    icon: HeartHandshake,
-    iconBg: 'bg-teal-50 text-teal-600',
-    items: [
-      'Respect other tenants, their privacy, and belongings.',
-      'Maintain a friendly and cooperative environment.',
-      'Follow owner announcements and instructions.',
-      'Keep registered contact information updated.',
-      'Repeated violations may result in action under the rental agreement.',
-    ],
-    itemsNe: [
-      'अन्य भाडावाल, उनीहरूको गोपनीयता र सामानको सम्मान गर्नुहोस्।',
-      'मित्रवत र सहयोगी वातावरण कायम राख्नुहोस्।',
-      'घरधनीका आधिकारिक सूचना र निर्देशनहरू पालना गर्नुहोस्।',
-      'आफ्नो दर्ता गरिएको मोबाइल नम्बर र विवरण अद्यावधिक राख्नुहोस्।',
-      'पटक-पटक नियम उल्लंघन भएमा भाडा सम्झौता अनुसार कारबाही हुन सक्नेछ।',
-    ],
-  },
-];
-
-const DAMAGE_FINE_PENALTIES = [
-  {
-    violation: 'Littering in shared areas',
-    violationNe: 'साझा क्षेत्रमा फोहोर फाल्दा',
-    penalty: 'NPR 100–200',
-    penaltyNe: 'रु. १००–२००',
-  },
-  {
-    violation: 'Repeated noise disturbances',
-    violationNe: 'पटक-पटक होहल्ला वा डिस्टर्ब गर्दा',
-    penalty: 'NPR 200–500',
-    penaltyNe: 'रु. २००–५००',
-  },
-  {
-    violation: 'Intentional water wastage',
-    violationNe: 'जानीजानी पानी खेर फाल्दा',
-    penalty: 'Actual additional cost',
-    penaltyNe: 'थप वास्तविक लागत',
-  },
-  {
-    violation: 'Damaged furniture or fixtures',
-    violationNe: 'फर्निचर वा सामान टुटफुट भएमा',
-    penalty: 'Repair/replacement cost',
-    penaltyNe: 'मर्मत / प्रतिस्थापन खर्च',
-  },
-  {
-    violation: 'Plumbing or electrical damage',
-    violationNe: 'धारा/पाइप वा बिजुलीमा क्षति पुर्याएमा',
-    penalty: 'Actual repair cost',
-    penaltyNe: 'वास्तविक मर्मत खर्च',
-  },
-  {
-    violation: 'Unauthorized modifications',
-    violationNe: 'अनुमति बिना कोठाको संरचना परिवर्तन गरेमा',
-    penalty: 'Restoration cost',
-    penaltyNe: 'पहिलेकै अवस्थामा फर्काउने खर्च',
-  },
-  {
-    violation: 'Damage caused by guests',
-    violationNe: 'पाहुनाबाट भएको क्षति',
-    penalty: 'Actual repair cost',
-    penaltyNe: 'वास्तविक मर्मत खर्च',
-  },
-];
-
-const FINE_GUIDELINES_LIST = [
-  {
-    en: 'Every fine must include a clear reason.',
-    ne: 'प्रत्येक जरिवानामा स्पष्ट कारण उल्लेख गरिएको हुनेछ।',
-  },
-  {
-    en: 'Photographic evidence should be attached whenever possible.',
-    ne: 'सम्भव भएसम्म फोटो प्रमाण संलग्न गरिनेछ।',
-  },
-  {
-    en: 'Tenants receive notifications for issued fines.',
-    ne: 'जरिवाना जारी हुँदा भाडावालले इमेल र ड्यासबोर्डमा सूचना पाउनेछन्।',
-  },
-  {
-    en: 'Tenants can review and dispute fines.',
-    ne: 'भाडावालले जरिवानाको विवरण हेर्न र कुरा राख्न सक्नेछन्।',
-  },
-  {
-    en: 'Repair costs must have supporting evidence.',
-    ne: 'मर्मत खर्चमा आवश्यक बिल/प्रमाण समावेश हुनेछ।',
-  },
-  {
-    en: 'No fines for normal wear and tear.',
-    ne: 'सामान्य प्राकृतिक खिइवटमा कुनै जरिवाना लाग्ने छैन।',
-  },
-  {
-    en: 'All penalties must be reasonable and follow the rental agreement and applicable law.',
-    ne: 'सबै जरिवानाहरू न्यायोचित र भाडा सम्झौता अनुरूप हुनेछन्।',
+    en: 'Improper waste disposal / sanitation fine',
+    ne: 'जथाभावी फोहोर फालेको / सरसफाइ नियम उल्लंघन',
   },
 ];
 
@@ -466,258 +136,378 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   return finalUrl;
 }
 
-export default function PublicLanding() {
-  const { user, isAdmin, openAuthModal, refreshProfile } = useAuth();
-  const { isNepali, t, td } = useLanguage();
-  const navigate = useNavigate();
+export default function AdminCommandCenter() {
   const queryClient = useQueryClient();
+  const { isNepali, t, td } = useLanguage();
 
-  // UI Filter & Slideshow States
-  const [floorFilter, setFloorFilter] = useState('ALL'); // ALL | GROUND | FIRST
-  const [availableOnly, setAvailableOnly] = useState(false);
-  const [activeSlide, setActiveSlide] = useState(0);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const [isHoveringHero, setIsHoveringHero] = useState(false);
-  const [showLightbox, setShowLightbox] = useState(false);
+  // Top-level Admin Navigation Tabs
+  const [activeAdminTab, setActiveAdminTab] = useState('OVERVIEW'); // OVERVIEW | USERS | ADMINS
+  // Unified Action Center Sub-Tab (Inside Overview)
+  const [actionQueueTab, setActionQueueTab] = useState('BILLS'); // BILLS | BOOKINGS | MOVEOUTS
 
-  // 13-Category Accordion & Tenant Acknowledgment States
-  const [openRuleIndex, setOpenRuleIndex] = useState(0);
-  const [expandAllRules, setExpandAllRules] = useState(false);
-  const [rulesAcceptedLocal, setRulesAcceptedLocal] = useState(() => {
-    try {
-      return localStorage.getItem('smartrent_rules_accepted') === 'true';
-    } catch {
-      return false;
-    }
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [userToDelete, setUserToDelete] = useState(null);
+
+  // Edit Room Sub-Meter Modal States
+  const [editMeterRoom, setEditMeterRoom] = useState(null);
+  const [editMeterValue, setEditMeterValue] = useState('');
+
+  // Managed List Filter & Search States
+  const [reservationFilter, setReservationFilter] = useState('PENDING'); // PENDING | APPROVED | ALL
+  const [billQueueFilter, setBillQueueFilter] = useState('OPEN'); // OPEN | APPROVED | ALL
+  const [roomMatrixFilter, setRoomMatrixFilter] = useState('ALL'); // ALL | OCCUPIED | VACANT
+  const [tenantListFilter, setTenantListFilter] = useState('ALL'); // ALL | ASSIGNED | UNASSIGNED | KYC_VERIFIED
+  const [tenantSearchQuery, setTenantSearchQuery] = useState('');
+
+  // Fullscreen Photo Lightbox States
+  const [lightboxState, setLightboxState] = useState({
+    isOpen: false,
+    items: [],
+    currentIndex: 0,
+    zoom: 1,
   });
-  const [rulesAckMsg, setRulesAckMsg] = useState('');
 
-  // Reservation Modal States
-  const [reservingRoom, setReservingRoom] = useState(null);
-  const [requestType, setRequestType] = useState('RESERVE');
-  const [moveInDate, setMoveInDate] = useState(new Date().toISOString().split('T')[0]);
-  const [occupantsCount, setOccupantsCount] = useState(1);
-  const [phoneNum, setPhoneNum] = useState(user?.phone_number || '');
-  const [occupation, setOccupation] = useState('');
-  const [message, setMessage] = useState('');
-  const [tokenAmount, setTokenAmount] = useState('500');
-  const [paymentScreenshot, setPaymentScreenshot] = useState(null);
-  const [citizenshipDoc, setCitizenshipDoc] = useState(null);
-  const [reservationMsg, setReservationMsg] = useState({ type: '', text: '' });
+  const [bannerMsg, setBannerMsg] = useState({ type: '', text: '' });
+  const [selectedBillForAudit, setSelectedBillForAudit] = useState(null);
+  const [adminRemarks, setAdminRemarks] = useState('');
+  const [selectedReservation, setSelectedReservation] = useState(null);
+  const [startingMeterOverride, setStartingMeterOverride] = useState('');
 
-  // Admin Multi-Image Hero Banner Manager States
-  const [showBannerEditor, setShowBannerEditor] = useState(false);
-  const [bannerTitle, setBannerTitle] = useState('Studio B2 • Balcony Suite');
-  const [bannerSubtitle, setBannerSubtitle] = useState(
-    'Sub-meter #M-202 • Digital Telemetry Active'
-  );
-  const [bannerBadge, setBannerBadge] = useState('Physical Inspection Passed');
-  const [bannerFiles, setBannerFiles] = useState([]);
-  const [bannerPreviews, setBannerPreviews] = useState([]);
-  const [bannerFeedback, setBannerFeedback] = useState({ type: '', text: '' });
+  // Move-Out & Final Settlement States
+  const [selectedMoveOut, setSelectedMoveOut] = useState(null);
+  const [finalMeterOverride, setFinalMeterOverride] = useState('');
+  const [moveOutRemarks, setMoveOutRemarks] = useState('');
 
-  // Fetch live Landing Data
-  const { data, isLoading } = useQuery({
-    queryKey: ['publicLandingData'],
+  // Overrides & Modals
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [cashTenantId, setCashTenantId] = useState('');
+  const [cashBillId, setCashBillId] = useState('');
+  const [cashMeterReading, setCashMeterReading] = useState('');
+  const [cashFine, setCashFine] = useState('0');
+  const [cashReason, setCashReason] = useState('');
+
+  const [assignModalRoom, setAssignModalRoom] = useState(null);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startingMeter, setStartingMeter] = useState('0');
+
+  // Upgraded Fine Management & Evidence Upload States
+  const [showFineModal, setShowFineModal] = useState(false);
+  const [fineTenantId, setFineTenantId] = useState('');
+  const [fineBillId, setFineBillId] = useState('');
+  const [fineMode, setFineMode] = useState('SET');
+  const [fineAmount, setFineAmount] = useState('');
+  const [fineReason, setFineReason] = useState('');
+  const [fineEvidenceFiles, setFineEvidenceFiles] = useState([]);
+  const [fineEvidencePreviews, setFineEvidencePreviews] = useState([]);
+  const [fineModalError, setFineModalError] = useState('');
+
+  // Payment QR Setup Modal States
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrMerchantName, setQrMerchantName] = useState('');
+  const [qrPaymentNote, setQrPaymentNote] = useState('');
+  const [qrImageFile, setQrImageFile] = useState(null);
+  const [qrImagePreview, setQrImagePreview] = useState(null);
+
+  // Add Admin Modal States
+  const [showAddAdminModal, setShowAddAdminModal] = useState(false);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminPhone, setNewAdminPhone] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
+
+  // 2-Step Database Factory Reset Modal States
+  const [resetStep, setResetStep] = useState(0);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetModalError, setResetModalError] = useState('');
+
+  // Notice Board Form States
+  const [noticeTitle, setNoticeTitle] = useState('');
+  const [noticeContent, setNoticeContent] = useState('');
+  const [noticeCategory, setNoticeCategory] = useState('GENERAL');
+
+  // Expense Form
+  const [expenseCategory, setExpenseCategory] = useState('ELECTRICITY_MAIN');
+  const [expenseTitle, setExpenseTitle] = useState('');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expenseNotes, setExpenseNotes] = useState('');
+  const [expenseReceipt, setExpenseReceipt] = useState(null);
+
+  // 4-Second Live Auto-Sync Queries
+  const { data: analytics, isLoading: analyticsLoading } = useQuery({
+    queryKey: ['adminAnalytics'],
+    queryFn: async () => (await axiosClient.get('/billing/analytics/')).data,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
+
+  const { data: rawBills = [] } = useQuery({
+    queryKey: ['allBills'],
     queryFn: async () => {
-      const res = await axiosClient.get('/rooms/landing/');
-      return res.data;
+      const res = await axiosClient.get('/billing/');
+      return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
+
+  const { data: paymentQR } = useQuery({
+    queryKey: ['paymentQRConfig'],
+    queryFn: fetchPaymentQRConfig,
     refetchInterval: 4000,
   });
 
-  const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
-  const rawBanners = Array.isArray(data?.banners) ? data.banners : [];
-  const notices = Array.isArray(data?.notices) ? data.notices : [];
-  const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
+  const { data: roomsData } = useQuery({
+    queryKey: ['roomsMatrix'],
+    queryFn: async () => (await axiosClient.get('/rooms/')).data,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
 
-  const hasAcceptedRules = Boolean(user?.has_accepted_lease || rulesAcceptedLocal);
+  const { data: adminUsers = [] } = useQuery({
+    queryKey: ['adminUsersManagement'],
+    queryFn: fetchAdminUsersManagement,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
 
-  const banners = rawBanners.map((b) => ({
-    ...b,
-    resolved_url:
-      getSafeMediaUrl(b.image_path || b.image_url || b.image) || DEFAULT_HERO_IMAGE,
-  }));
+  const { data: rawReservations = [] } = useQuery({
+    queryKey: ['adminReservations'],
+    queryFn: fetchReservations,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
+
+  const { data: rawMoveOuts = [] } = useQuery({
+    queryKey: ['adminPendingMoveOuts'],
+    queryFn: fetchPendingMoveOuts,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
+
+  const { data: rawNotices = [] } = useQuery({
+    queryKey: ['adminNotices'],
+    queryFn: fetchNotices,
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
 
   useEffect(() => {
-    if (banners.length > 0 && activeSlide >= banners.length) {
-      setActiveSlide(0);
+    if (paymentQR) {
+      setQrMerchantName(paymentQR.merchant_name || 'SmartRent Official eSewa / Fonepay');
+      setQrPaymentNote(
+        paymentQR.payment_note ||
+          'Scan this QR with eSewa, Khalti, or Mobile Banking and upload screenshot.'
+      );
     }
-  }, [banners.length, activeSlide]);
-
-  useEffect(() => {
-    if (!isAutoPlaying || isHoveringHero || showLightbox || banners.length <= 1) {
-      return undefined;
-    }
-    const timer = setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % banners.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, [isAutoPlaying, isHoveringHero, showLightbox, banners.length]);
+  }, [paymentQR]);
 
   useEffect(() => {
     return () => {
-      bannerPreviews.forEach((p) => {
-        if (p.url && p.url.startsWith('blob:')) {
-          URL.revokeObjectURL(p.url);
-        }
+      fineEvidencePreviews.forEach((p) => {
+        if (p.url?.startsWith('blob:')) URL.revokeObjectURL(p.url);
       });
     };
-  }, [bannerPreviews]);
+  }, [fineEvidencePreviews]);
 
-  const acceptRulesMutation = useMutation({
-    mutationFn: acceptDigitalLease,
-    onSuccess: async (resData) => {
-      try {
-        localStorage.setItem('smartrent_rules_accepted', 'true');
-      } catch {
-        // Ignore
-      }
-      setRulesAcceptedLocal(true);
-      setRulesAckMsg(
-        resData?.message ||
-          t(
-            'Thank you! Your acknowledgment of the House Rules & Guidelines has been recorded.',
-            'धन्यवाद! घरको नियम तथा निर्देशिकामा तपाईंको सहमति सुरक्षित गरियो।'
-          )
-      );
-      if (typeof refreshProfile === 'function') {
-        await refreshProfile();
-      }
-      queryClient.invalidateQueries({ queryKey: ['tenantKYC'] });
-      queryClient.invalidateQueries({ queryKey: ['tenantMeProfile'] });
-      queryClient.invalidateQueries({ queryKey: ['meProfileSettings'] });
-    },
-    onError: () => {
-      try {
-        localStorage.setItem('smartrent_rules_accepted', 'true');
-      } catch {
-        // Ignore
-      }
-      setRulesAcceptedLocal(true);
-      setRulesAckMsg(
-        t(
-          'House Rules & Guidelines acknowledgment saved!',
-          'घरको नियम तथा निर्देशिकामा तपाईंको सहमति सुरक्षित गरियो!'
-        )
-      );
-    },
+  const bills = Array.isArray(rawBills) ? rawBills : [];
+  const reservations = Array.isArray(rawReservations) ? rawReservations : [];
+  const pendingMoveOuts = Array.isArray(rawMoveOuts) ? rawMoveOuts : [];
+  const notices = Array.isArray(rawNotices) ? rawNotices : [];
+
+  const tenantUsers = adminUsers.filter((u) => u.role !== 'ADMIN');
+  const adminTeamUsers = adminUsers.filter((u) => u.role === 'ADMIN');
+
+  const selectedUserModal = selectedUserId
+    ? adminUsers.find((u) => u.id === selectedUserId) || null
+    : null;
+
+  const pendingQueue = bills.filter((b) => b.status === 'PENDING_VERIFICATION');
+  const pendingReservations = reservations.filter((r) => r.status === 'PENDING');
+  const approvedReservations = reservations.filter((r) => r.status === 'APPROVED');
+
+  const unpaidOrPendingBills = bills.filter(
+    (b) => b.status !== 'APPROVED' && b.status !== 'PAID_CASH'
+  );
+  const approvedOrPaidBills = bills.filter(
+    (b) => b.status === 'APPROVED' || b.status === 'PAID_CASH'
+  );
+  const selectableBillsForDropdown =
+    unpaidOrPendingBills.length > 0 ? unpaidOrPendingBills : bills;
+
+  const displayedReservations =
+    reservationFilter === 'PENDING'
+      ? pendingReservations
+      : reservationFilter === 'APPROVED'
+      ? approvedReservations
+      : reservations;
+
+  const displayedBillsQueue =
+    billQueueFilter === 'OPEN'
+      ? unpaidOrPendingBills
+      : billQueueFilter === 'APPROVED'
+      ? approvedOrPaidBills
+      : bills;
+
+  const filteredBillsForFine = fineTenantId
+    ? bills.filter(
+        (b) =>
+          String(b.tenant) === String(fineTenantId) ||
+          String(b.tenant_id) === String(fineTenantId)
+      )
+    : selectableBillsForDropdown;
+
+  const selectedFineTenantObj = fineTenantId
+    ? adminUsers.find((u) => String(u.id) === String(fineTenantId))
+    : null;
+
+  const selectedFineBillObj = fineBillId
+    ? bills.find((b) => String(b.id) === String(fineBillId))
+    : null;
+
+  const roomsList = Array.isArray(roomsData)
+    ? roomsData
+    : Array.isArray(roomsData?.rooms)
+    ? roomsData.rooms
+    : Array.isArray(roomsData?.results)
+    ? roomsData.results
+    : [];
+
+  const occupiedRoomsCount = roomsList.filter((r) => r.is_occupied).length;
+  const vacantRoomsCount = roomsList.length - occupiedRoomsCount;
+
+  const displayedRoomsList = roomsList.filter((r) => {
+    if (roomMatrixFilter === 'OCCUPIED') return r.is_occupied;
+    if (roomMatrixFilter === 'VACANT') return !r.is_occupied;
+    return true;
   });
 
-  const handleAcceptHouseRules = () => {
-    if (user) {
-      acceptRulesMutation.mutate();
-    } else {
-      try {
-        localStorage.setItem('smartrent_rules_accepted', 'true');
-      } catch {
-        // Ignore
-      }
-      setRulesAcceptedLocal(true);
-      setRulesAckMsg(
-        t(
-          'You have accepted the House Rules & Guidelines! Sign in anytime to link this acknowledgment to your tenant profile.',
-          'तपाईंले घरको नियम तथा निर्देशिका स्वीकार गर्नुभएको छ! यसलाई आफ्नो प्रोफाइलमा जोड्न लगइन गर्नुहोस्।'
-        )
+  const assignedTenantsCount = tenantUsers.filter((u) => Boolean(u.room_number)).length;
+  const unassignedTenantsCount = tenantUsers.length - assignedTenantsCount;
+
+  const filteredTenantUsers = tenantUsers.filter((u) => {
+    if (tenantListFilter === 'ASSIGNED' && !u.room_number) return false;
+    if (tenantListFilter === 'UNASSIGNED' && u.room_number) return false;
+    if (tenantListFilter === 'KYC_VERIFIED' && u.kyc_status !== 'VERIFIED') return false;
+
+    if (tenantSearchQuery.trim()) {
+      const q = tenantSearchQuery.toLowerCase().trim();
+      const matchName = (u.full_name || '').toLowerCase().includes(q);
+      const matchEmail = (u.email || '').toLowerCase().includes(q);
+      const matchPhone = (u.phone_number || '').toLowerCase().includes(q);
+      const matchRoom = (u.room_number || '').toLowerCase().includes(q);
+      return matchName || matchEmail || matchPhone || matchRoom;
+    }
+    return true;
+  });
+
+  const monthlyTrendChartData = (analytics?.monthly_trend_chart || []).map((item) => ({
+    ...item,
+    month: formatDualMonthLabel(item.month),
+  }));
+
+  const openEditMeterModal = (roomObj) => {
+    if (!roomObj) return;
+    setEditMeterRoom(roomObj);
+    setEditMeterValue(String(roomObj.current_meter_reading ?? 0));
+  };
+
+  const openFineModalForUser = (userObj = null, billObj = null) => {
+    setFineModalError('');
+    setFineAmount('');
+    setFineReason('');
+    setFineMode('SET');
+    setFineEvidenceFiles([]);
+    setFineEvidencePreviews([]);
+
+    if (billObj) {
+      setFineBillId(String(billObj.id));
+      setFineTenantId(String(billObj.tenant || billObj.tenant_id || ''));
+    } else if (userObj) {
+      setFineTenantId(String(userObj.id));
+      const userOpenBill = bills.find(
+        (b) =>
+          (String(b.tenant) === String(userObj.id) ||
+            String(b.tenant_id) === String(userObj.id)) &&
+          b.status !== 'APPROVED' &&
+          b.status !== 'PAID_CASH'
       );
+      const userAnyBill = bills.find(
+        (b) =>
+          String(b.tenant) === String(userObj.id) ||
+          String(b.tenant_id) === String(userObj.id)
+      );
+      setFineBillId(
+        userOpenBill ? String(userOpenBill.id) : userAnyBill ? String(userAnyBill.id) : ''
+      );
+    } else {
+      setFineTenantId('');
+      setFineBillId('');
+    }
+    setShowFineModal(true);
+  };
+
+  const handleSelectFineTenant = (tenantIdVal) => {
+    setFineTenantId(tenantIdVal);
+    setFineModalError('');
+    if (!tenantIdVal) {
+      setFineBillId('');
+      return;
+    }
+    const matchingOpenBill = bills.find(
+      (b) =>
+        (String(b.tenant) === String(tenantIdVal) ||
+          String(b.tenant_id) === String(tenantIdVal)) &&
+        b.status !== 'APPROVED' &&
+        b.status !== 'PAID_CASH'
+    );
+    const matchingAnyBill = bills.find(
+      (b) =>
+        String(b.tenant) === String(tenantIdVal) ||
+        String(b.tenant_id) === String(tenantIdVal)
+    );
+    if (matchingOpenBill) {
+      setFineBillId(String(matchingOpenBill.id));
+    } else if (matchingAnyBill) {
+      setFineBillId(String(matchingAnyBill.id));
+    } else {
+      setFineBillId('');
     }
   };
 
-  const uploadBannerMutation = useMutation({
-    mutationFn: async (formData) => {
-      const res = await axiosClient.post('/rooms/banners/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      return res.data;
-    },
-    onSuccess: (resData) => {
-      queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
-      setBannerFiles([]);
-      setBannerPreviews([]);
-      setActiveSlide(0);
-      setBannerFeedback({
-        type: 'success',
-        text:
-          resData?.message ||
-          t('Hero slideshow images uploaded successfully!', 'स्लाइडशो फोटोहरू सफलतापूर्वक अपलोड भए!'),
-      });
-    },
-    onError: (err) => {
-      setBannerFeedback({
-        type: 'error',
-        text:
-          err.response?.data?.error ||
-          err.response?.data?.detail ||
-          t(
-            'Failed to upload banner image(s). Make sure each image is under 5 MB.',
-            'फोटो अपलोड हुन सकेन। प्रत्येक फोटो ५ एमबी भन्दा कम हुनुपर्छ।'
-          ),
-      });
-    },
-  });
+  const handleSelectFineBill = (billIdVal) => {
+    setFineBillId(billIdVal);
+    setFineModalError('');
+    if (billIdVal) {
+      const foundBill = bills.find((b) => String(b.id) === String(billIdVal));
+      if (foundBill && (foundBill.tenant || foundBill.tenant_id)) {
+        setFineTenantId(String(foundBill.tenant || foundBill.tenant_id));
+      }
+    }
+  };
 
-  const deleteBannerMutation = useMutation({
-    mutationFn: async (bannerId) => {
-      await axiosClient.delete(`/rooms/banners/${bannerId}/`);
-    },
-    onSuccess: () => {
-      setActiveSlide((prev) => Math.max(0, prev - 1));
-      queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
-      setBannerFeedback({
-        type: 'success',
-        text: t('Slide removed from hero slideshow.', 'स्लाइडशोबाट फोटो हटाइयो।'),
-      });
-    },
-  });
-
-  const reserveMutation = useMutation({
-    mutationFn: async (formData) => {
-      return await createReservation(formData);
-    },
-    onSuccess: () => {
-      setReservationMsg({
-        type: 'success',
-        text: t(
-          'Room reservation request submitted successfully! Landlord will review and assign.',
-          'कोठा बुकिङ अनुरोध सफलतापूर्वक पठाइयो! घरधनीले जाँच गरी कोठा तोक्नुहुनेछ।'
-        ),
-      });
-      setTimeout(() => {
-        setReservingRoom(null);
-        setReservationMsg({ type: '', text: '' });
-      }, 2500);
-      queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
-    },
-    onError: (err) => {
-      setReservationMsg({
-        type: 'error',
-        text:
-          err.response?.data?.room?.[0] ||
-          err.response?.data?.detail ||
-          t('Failed to submit reservation.', 'बुकिङ अनुरोध पठाउन सकिएन।'),
-      });
-    },
-  });
-
-  const handleSelectMultipleBannerFiles = (e) => {
-    const selectedList = Array.from(e.target.files || []);
-    if (selectedList.length === 0) return;
+  const handleFineEvidenceSelect = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setFineModalError('');
 
     const validFiles = [];
-    const newPreviews = [];
+    const previews = [];
 
-    for (const file of selectedList) {
-      if (file.size > MAX_BANNER_SIZE_BYTES) {
-        setBannerFeedback({
-          type: 'error',
-          text: `"${file.name}" exceeds the 5 MB limit (${(file.size / 1024 / 1024).toFixed(
-            2
-          )} MB).`,
-        });
+    for (const file of files) {
+      if (file.size > MAX_EVIDENCE_FILE_SIZE) {
+        setFineModalError(
+          t(
+            `"${file.name}" exceeds the 5 MB limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`,
+            `"${file.name}" ५ MB सीमाभन्दा ठूलो छ।`
+          )
+        );
         continue;
       }
       validFiles.push(file);
-      newPreviews.push({
+      previews.push({
         name: file.name,
         url: URL.createObjectURL(file),
         sizeMB: (file.size / (1024 * 1024)).toFixed(2),
@@ -725,936 +515,4510 @@ export default function PublicLanding() {
     }
 
     if (validFiles.length > 0) {
-      setBannerFiles((prev) => [...prev, ...validFiles]);
-      setBannerPreviews((prev) => [...prev, ...newPreviews]);
-      setBannerFeedback({
-        type: 'info',
-        text: t(
-          `${validFiles.length} image(s) queued for slideshow upload. Click "Upload to Slideshow" below.`,
-          `${validFiles.length} फोटो(हरू) अपलोडका लागि तयार छन्। तलको अपलोड बटन थिच्नुहोस्।`
-        ),
-      });
+      setFineEvidenceFiles((prev) => [...prev, ...validFiles]);
+      setFineEvidencePreviews((prev) => [...prev, ...previews]);
     }
     e.target.value = '';
   };
 
-  const removeQueuedBannerFile = (indexToRemove) => {
-    setBannerFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
-    setBannerPreviews((prev) => {
-      const target = prev[indexToRemove];
-      if (target?.url?.startsWith('blob:')) {
-        URL.revokeObjectURL(target.url);
-      }
-      return prev.filter((_, idx) => idx !== indexToRemove);
+  const removeFineEvidenceFile = (idxToRemove) => {
+    setFineEvidenceFiles((prev) => prev.filter((_, idx) => idx !== idxToRemove));
+    setFineEvidencePreviews((prev) => {
+      const target = prev[idxToRemove];
+      if (target?.url?.startsWith('blob:')) URL.revokeObjectURL(target.url);
+      return prev.filter((_, idx) => idx !== idxToRemove);
     });
   };
 
-  const handleBannerUpload = (e) => {
-    e.preventDefault();
-    if (bannerFiles.length === 0) {
-      setBannerFeedback({
-        type: 'error',
-        text: t('Please select one or more images first.', 'कृपया पहिले कम्तीमा एउटा फोटो छान्नुहोस्।'),
+  const openPhotoLightbox = (itemsList, startIndex = 0) => {
+    const validItems = itemsList.filter((item) => Boolean(item?.url));
+    if (validItems.length === 0) return;
+    setLightboxState({
+      isOpen: true,
+      items: validItems,
+      currentIndex: Math.min(startIndex, validItems.length - 1),
+      zoom: 1,
+    });
+  };
+
+  const closePhotoLightbox = () => {
+    setLightboxState((prev) => ({ ...prev, isOpen: false, zoom: 1 }));
+  };
+
+  const buildUserGalleryItems = (u) => {
+    if (!u) return [];
+    const items = [];
+    const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
+    const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
+    const citFrontUrl = getSafeMediaUrl(u.citizenship_front_url);
+    const citBackUrl = getSafeMediaUrl(u.citizenship_back_url);
+
+    if (avatarUrl) {
+      items.push({
+        key: 'AVATAR',
+        url: avatarUrl,
+        title: `${u.full_name} — ${t('Profile Avatar', 'प्रोफाइल फोटो')}`,
+        subtitle: u.email,
       });
+    }
+    if (coverUrl) {
+      items.push({
+        key: 'COVER',
+        url: coverUrl,
+        title: `${u.full_name} — ${t('Cover Banner', 'कभर ब्यानर')}`,
+        subtitle: u.email,
+      });
+    }
+    if (citFrontUrl) {
+      items.push({
+        key: 'CIT_FRONT',
+        url: citFrontUrl,
+        title: `${u.full_name} — ${t('Citizenship ID (Front)', 'नागरिकता (अगाडि)')}`,
+        subtitle: `${t('Citizenship No:', 'नागरिकता नं:')} ${u.citizenship_number || 'N/A'}`,
+      });
+    }
+    if (citBackUrl) {
+      items.push({
+        key: 'CIT_BACK',
+        url: citBackUrl,
+        title: `${u.full_name} — ${t('Citizenship ID (Back)', 'नागरिकता (पछाडि)')}`,
+        subtitle: `${t('Citizenship No:', 'नागरिकता नं:')} ${u.citizenship_number || 'N/A'}`,
+      });
+    }
+    if (Array.isArray(u.recent_bills)) {
+      u.recent_bills.forEach((b) => {
+        const mUrl = getSafeMediaUrl(b.meter_photo_url);
+        const pUrl = getSafeMediaUrl(b.payment_screenshot_url);
+        if (mUrl) {
+          items.push({
+            key: `BILL_METER_${b.id}`,
+            url: mUrl,
+            title: `${t('Meter Photo Proof', 'मिटर फोटो प्रमाण')} — ${formatDualMonthLabel(
+              b.billing_month_label
+            )}`,
+            subtitle: `${t('Room', 'कोठा')} ${b.room_number} • ${b.units_consumed} ${t(
+              'units',
+              'युनिट'
+            )} • ${t('Rs.', 'रु.')} ${b.total_payable}`,
+          });
+        }
+        if (pUrl) {
+          items.push({
+            key: `BILL_PAY_${b.id}`,
+            url: pUrl,
+            title: `${t('Payment Receipt', 'भुक्तानी भौचर')} — ${formatDualMonthLabel(
+              b.billing_month_label
+            )}`,
+            subtitle: `${t('Room', 'कोठा')} ${b.room_number} • Ref: ${
+              b.transaction_reference || 'N/A'
+            } • ${t('Rs.', 'रु.')} ${b.total_payable}`,
+          });
+        }
+      });
+    }
+    const userFullBills = bills.filter(
+      (b) => String(b.tenant) === String(u.id) || String(b.tenant_id) === String(u.id)
+    );
+    userFullBills.forEach((b) => {
+      if (Array.isArray(b.fine_evidence_urls)) {
+        b.fine_evidence_urls.forEach((evUrl, evIdx) => {
+          const safeEv = getSafeMediaUrl(evUrl);
+          if (safeEv) {
+            items.push({
+              key: `BILL_FINE_${b.id}_${evIdx}`,
+              url: safeEv,
+              title: `${t('Fine Evidence Photo', 'जरिवाना प्रमाण फोटो')} #${
+                evIdx + 1
+              } — ${formatDualMonthLabel(b.billing_month_label)}`,
+              subtitle: `${t('Fine: Rs.', 'जरिवाना: रु.')} ${b.damage_fine_amount} • ${t(
+                'Reason:',
+                'कारण:'
+              )} ${b.damage_fine_reason || 'Violation'}`,
+            });
+          }
+        });
+      }
+    });
+    return items;
+  };
+
+  const refreshAllAdminData = () => {
+    queryClient.invalidateQueries({ queryKey: ['allBills'] });
+    queryClient.invalidateQueries({ queryKey: ['adminAnalytics'] });
+    queryClient.invalidateQueries({ queryKey: ['roomsMatrix'] });
+    queryClient.invalidateQueries({ queryKey: ['adminUsersManagement'] });
+    queryClient.invalidateQueries({ queryKey: ['adminReservations'] });
+    queryClient.invalidateQueries({ queryKey: ['adminPendingMoveOuts'] });
+    queryClient.invalidateQueries({ queryKey: ['adminNotices'] });
+    queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
+    queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
+    queryClient.invalidateQueries({ queryKey: ['complaintTickets'] });
+    queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
+  };
+
+  const updateRoomMeterMutation = useMutation({
+    mutationFn: async ({ roomId, newMeter }) =>
+      (
+        await axiosClient.patch(`/rooms/${roomId}/`, {
+          current_meter_reading: newMeter,
+        })
+      ).data,
+    onSuccess: (data) => {
+      setBannerMsg({
+        type: 'success',
+        text:
+          data.message ||
+          t(
+            'Sub-meter reading updated successfully!',
+            'सब-मिटर रिडिङ सफलतापूर्वक अपडेट गरियो!'
+          ),
+      });
+      setEditMeterRoom(null);
+      setEditMeterValue('');
+      refreshAllAdminData();
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          t(
+            'Could not update sub-meter reading.',
+            'सब-मिटर रिडिङ अपडेट गर्न सकिएन।'
+          ),
+      });
+    },
+  });
+
+  const kycAuditMutation = useMutation({
+    mutationFn: ({ kycId, action, notes }) => auditKYC(kycId, action, notes),
+    onSuccess: (data) => {
+      setBannerMsg({
+        type: 'success',
+        text: data.message || t('KYC status updated!', 'केवाईसी अवस्था अपडेट गरियो!'),
+      });
+      refreshAllAdminData();
+    },
+    onError: () => {
+      setBannerMsg({
+        type: 'error',
+        text: t(
+          'Could not update KYC verification status.',
+          'केवाईसी अवस्था अपडेट गर्न सकिएन।'
+        ),
+      });
+    },
+  });
+
+  const updateQRMutation = useMutation({
+    mutationFn: (formData) => updatePaymentQRConfig(formData),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      setQrImageFile(null);
+      setQrImagePreview(null);
+      setShowQRModal(false);
+      queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          t(
+            'Failed to upload Payment QR Code.',
+            'भुक्तानी QR कोड अपलोड गर्न सकिएन।'
+          ),
+      });
+    },
+  });
+
+  const deleteQRMutation = useMutation({
+    mutationFn: deletePaymentQRConfig,
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      setQrImageFile(null);
+      setQrImagePreview(null);
+      queryClient.invalidateQueries({ queryKey: ['paymentQRConfig'] });
+    },
+  });
+
+  const reservationActionMutation = useMutation({
+    mutationFn: async ({ id, payload }) => processReservationAction(id, payload),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setSelectedReservation(null);
+      setStartingMeterOverride('');
+    },
+  });
+
+  const moveOutActionMutation = useMutation({
+    mutationFn: async ({ id, payload }) => processMoveOutRequest(id, payload),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setSelectedMoveOut(null);
+      setFinalMeterOverride('');
+      setMoveOutRemarks('');
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          t(
+            'Could not process move-out request.',
+            'कोठा छोड्ने अनुरोध प्रक्रिया गर्न सकिएन।'
+          ),
+      });
+    },
+  });
+
+  const auditMutation = useMutation({
+    mutationFn: async ({ billId, action, remarks }) =>
+      (await axiosClient.post(`/billing/${billId}/audit/`, { action, admin_remarks: remarks })).data,
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setSelectedBillForAudit(null);
+      setAdminRemarks('');
+    },
+  });
+
+  const cashOverrideMutation = useMutation({
+    mutationFn: async (payload) => (await axiosClient.post('/billing/cash-override/', payload)).data,
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setShowCashModal(false);
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          t('Failed to record cash payment.', 'नगद भुक्तानी रेकर्ड गर्न सकिएन।'),
+      });
+    },
+  });
+
+  const assignTenantMutation = useMutation({
+    mutationFn: async ({ roomId, payload }) =>
+      (await axiosClient.post(`/rooms/${roomId}/assign-tenant/`, payload)).data,
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setAssignModalRoom(null);
+    },
+  });
+
+  const applyFineMutation = useMutation({
+    mutationFn: async ({ billId, formData }) => {
+      const endpoint =
+        billId && Number(billId) > 0
+          ? `/billing/${billId}/apply-fine/`
+          : '/billing/apply-fine/';
+      const res = await axiosClient.post(endpoint, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setShowFineModal(false);
+      setFineTenantId('');
+      setFineBillId('');
+      setFineAmount('');
+      setFineReason('');
+      setFineEvidenceFiles([]);
+      setFineEvidencePreviews([]);
+      setFineModalError('');
+    },
+    onError: (err) => {
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        t('Could not apply fine.', 'जरिवाना लागू गर्न सकिएन।');
+      setFineModalError(msg);
+      setBannerMsg({ type: 'error', text: msg });
+    },
+  });
+
+  const handleApplyFineSubmit = (e) => {
+    e.preventDefault();
+    setFineModalError('');
+
+    if (!fineTenantId && !fineBillId) {
+      setFineModalError(
+        t(
+          'Please select a Tenant (or a specific Bill) to apply the fine.',
+          'कृपया जरिवाना लागू गर्न भाडावाल वा बिल छान्नुहोस्।'
+        )
+      );
       return;
     }
-    const formData = new FormData();
-    formData.append('title', bannerTitle);
-    formData.append('subtitle', bannerSubtitle);
-    formData.append('badge_text', bannerBadge);
-    formData.append('is_active', 'true');
-    bannerFiles.forEach((file) => {
-      formData.append('images', file);
+    if (!fineAmount || Number(fineAmount) <= 0) {
+      setFineModalError(
+        t(
+          'Please enter a valid fine amount greater than Rs. 0.',
+          'कृपया रु. ० भन्दा बढी जरिवाना रकम लेख्नुहोस्।'
+        )
+      );
+      return;
+    }
+    if (!fineReason.trim()) {
+      setFineModalError(
+        t(
+          'Please enter the violation or damage reason.',
+          'कृपया जरिवानाको कारण उल्लेख गर्नुहोस्।'
+        )
+      );
+      return;
+    }
+
+    const fd = new FormData();
+    if (fineBillId) fd.append('bill_id', fineBillId);
+    if (fineTenantId) fd.append('tenant_id', fineTenantId);
+    fd.append('fine_mode', fineMode);
+    fd.append('damage_fine_amount', fineAmount);
+    fd.append('damage_fine_reason', fineReason.trim());
+
+    fineEvidenceFiles.forEach((file) => {
+      fd.append('evidence_images', file);
     });
-    uploadBannerMutation.mutate(formData);
+
+    applyFineMutation.mutate({
+      billId: fineBillId ? Number(fineBillId) : 0,
+      formData: fd,
+    });
   };
 
-  const handleReservationSubmit = (e) => {
+  const handleUndoFine = (billId) => {
+    if (!billId) return;
+    if (
+      window.confirm(
+        t(
+          'Are you sure you want to undo and remove this fine from the tenant?',
+          'के तपाईं यो जरिवाना हटाउन चाहनुहुन्छ?'
+        )
+      )
+    ) {
+      const fd = new FormData();
+      fd.append('bill_id', String(billId));
+      fd.append('fine_mode', 'UNDO');
+      applyFineMutation.mutate({
+        billId: Number(billId),
+        formData: fd,
+      });
+    }
+  };
+
+  const expenseMutation = useMutation({
+    mutationFn: async (formData) =>
+      (
+        await axiosClient.post('/billing/expenses/', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      ).data,
+    onSuccess: () => {
+      setBannerMsg({
+        type: 'success',
+        text: t('Expense recorded!', 'घर खर्च सफलतापूर्वक रेकर्ड गरियो!'),
+      });
+      refreshAllAdminData();
+      setExpenseTitle('');
+      setExpenseAmount('');
+      setExpenseNotes('');
+      setExpenseReceipt(null);
+    },
+  });
+
+  const reminderMutation = useMutation({
+    mutationFn: async () => (await axiosClient.post('/billing/send-due-reminders/')).data,
+    onSuccess: (data) => setBannerMsg({ type: 'success', text: data.message }),
+  });
+
+  const createNoticeMutation = useMutation({
+    mutationFn: createNotice,
+    onSuccess: () => {
+      setBannerMsg({
+        type: 'success',
+        text: t(
+          'Notice published to all tenants!',
+          'सबै भाडावालहरूका लागि सूचना प्रकाशित गरियो!'
+        ),
+      });
+      refreshAllAdminData();
+      setNoticeTitle('');
+      setNoticeContent('');
+    },
+  });
+
+  const deleteNoticeMutation = useMutation({
+    mutationFn: deleteNotice,
+    onSuccess: () => {
+      setBannerMsg({
+        type: 'success',
+        text: t('Notice deleted.', 'सूचना हटाइयो।'),
+      });
+      refreshAllAdminData();
+    },
+  });
+
+  const evictMutation = useMutation({
+    mutationFn: ({ userId, actionType }) =>
+      adminEvictOrManageUser(userId, { action_type: actionType }),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      refreshAllAdminData();
+      setSelectedUserId(null);
+      setUserToDelete(null);
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          t(
+            'Could not complete tenant action.',
+            'भाडावाल सम्बन्धी कार्य पूरा गर्न सकिएन।'
+          ),
+      });
+    },
+  });
+
+  const manageAdminMutation = useMutation({
+    mutationFn: (payload) => manageAdminRole(payload),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      setShowAddAdminModal(false);
+      setNewAdminEmail('');
+      setNewAdminName('');
+      setNewAdminPhone('');
+      setNewAdminPassword('');
+      setShowNewAdminPassword(false);
+      refreshAllAdminData();
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          t('Failed to update admin permissions.', 'एडमिन अनुमति अपडेट गर्न सकिएन।'),
+      });
+    },
+  });
+
+  const resetDatabaseMutation = useMutation({
+    mutationFn: (phrase) => resetSmartRentDatabase(phrase),
+    onSuccess: (data) => {
+      setBannerMsg({ type: 'success', text: data.message });
+      setResetStep(0);
+      setResetConfirmText('');
+      setResetModalError('');
+      refreshAllAdminData();
+    },
+    onError: (err) => {
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        t('Backend reset endpoint failed.', 'डाटाबेस रिसेट गर्न सकिएन।');
+      setResetModalError(msg);
+      setBannerMsg({ type: 'error', text: msg });
+    },
+  });
+
+  const handleSaveQRConfig = (e) => {
     e.preventDefault();
-    if (!reservingRoom) return;
-
-    const formData = new FormData();
-    formData.append('room', reservingRoom.id);
-    formData.append('request_type', requestType);
-    formData.append('expected_move_in_date', moveInDate);
-    formData.append('occupants_count', occupantsCount);
-    formData.append('phone_number', phoneNum);
-    formData.append('occupation', occupation);
-    formData.append('message', message);
-    formData.append('token_amount', tokenAmount || '0');
-    if (paymentScreenshot) formData.append('payment_screenshot', paymentScreenshot);
-    if (citizenshipDoc) formData.append('citizenship_document', citizenshipDoc);
-
-    reserveMutation.mutate(formData);
+    const fd = new FormData();
+    fd.append('merchant_name', qrMerchantName);
+    fd.append('payment_note', qrPaymentNote);
+    if (qrImageFile) {
+      fd.append('qr_image', qrImageFile);
+    }
+    updateQRMutation.mutate(fd);
   };
 
-  const currentBanner = banners[activeSlide] || {
-    id: null,
-    title: t(
-      'Smart House Rental • Ground & 1st Floor',
-      'स्मार्ट कोठा भाडा • भुइँ र पहिलो तल्ला'
-    ),
-    subtitle: t(
-      'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
-      'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी (रु. १००/कोठा)'
-    ),
-    badge_text: t('Verified Direct-Landlord Listing', 'घरधनीद्वारा प्रमाणित आवास'),
-    resolved_url: DEFAULT_HERO_IMAGE,
-  };
-
-  const filterRoomList = (floorCode) => {
-    return rooms.filter((r) => {
-      const roomNo = String(r.room_number || '').trim().toUpperCase();
-      const dbFloor = String(r.floor || '').trim().toUpperCase();
-
-      if (floorCode === 'GROUND') {
-        const isGround = dbFloor === 'GROUND' || roomNo.startsWith('A');
-        if (!isGround) return false;
-      } else if (floorCode === 'FIRST') {
-        const isFirst =
-          dbFloor === 'FIRST' || dbFloor === 'SECOND' || roomNo.startsWith('B');
-        if (!isFirst) return false;
-      }
-
-      if (availableOnly && r.is_occupied) return false;
-      return true;
+  const handlePostNotice = (e) => {
+    e.preventDefault();
+    createNoticeMutation.mutate({
+      title: noticeTitle,
+      content: noticeContent,
+      category: noticeCategory,
+      is_active: true,
     });
   };
 
-  const groundRooms = filterRoomList('GROUND');
-  const firstRooms = filterRoomList('FIRST');
+  const handleLogExpense = (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    formData.append('category', expenseCategory);
+    formData.append('title', expenseTitle);
+    formData.append('amount', expenseAmount);
+    formData.append('expense_date', expenseDate);
+    formData.append('notes', expenseNotes);
+    if (expenseReceipt) {
+      formData.append('receipt_image', expenseReceipt);
+    }
+    expenseMutation.mutate(formData);
+  };
+
+  const kpis = analytics?.kpis || {
+    total_revenue: 0,
+    total_expenses: 0,
+    net_profit: 0,
+    occupied_rooms: 0,
+    total_rooms: 9,
+    vacant_rooms: 9,
+  };
+
+  const occupancyPercent =
+    kpis.total_rooms > 0
+      ? Math.round((Number(kpis.occupied_rooms || 0) / Number(kpis.total_rooms)) * 100)
+      : 0;
+
+  const activeAuditBill =
+    (selectedBillForAudit &&
+      displayedBillsQueue.find((b) => b.id === selectedBillForAudit.id)) ||
+    displayedBillsQueue[0] ||
+    null;
+
+  const activeReviewReservation =
+    (selectedReservation &&
+      displayedReservations.find((r) => r.id === selectedReservation.id)) ||
+    displayedReservations[0] ||
+    null;
+
+  const activeReviewMoveOut = selectedMoveOut || pendingMoveOuts[0] || null;
 
   return (
-    <div className="w-full">
-      {/* COMPACT HOUSE NOTICES BANNER (ONLY SHOWS WHEN ACTIVE NOTICES EXIST) */}
-      {notices.length > 0 && (
-        <div className="bg-slate-900 text-white px-3 sm:px-6 py-2.5 border-b border-slate-800">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
-            <div className="flex items-center gap-2 min-w-0 text-xs">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-200 font-extrabold text-[10px] uppercase shrink-0">
-                <BellRing className="w-3 h-3 text-amber-400 animate-pulse" />
-                {td(notices[0].category_display || notices[0].category)}
+    <div className="max-w-7xl mx-auto p-3 sm:p-6 lg:p-8 space-y-6">
+      {/* ========================================================================= */}
+      {/* 1. EXECUTIVE COMMAND HEADER & RESPONSIVE QUICK-ACTION DOCK                */}
+      {/* ========================================================================= */}
+      <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-7 shadow-xl border border-indigo-500/20 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-200 text-[10px] font-extrabold uppercase tracking-wider">
+                <ShieldAlert className="w-3.5 h-3.5 text-indigo-400" />{' '}
+                {t('LANDLORD COMMAND DECK', 'घरधनी कमाण्ड सेन्टर')}
               </span>
-              <span className="font-bold text-white truncate">{notices[0].title}:</span>
-              <span className="text-slate-300 truncate">{notices[0].content}</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-[10px] font-extrabold">
+                <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />{' '}
+                {t('LIVE 4S AUTO-SYNC', 'लाइभ ४-सेकेन्ड अटो-सिंक')}
+              </span>
             </div>
-            <span className="text-[10px] text-slate-400 shrink-0 hidden sm:inline">
-              {notices[0].created_at
-                ? formatDualDate(new Date(notices[0].created_at).toISOString().split('T')[0])
-                : ''}
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
+              {t('Executive Command Center', 'प्रमुख व्यवस्थापन तथा नियन्त्रण कक्ष')}
+            </h1>
+            <p className="text-xs text-slate-300/90 max-w-2xl">
+              {t(
+                'Real-time sub-meter calibration, remittance audit clearing, room occupancy, and automated tenant billing.',
+                'प्रत्यक्ष सब-मिटर रिडिङ, बिल प्रमाणीकरण, कोठा बसोबास र स्वचालित भाडा व्यवस्थापन।'
+              )}
+            </p>
+          </div>
+
+          {/* Responsive 2x3 / Flex Quick Action Dock */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowQRModal(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <QrCode className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('QR Setup', 'QR सेटअप')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                triggerBulkGenerateBills()
+                  .then((res) => {
+                    setBannerMsg({ type: 'success', text: res.message });
+                    refreshAllAdminData();
+                  })
+                  .catch(() => {
+                    setBannerMsg({
+                      type: 'error',
+                      text: t('Bulk generate endpoint error.', 'बिल तयार गर्न समस्या भयो।'),
+                    });
+                  });
+              }}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('Auto-Bills', 'स्वचालित बिल')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => reminderMutation.mutate()}
+              disabled={reminderMutation.isPending}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold border border-white/15 transition cursor-pointer"
+            >
+              <BellRing className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+              <span className="truncate">{t('Send Alerts', 'स्मरण इमेल')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openFineModalForUser(null, null)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('+ Apply Fine', '+ जरिवाना')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCashModal(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white text-slate-900 hover:bg-indigo-50 text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <Wallet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span className="truncate">{t('+ Cash Pay', '+ नगद भुक्तानी')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setResetConfirmText('');
+                setResetModalError('');
+                setResetStep(1);
+              }}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-950/90 hover:bg-rose-900 text-rose-200 border border-rose-500/30 text-xs font-extrabold transition cursor-pointer"
+              title={t(
+                'Factory Reset Database (Keeps Admin)',
+                'डाटाबेस रिसेट गर्नुहोस् (एडमिन सुरक्षित रहनेछ)'
+              )}
+            >
+              <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('Reset DB', 'रिसेट')}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* FEEDBACK TOAST BANNER */}
+      {bannerMsg.text && (
+        <div
+          className={`p-4 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between shadow-xs ${
+            bannerMsg.type === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-700'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {bannerMsg.type === 'error' ? (
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            )}
+            <span>{bannerMsg.text}</span>
+          </div>
+          <button onClick={() => setBannerMsg({ type: '', text: '' })}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. TOP 4 EXECUTIVE KPI CARDS (WITH INTERACTIVE QUICK-JUMP)                */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5">
+        {/* KPI 1: Total Revenue */}
+        <div className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('TOTAL REVENUE', 'कुल आम्दानी')}
             </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <DollarSign className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <p className="text-lg sm:text-2xl font-black text-slate-900">
+              {t('Rs.', 'रु.')} {Number(kpis.total_revenue).toLocaleString()}
+            </p>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium">
+              {t(
+                `${approvedOrPaidBills.length} Settled Invoices`,
+                `${approvedOrPaidBills.length} चुक्ता बिलहरू`
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* KPI 2: Action Items (Pending Audits, Bookings & Move-Outs) */}
+        <div
+          onClick={() => {
+            setActiveAdminTab('OVERVIEW');
+            if (pendingQueue.length > 0) setActionQueueTab('BILLS');
+            else if (pendingReservations.length > 0) setActionQueueTab('BOOKINGS');
+            else if (pendingMoveOuts.length > 0) setActionQueueTab('MOVEOUTS');
+          }}
+          className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 hover:border-indigo-300 shadow-2xs cursor-pointer transition flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('ACTION QUEUE', 'प्रमाणीकरण र बुकिङ')}
+            </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <CalendarCheck className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <p className="text-lg sm:text-2xl font-black text-slate-900">
+              {pendingQueue.length + pendingReservations.length + pendingMoveOuts.length}{' '}
+              <span className="text-xs font-bold text-slate-500">
+                {t('Pending', 'बाँकी')}
+              </span>
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              <span className="text-[10px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                {pendingQueue.length} {t('Bills', 'बिल')}
+              </span>
+              <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                {pendingReservations.length} {t('Book', 'बुकिङ')}
+              </span>
+              {pendingMoveOuts.length > 0 && (
+                <span className="text-[10px] font-extrabold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
+                  {pendingMoveOuts.length} {t('Exit', 'छोड्ने')}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 3: Occupancy Rate with Progress Bar */}
+        <div className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('OCCUPANCY', 'कोठा बसोबास')}
+            </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <Building className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className="flex items-baseline justify-between">
+              <p className="text-lg sm:text-2xl font-black text-slate-900">
+                {kpis.occupied_rooms} / {kpis.total_rooms}
+              </p>
+              <span className="text-xs font-extrabold text-emerald-600">
+                {occupancyPercent}%
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                style={{ width: `${occupancyPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 4: Net Profit */}
+        <div className="rounded-3xl bg-white p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+              {t('NET PROFIT', 'खुद नाफा')}
+            </span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <p className="text-lg sm:text-2xl font-black text-indigo-600">
+              {t('Rs.', 'रु.')} {Number(kpis.net_profit).toLocaleString()}
+            </p>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium">
+              {t('Expenses: Rs.', 'खर्च: रु.')}{' '}
+              {Number(kpis.total_expenses || 0).toLocaleString()}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. SEGMENTED WORKSPACE SWITCHER                                           */}
+      {/* ========================================================================= */}
+      <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-2xs overflow-x-auto">
+        {[
+          {
+            key: 'OVERVIEW',
+            label: t('📊 Command Deck & Rooms', '📊 कमाण्ड सेन्टर र कोठाहरू'),
+          },
+          {
+            key: 'USERS',
+            label: t(
+              `👥 Tenants Directory (${tenantUsers.length})`,
+              `👥 भाडावाल निर्देशिका (${tenantUsers.length})`
+            ),
+          },
+          {
+            key: 'ADMINS',
+            label: t(
+              `🛡️ Admin Team (${adminTeamUsers.length})`,
+              `🛡️ एडमिन टोली (${adminTeamUsers.length})`
+            ),
+          },
+        ].map((tabItem) => (
+          <button
+            key={tabItem.key}
+            onClick={() => setActiveAdminTab(tabItem.key)}
+            className={`flex-1 sm:flex-initial whitespace-nowrap px-4 sm:px-5 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+              activeAdminTab === tabItem.key
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            {tabItem.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 2: TENANTS DIRECTORY WITH SEARCH & FILTER                             */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'USERS' && (
+        <div className="rounded-3xl bg-white p-5 sm:p-8 border border-slate-200/80 shadow-2xs space-y-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-extrabold text-slate-900">
+                {t(
+                  'Registered Users & Tenants Directory',
+                  'दर्ता गरिएका प्रयोगकर्ता र भाडावाल निर्देशिका'
+                )}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {t(
+                  'Inspect full tenant profiles, fullscreen photos, KYC citizenship IDs, assigned rooms, or permanently delete departed tenants.',
+                  'भाडावालको पूरा विवरण, फोटो, नागरिकता (KYC), तोकिएको कोठा हेर्नुहोस् वा कोठा छोडिसकेका भाडावालको डाटा हटाउनुहोस्।'
+                )}
+              </p>
+            </div>
+            {tenantUsers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setResetConfirmText('');
+                  setResetModalError('');
+                  setResetStep(1);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition self-start lg:self-auto"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />{' '}
+                {t('Wipe All Tenants & Reset DB', 'सबै भाडावाल हटाई डाटाबेस रिसेट गर्नुहोस्')}
+              </button>
+            )}
+          </div>
+
+          {tenantUsers.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                {[
+                  {
+                    key: 'ALL',
+                    label: t(`All (${tenantUsers.length})`, `सबै (${tenantUsers.length})`),
+                  },
+                  {
+                    key: 'ASSIGNED',
+                    label: t(
+                      `Assigned (${assignedTenantsCount})`,
+                      `कोठा तोकिएको (${assignedTenantsCount})`
+                    ),
+                  },
+                  {
+                    key: 'UNASSIGNED',
+                    label: t(
+                      `Unassigned (${unassignedTenantsCount})`,
+                      `नतोकिएको (${unassignedTenantsCount})`
+                    ),
+                  },
+                  {
+                    key: 'KYC_VERIFIED',
+                    label: t(
+                      `KYC Verified (${
+                        tenantUsers.filter((u) => u.kyc_status === 'VERIFIED').length
+                      })`,
+                      `केवाईसी प्रमाणित (${
+                        tenantUsers.filter((u) => u.kyc_status === 'VERIFIED').length
+                      })`
+                    ),
+                  },
+                ].map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setTenantListFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition ${
+                      tenantListFilter === f.key
+                        ? 'bg-white text-indigo-600 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={tenantSearchQuery}
+                  onChange={(e) => setTenantSearchQuery(e.target.value)}
+                  placeholder={t(
+                    'Search name, room, phone...',
+                    'नाम, कोठा वा फोन खोज्नुहोस्...'
+                  )}
+                  className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                />
+                {tenantSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setTenantSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {filteredTenantUsers.length === 0 ? (
+            <div className="py-12 text-center rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+              <p className="text-sm font-extrabold text-slate-700">
+                {t('No tenants match the current filter', 'कुनै भाडावाल फेला परेन')}
+              </p>
+              <p className="text-xs text-slate-400">
+                {t(
+                  'Try switching the filter tab or clearing your search query.',
+                  'कृपया अर्को फिल्टर छान्नुहोस् वा खोज शब्द हटाउनुहोस्।'
+                )}
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-[680px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredTenantUsers.map((u) => {
+                  const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
+                  const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
+                  const galleryItems = buildUserGalleryItems(u);
+
+                  return (
+                    <div
+                      key={u.id}
+                      className="rounded-3xl border border-slate-200/90 bg-white hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col justify-between group"
+                    >
+                      <div>
+                        <div
+                          onClick={() => setSelectedUserId(u.id)}
+                          className="h-24 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative cursor-pointer overflow-hidden"
+                        >
+                          {coverUrl && (
+                            <img
+                              src={coverUrl}
+                              alt="Cover"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 to-transparent" />
+
+                          <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                            {u.room_number ? (
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold shadow-sm">
+                                {t('Room', 'कोठा')} {u.room_number}
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full bg-slate-900/60 backdrop-blur-xs text-white text-[10px] font-bold">
+                                {t('No Room', 'कोठा छैन')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="px-5 pb-4">
+                          <div className="flex items-end justify-between -mt-9 mb-3 relative z-10">
+                            <div
+                              onClick={() => {
+                                if (avatarUrl) {
+                                  openPhotoLightbox(galleryItems, 0);
+                                } else {
+                                  setSelectedUserId(u.id);
+                                }
+                              }}
+                              className="w-16 h-16 rounded-2xl bg-white p-1 shadow-md border border-slate-200 cursor-pointer relative group/avatar"
+                            >
+                              {avatarUrl ? (
+                                <>
+                                  <img
+                                    src={avatarUrl}
+                                    alt={u.full_name}
+                                    className="w-full h-full rounded-xl object-cover"
+                                  />
+                                  <div className="absolute inset-0 rounded-xl bg-black/35 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center transition">
+                                    <ZoomIn className="w-4 h-4 text-white" />
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="w-full h-full rounded-xl bg-indigo-600 text-white font-black text-xl flex items-center justify-center">
+                                  {u.full_name?.charAt(0)?.toUpperCase() || 'T'}
+                                </div>
+                              )}
+                            </div>
+
+                            <span
+                              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase ${
+                                u.kyc_status === 'VERIFIED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : u.kyc_status === 'PENDING'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              KYC: {td(u.kyc_status)}
+                            </span>
+                          </div>
+
+                          <h4 className="text-base font-extrabold text-slate-900 truncate">
+                            {u.full_name}
+                          </h4>
+                          <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                          {u.phone_number && (
+                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                              📞 {u.phone_number}
+                            </p>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-2 mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                {t('Pending Dues', 'तिर्न बाँकी')}
+                              </span>
+                              {u.pending_bills_count > 0 ? (
+                                <span className="font-black text-rose-600">
+                                  {t('Rs.', 'रु.')}{' '}
+                                  {Number(u.total_pending_amount || 0).toLocaleString()} (
+                                  {u.pending_bills_count})
+                                </span>
+                              ) : (
+                                <span className="font-extrabold text-emerald-600">
+                                  {t('All Clear ✓', 'चुक्ता छ ✓')}
+                                </span>
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                {t('Uploaded Photos', 'अपलोड फोटो')}
+                              </span>
+                              <span className="font-extrabold text-indigo-600">
+                                {galleryItems.length} {t('Photo(s)', 'फोटो')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserId(u.id)}
+                          className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Eye className="w-3.5 h-3.5" />{' '}
+                          {t('Dossier', 'पूर्ण विवरण')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openFineModalForUser(u, null)}
+                          className="py-2.5 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                          title={t('Apply Fine to Tenant', 'जरिवाना लगाउनुहोस्')}
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" />{' '}
+                          {t('Fine', 'जरिवाना')}
+                        </button>
+                        {galleryItems.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openPhotoLightbox(galleryItems, 0)}
+                            className="py-2.5 px-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                            title={t('Open Photo Viewer', 'फोटो हेर्नुहोस्')}
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {u.room_number && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  t(
+                                    `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`,
+                                    `के तपाईं ${u.full_name} को कोठा ${u.room_number} खाली गराउन चाहनुहुन्छ?`
+                                  )
+                                )
+                              ) {
+                                evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
+                              }
+                            }}
+                            className="py-2.5 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-extrabold transition"
+                            title={t('Vacate Room', 'कोठा खाली गराउनुहोस्')}
+                          >
+                            {t('Vacate', 'खाली')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setUserToDelete(u)}
+                          className="py-2.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
+                          title={t(
+                            'Permanently Delete Tenant & All Data',
+                            'भाडावाल र सम्पूर्ण डाटा स्थायी रूपमा मेटाउनुहोस्'
+                          )}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: ADMIN TEAM MANAGEMENT                                              */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'ADMINS' && (
+        <div className="rounded-3xl bg-white p-5 sm:p-8 border border-slate-200/80 shadow-2xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-extrabold text-slate-900">
+                {t(
+                  'Landlord & Administrator Team',
+                  'घरधनी र प्रशासक (Admin) टोली'
+                )}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {t(
+                  'Manage who has executive command access to the SmartRent property portal.',
+                  'स्मार्टरेन्ट पोर्टलमा कसलाई प्रमुख एडमिन अधिकार दिने भनी व्यवस्थापन गर्नुहोस्।'
+                )}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowNewAdminPassword(false);
+                setShowAddAdminModal(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition self-start sm:self-auto"
+            >
+              {t('+ Add New Administrator', '+ नयाँ एडमिन थप्नुहोस्')}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {adminTeamUsers.map((adm) => {
+              const admAvatar = getSafeMediaUrl(
+                adm.profile_picture_path || adm.profile_picture_url
+              );
+              const admGallery = buildUserGalleryItems(adm);
+              return (
+                <div
+                  key={adm.id}
+                  className="p-5 rounded-3xl border border-indigo-100 bg-indigo-50/30 flex items-center justify-between gap-4"
+                >
+                  <div
+                    onClick={() => setSelectedUserId(adm.id)}
+                    className="flex items-center gap-3.5 min-w-0 cursor-pointer"
+                  >
+                    {admAvatar ? (
+                      <img
+                        src={admAvatar}
+                        alt={adm.full_name}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openPhotoLightbox(admGallery, 0);
+                        }}
+                        className="w-12 h-12 rounded-2xl object-cover border border-indigo-200"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-extrabold text-base flex items-center justify-center shrink-0">
+                        {adm.full_name?.charAt(0)?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-extrabold text-slate-900 truncate">
+                        {adm.full_name}
+                      </h4>
+                      <p className="text-xs text-slate-500 truncate">{adm.email}</p>
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-extrabold uppercase">
+                        {t('Landlord Admin', 'घरधनी एडमिन')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUserId(adm.id)}
+                      className="p-2 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition"
+                      title={t('View Admin Profile', 'एडमिन प्रोफाइल हेर्नुहोस्')}
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    {adminTeamUsers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              t(
+                                `Are you sure you want to revoke admin privileges from ${adm.full_name}?`,
+                                `के तपाईं ${adm.full_name} को एडमिन अधिकार हटाउन चाहनुहुन्छ?`
+                              )
+                            )
+                          ) {
+                            manageAdminMutation.mutate({ action: 'REMOVE', user_id: adm.id });
+                          }
+                        }}
+                        className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition"
+                        title={t('Remove Admin Access', 'एडमिन अधिकार हटाउनुहोस्')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* CLEAN, MINIMAL & VISUAL-FIRST HERO SECTION                                */}
+      {/* TAB 1: OVERVIEW (ROOMS MATRIX + UNIFIED ACTION CENTER + ANALYTICS)        */}
       {/* ========================================================================= */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-10 lg:py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center">
-          {/* Left Column: Crisp Headline, Compact Price Chips & Side-by-Side CTAs */}
-          <div className="lg:col-span-6 space-y-4 sm:space-y-5">
-            {/* Single Sleek Status Pill */}
-            <div className="inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-emerald-700 font-extrabold">
-                {t(
-                  `${stats.available_rooms} of ${stats.total_rooms} Rooms Available`,
-                  `${stats.total_rooms} मध्ये ${stats.available_rooms} कोठा खाली`
-                )}
-              </span>
-              <span className="text-slate-300">•</span>
-              <span className="text-indigo-600 flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                {t('Direct Landlord Portal', 'आधिकारिक भाडा पोर्टल')}
-              </span>
-            </div>
-
-            {/* Clean, Balanced Heading */}
-            <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-black tracking-tight text-slate-900 leading-[1.18]">
-              {t('Smart, Peaceful Living.', 'आधुनिक र शान्त बसोबास।')}
-              <span className="text-indigo-600 block mt-1">
-                {t('Digital Sub-Meter Precision.', 'पारदर्शी डिजिटल सब-मिटरिङ।')}
-              </span>
-            </h1>
-
-            {/* Concise 2-Line Subtitle */}
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-lg">
-              {t(
-                'Transparent sub-metered electricity, 24/7 water supply, and instant digital rent receipts for students and professionals.',
-                'प्रत्येक कोठामा छुट्टै सब-मिटर बिजुली, २४ सै घण्टा पानी र तुरुन्तै अनलाइन भाडा रसिद प्राप्त हुने शान्त र सुरक्षित आवास।'
-              )}
-            </p>
-
-            {/* 3 Compact Visual Rate Cards */}
-            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 max-w-lg pt-1">
-              <div className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                  {t('Small Unit', 'सानो कोठा')}
-                </span>
-                <p className="text-sm sm:text-base font-black text-slate-900 mt-0.5">
-                  {t('Rs. 2,500', 'रु. २,५००')}
-                </p>
-                <span className="text-[10px] text-slate-500 font-medium">
-                  {t('Rooms A3, B4', 'कोठा A3, B4')}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100 shadow-2xs">
-                <span className="text-[10px] font-bold uppercase text-indigo-600 block">
-                  {t('Standard', 'स्ट्यान्डर्ड')}
-                </span>
-                <p className="text-sm sm:text-base font-black text-indigo-700 mt-0.5">
-                  {t('Rs. 3,800', 'रु. ३,८००')}
-                </p>
-                <span className="text-[10px] text-slate-500 font-medium">
-                  {t('Spacious Suite', 'ठूलो कोठा')}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                  {t('Sub-Meter', 'बिजुली / पानी')}
-                </span>
-                <p className="text-sm sm:text-base font-black text-slate-900 mt-0.5">
-                  {t('Rs. 15/u', 'रु. १५/युनिट')}
-                </p>
-                <span className="text-[10px] text-emerald-600 font-bold">
-                  {t('+ Rs. 100 Water', '+ रु. १०० पानी')}
-                </span>
-              </div>
-            </div>
-
-            {/* Side-by-Side Action Buttons */}
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-3 pt-1 max-w-lg">
-              <a
-                href="#rooms-inventory"
-                className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-indigo-600/20 transition"
-              >
-                <span>{t('Explore Rooms', 'कोठा छान्नुहोस्')}</span>
-                <ArrowRight className="w-4 h-4 shrink-0" />
-              </a>
-
-              {user ? (
-                <button
-                  type="button"
-                  onClick={() => navigate(isAdmin ? '/admin-deck' : '/tenant')}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 text-xs sm:text-sm font-extrabold shadow-2xs transition"
-                >
-                  <Home className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span className="truncate">
-                    {isAdmin
-                      ? t('Admin Deck', 'एडमिन प्यानल')
-                      : t('My Dashboard', 'मेरो ड्यासबोर्ड')}
-                  </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => openAuthModal('LOGIN')}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 text-xs sm:text-sm font-extrabold shadow-2xs transition"
-                >
-                  <span>{t('Tenant Login', 'भाडावाल लगइन')}</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Right Column: Sleek 16:10 Interactive Hero Slideshow Card */}
-          <div className="lg:col-span-6">
-            <div
-              onMouseEnter={() => setIsHoveringHero(true)}
-              onMouseLeave={() => setIsHoveringHero(false)}
-              className="relative rounded-3xl bg-white p-2 sm:p-3 shadow-xl shadow-indigo-950/5 border border-slate-200/80"
-            >
-              {/* Main Slideshow Viewport */}
-              <div className="relative w-full aspect-[16/10] rounded-2xl overflow-hidden bg-slate-900 group">
-                <img
-                  key={currentBanner.id || activeSlide}
-                  src={currentBanner.resolved_url}
-                  alt={currentBanner.title}
-                  onClick={() => setShowLightbox(true)}
-                  className="w-full h-full object-cover transition-all duration-700 cursor-pointer group-hover:scale-[1.02]"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/10 to-slate-950/25 pointer-events-none" />
-
-                {/* Top Left Badge + Slide Counter */}
-                <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-[11px] font-extrabold shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="truncate max-w-[160px] sm:max-w-none">
-                      {currentBanner.badge_text || t('Verified Listing', 'प्रमाणित आवास')}
-                    </span>
-                  </div>
-
-                  {banners.length > 1 && (
-                    <span className="px-2 py-0.5 rounded-full bg-slate-900/75 backdrop-blur-md text-white text-[10px] font-extrabold border border-white/15">
-                      {activeSlide + 1} / {banners.length}
-                    </span>
-                  )}
+      {activeAdminTab === 'OVERVIEW' && (
+        <div className="space-y-6">
+          {/* SECTION A: UNIT TELEMETRY & OCCUPANCY MATRIX */}
+          <div className="rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Building className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    {t(
+                      'Unit Telemetry & Occupancy Matrix',
+                      'कोठा सब-मिटर र बसोबास विवरण'
+                    )}
+                  </h3>
                 </div>
-
-                {/* Top Right Controls */}
-                <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                  {banners.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setIsAutoPlaying((prev) => !prev)}
-                      className="p-1.5 sm:p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
-                      title={
-                        isAutoPlaying
-                          ? t('Pause Slideshow', 'रोक्नुहोस्')
-                          : t('Play Slideshow', 'चलाउनुहोस्')
-                      }
-                    >
-                      {isAutoPlaying ? (
-                        <Pause className="w-3.5 h-3.5" />
-                      ) : (
-                        <Play className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {t(
+                    'Click "Edit Meter" on any unit to calibrate its sub-meter reading',
+                    'सब-मिटर रिडिङ सच्याउन "मिटर सच्याउनुहोस्" बटनमा थिच्नुहोस्'
                   )}
+                </p>
+              </div>
 
+              <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                {[
+                  {
+                    key: 'ALL',
+                    label: t(`All (${roomsList.length})`, `सबै (${roomsList.length})`),
+                  },
+                  {
+                    key: 'OCCUPIED',
+                    label: t(
+                      `Occupied (${occupiedRoomsCount})`,
+                      `बसोबास छ (${occupiedRoomsCount})`
+                    ),
+                  },
+                  {
+                    key: 'VACANT',
+                    label: t(`Vacant (${vacantRoomsCount})`, `खाली (${vacantRoomsCount})`),
+                  },
+                ].map((tab) => (
                   <button
+                    key={tab.key}
                     type="button"
-                    onClick={() => setShowLightbox(true)}
-                    className="p-1.5 sm:p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
-                    title={t('Fullscreen', 'पूरा स्क्रिन')}
+                    onClick={() => setRoomMatrixFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition cursor-pointer ${
+                      roomMatrixFilter === tab.key
+                        ? 'bg-white text-indigo-600 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    <ZoomIn className="w-3.5 h-3.5" />
+                    {tab.label}
                   </button>
-
-                  {isAdmin && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setShowBannerEditor(!showBannerEditor)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold shadow-lg transition"
-                      >
-                        <ImagePlus className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">
-                          {showBannerEditor
-                            ? t('Close', 'बन्द')
-                            : t('Manage Slides', 'फोटो व्यवस्थापन')}
-                        </span>
-                      </button>
-                      {currentBanner.id && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                t(
-                                  'Delete this slide from the homepage slideshow?',
-                                  'यो फोटो स्लाइडशोबाट हटाउने हो?'
-                                )
-                              )
-                            ) {
-                              deleteBannerMutation.mutate(currentBanner.id);
-                            }
-                          }}
-                          className="p-1.5 sm:p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Left / Right Carousel Arrows */}
-                {banners.length > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1))
-                      }
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-md transition"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1))
-                      }
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-md transition"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-
-                {/* Bottom Caption Overlay */}
-                <div className="absolute bottom-3 inset-x-3 rounded-2xl bg-white/95 backdrop-blur-md p-3 sm:p-3.5 shadow-lg flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                      <Zap className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-extrabold text-slate-900 truncate">
-                        {currentBanner.title}
-                      </p>
-                      <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-                        {currentBanner.subtitle ||
-                          t(
-                            'Sub-metered Power & 24/7 Water Supply',
-                            'सब-मिटर बिजुली र २४ सै घण्टा पानी'
-                          )}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold text-[11px] shrink-0">
-                    {t('Rs. 2.5k–3.8k', 'रु. २.५k–३.८k')}
-                  </span>
-                </div>
+                ))}
               </div>
+            </div>
 
-              {/* Thumbnail Strip */}
-              {banners.length > 1 && (
-                <div className="pt-2.5 px-1 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 overflow-x-auto">
-                    {banners.map((b, idx) => (
-                      <button
-                        key={b.id || idx}
-                        type="button"
-                        onClick={() => setActiveSlide(idx)}
-                        className={`relative w-12 h-8 sm:w-14 sm:h-10 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
-                          idx === activeSlide
-                            ? 'border-indigo-600 scale-105'
-                            : 'border-slate-200 opacity-60 hover:opacity-100'
-                        }`}
-                      >
-                        <img
-                          src={b.resolved_url}
-                          alt={b.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    {banners.map((b, idx) => (
-                      <button
-                        key={b.id || idx}
-                        type="button"
-                        onClick={() => setActiveSlide(idx)}
-                        className={`h-1.5 rounded-full transition-all ${
-                          idx === activeSlide ? 'w-5 bg-indigo-600' : 'w-1.5 bg-slate-300'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ADMIN MULTI-IMAGE SLIDESHOW MANAGER PANEL */}
-              {isAdmin && showBannerEditor && (
-                <div className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-indigo-600" />
-                      <p className="text-xs font-extrabold text-indigo-900 uppercase">
-                        {t(
-                          `Slideshow Manager (${banners.length} Slides)`,
-                          `स्लाइडशो व्यवस्थापन (${banners.length} फोटो)`
-                        )}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowBannerEditor(false)}
-                      className="text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {bannerFeedback.text && (
+            <div className="max-h-[480px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {displayedRoomsList.map((room) => {
+                  const occupied = room.is_occupied;
+                  const tenant = room.active_tenancy;
+                  return (
                     <div
-                      className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between ${
-                        bannerFeedback.type === 'error'
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      key={room.id}
+                      className={`rounded-2xl border transition flex flex-col justify-between overflow-hidden ${
+                        occupied
+                          ? 'border-indigo-200/90 bg-white shadow-2xs hover:border-indigo-400'
+                          : 'border-slate-200/90 bg-slate-50/60 hover:bg-white'
                       }`}
                     >
-                      <span>{bannerFeedback.text}</span>
-                      <button
-                        type="button"
-                        onClick={() => setBannerFeedback({ type: '', text: '' })}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleBannerUpload} className="space-y-2.5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={bannerTitle}
-                        onChange={(e) => setBannerTitle(e.target.value)}
-                        placeholder={t('Slide Title', 'स्लाइड शीर्षक')}
-                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
-                        required
-                      />
-                      <input
-                        type="text"
-                        value={bannerBadge}
-                        onChange={(e) => setBannerBadge(e.target.value)}
-                        placeholder={t('Badge Text', 'ब्याज पाठ')}
-                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
-                      />
-                    </div>
-                    <input
-                      type="text"
-                      value={bannerSubtitle}
-                      onChange={(e) => setBannerSubtitle(e.target.value)}
-                      placeholder={t('Subtitle description', 'उप-शीर्षक विवरण')}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
-                    />
-
-                    <label className="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-dashed border-indigo-300 hover:border-indigo-600 bg-white cursor-pointer transition text-center">
-                      <Upload className="w-4 h-4 text-indigo-600 mb-1" />
-                      <span className="text-xs font-extrabold text-slate-800">
-                        {t('Select Banner Images (Up to 5 MB)', 'ब्यानर फोटो छान्नुहोस् (५ MB सम्म)')}
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.avif"
-                        multiple
-                        onChange={handleSelectMultipleBannerFiles}
-                        className="hidden"
-                      />
-                    </label>
-
-                    {bannerPreviews.length > 0 && (
-                      <div className="grid grid-cols-4 gap-2">
-                        {bannerPreviews.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="relative h-14 rounded-xl overflow-hidden border border-indigo-200 bg-white"
-                          >
-                            <img
-                              src={item.url}
-                              alt={item.name}
-                              className="w-full h-full object-cover"
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full ${
+                                occupied ? 'bg-emerald-500' : 'bg-slate-300'
+                              }`}
                             />
-                            <button
-                              type="button"
-                              onClick={() => removeQueuedBannerFile(idx)}
-                              className="absolute top-1 right-1 p-0.5 rounded-full bg-slate-900/75 text-white"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
+                            <h4 className="text-sm font-black text-slate-900">
+                              {t('Room', 'कोठा')} {room.room_number}
+                            </h4>
+                            <span className="text-[10px] font-bold text-slate-400">
+                              • {t('Rs.', 'रु.')} {Number(room.base_rent || 0).toLocaleString()}
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              occupied
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {occupied
+                              ? t('Occupied', 'बसोबास छ')
+                              : t('Vacant', 'खाली छ')}
+                          </span>
+                        </div>
 
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="submit"
-                        disabled={uploadBannerMutation.isPending || bannerFiles.length === 0}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition"
-                      >
-                        {uploadBannerMutation.isPending ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            {t('Uploading...', 'अपलोड हुँदैछ...')}
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-3.5 h-3.5" />
-                            {t('Upload Slides', 'अपलोड गर्नुहोस्')}
-                          </>
+                        <p className="text-xs font-extrabold text-slate-800 truncate mb-3">
+                          {occupied && tenant
+                            ? tenant.full_name
+                            : t('Ready for Assignment', 'भाडाका लागि खाली')}
+                        </p>
+
+                        {/* Digital Sub-Meter Readout Bar */}
+                        <div className="flex items-center justify-between bg-slate-900 text-white px-3 py-2 rounded-xl mb-2.5">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span className="text-[10px] text-slate-400 uppercase font-bold">
+                              {t('Meter:', 'मिटर:')}
+                            </span>
+                            <strong className="font-black text-white">
+                              {room.current_meter_reading} {t('kWh', 'युनिट')}
+                            </strong>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => openEditMeterModal(room)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/15 hover:bg-indigo-500 text-white font-extrabold text-[10px] transition cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />{' '}
+                            {t('Edit Meter', 'सच्याउनुहोस्')}
+                          </button>
+                        </div>
+
+                        {occupied && tenant && (
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {t('Next Due:', 'अर्को मिति:')}{' '}
+                            <strong className="text-slate-700">
+                              {formatDualDate(tenant.next_due_date)}
+                            </strong>
+                          </p>
                         )}
-                      </button>
+                      </div>
+
+                      <div className="px-4 py-2.5 bg-slate-50/90 border-t border-slate-100 flex items-center justify-between gap-2">
+                        {occupied && tenant?.tenant_id && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserId(tenant.tenant_id)}
+                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-extrabold transition"
+                          >
+                            {t('Inspect Tenant', 'भाडावाल हेर्नुहोस्')}
+                          </button>
+                        )}
+                        {occupied ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  t(
+                                    `Mark Room ${room.room_number} as vacant?`,
+                                    `कोठा ${room.room_number} लाई खाली चिन्ह लगाउने हो?`
+                                  )
+                                )
+                              ) {
+                                axiosClient.post(`/rooms/${room.id}/vacate/`).then(() => {
+                                  refreshAllAdminData();
+                                });
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold ml-auto transition"
+                          >
+                            {t('Vacate Room', 'खाली गर्नुहोस्')}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignModalRoom(room);
+                              setStartingMeter(String(room.current_meter_reading || 0));
+                            }}
+                            className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-2xs transition"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />{' '}
+                            {t('Assign Tenant', 'भाडावाल तोक्नुहोस्')}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </form>
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* REAL-TIME INVENTORY: ROOMS A1-A4 & B1-B5 */}
-      <section
-        id="rooms-inventory"
-        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 border-t border-slate-200/70"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-7">
-          <div>
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 mb-0.5">
-              {t('LIVE ROOM INVENTORY', 'लाइभ कोठा विवरण')}
-            </p>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-              {t('Available Rooms & Studios', 'उपलब्ध कोठा तथा स्टुडियोहरू')}
-            </h2>
-          </div>
+          {/* SECTION B: UNIFIED 3-IN-1 EXECUTIVE ACTION CENTER (BILLS | BOOKINGS | MOVE-OUTS) */}
+          <div className="rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    {t(
+                      'Executive Action & Verification Center',
+                      'प्रमाणीकरण, बुकिङ र कोठा छोड्ने कार्य कक्ष'
+                    )}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {t(
+                    'Switch between payment proof audits, room bookings, and move-out settlements',
+                    'बिल प्रमाणीकरण, कोठा बुकिङ र कोठा छोड्ने अनुरोधहरू एकै ठाउँबाट व्यवस्थापन गर्नुहोस्'
+                  )}
+                </p>
+              </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
-              {[
-                {
-                  key: 'ALL',
-                  label: t(`All (${rooms.length || 9})`, `सबै (${rooms.length || 9})`),
-                },
-                {
-                  key: 'GROUND',
-                  label: t('Ground (A1–A4)', 'भुइँ तल्ला (A1–A4)'),
-                },
-                {
-                  key: 'FIRST',
-                  label: t('First (B1–B5)', 'पहिलो तल्ला (B1–B5)'),
-                },
-              ].map((tab) => (
+              {/* 3-Queue Switcher Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
                 <button
-                  key={tab.key}
-                  onClick={() => setFloorFilter(tab.key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                    floorFilter === tab.key
-                      ? 'bg-indigo-600 text-white'
+                  type="button"
+                  onClick={() => setActionQueueTab('BILLS')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    actionQueueTab === 'BILLS'
+                      ? 'bg-white text-indigo-600 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {tab.label}
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>{t('Bill Audits', 'बिल प्रमाणीकरण')}</span>
+                  {pendingQueue.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px]">
+                      {pendingQueue.length}
+                    </span>
+                  )}
                 </button>
-              ))}
-            </div>
 
-            <button
-              onClick={() => setAvailableOnly(!availableOnly)}
-              className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${
-                availableOnly
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              {availableOnly
-                ? t('✓ Vacant Only', '✓ खाली मात्र')
-                : t('Vacant Only', 'खाली कोठा मात्र')}
-            </button>
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="py-16 flex justify-center">
-            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-          </div>
-        ) : (
-          <div className="space-y-9">
-            {(floorFilter === 'ALL' || floorFilter === 'GROUND') && (
-              <div>
-                <div className="flex items-center justify-between mb-3.5">
-                  <div className="flex items-center gap-2">
-                    <Building className="w-4 h-4 text-indigo-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">
-                      {t('Ground Floor (A1–A4)', 'भुइँ तल्ला (A1–A4)')}
-                    </h3>
-                  </div>
-                  <span className="text-xs font-bold text-emerald-600">
-                    {groundRooms.filter((r) => !r.is_occupied).length}{' '}
-                    {t('Available', 'खाली उपलब्ध')}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {groundRooms.map((room) => (
-                    <RoomCard
-                      key={room.id}
-                      room={room}
-                      t={t}
-                      onAction={() => {
-                        if (!user) {
-                          openAuthModal('SIGNUP');
-                        } else {
-                          setReservingRoom(room);
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {(floorFilter === 'ALL' || floorFilter === 'FIRST') && (
-              <div>
-                <div className="flex items-center justify-between mb-3.5">
-                  <div className="flex items-center gap-2">
-                    <Building className="w-4 h-4 text-indigo-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">
-                      {t('First Floor (B1–B5)', 'पहिलो तल्ला (B1–B5)')}
-                    </h3>
-                  </div>
-                  <span className="text-xs font-bold text-emerald-600">
-                    {firstRooms.filter((r) => !r.is_occupied).length}{' '}
-                    {t('Available', 'खाली उपलब्ध')}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                  {firstRooms.map((room) => (
-                    <RoomCard
-                      key={room.id}
-                      room={room}
-                      t={t}
-                      onAction={() => {
-                        if (!user) {
-                          openAuthModal('SIGNUP');
-                        } else {
-                          setReservingRoom(room);
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* ========================================================================= */}
-      {/* HOUSE RULES & GUIDELINES (13 ACCORDION CARDS + HIGHLIGHTED FINES CARD)    */}
-      {/* ========================================================================= */}
-      <section
-        id="house-rules"
-        className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-slate-200/70 space-y-6"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 mb-0.5">
-              {t('TENANT CHARTER', 'भाडावाल आचारसंहिता')}
-            </p>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-              {t('House Rules & Guidelines', 'घरको नियम तथा निर्देशिका')}
-            </h2>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setExpandAllRules((prev) => !prev)}
-            className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 border border-slate-200 text-xs font-extrabold shadow-2xs transition"
-          >
-            {expandAllRules
-              ? t('Collapse All', 'सबै संक्षिप्त गर्नुहोस्')
-              : t('Expand All 13 Rules', 'सबै १३ नियम हेर्नुहोस्')}
-          </button>
-        </div>
-
-        {/* 13 ACCORDION CARDS */}
-        <div className="space-y-2.5">
-          {HOUSE_RULES_CATEGORIES.map((cat, idx) => {
-            const isOpen = expandAllRules || openRuleIndex === idx;
-            const IconComponent = cat.icon;
-            const pointsList = isNepali && cat.itemsNe ? cat.itemsNe : cat.items;
-
-            return (
-              <div
-                key={cat.id}
-                className={`rounded-2xl transition overflow-hidden border ${
-                  cat.isHighlightedFineCategory
-                    ? 'bg-rose-50/40 border-rose-200 shadow-xs'
-                    : 'bg-white border-slate-200/80 shadow-2xs'
-                }`}
-              >
                 <button
                   type="button"
-                  onClick={() => {
-                    if (expandAllRules) {
-                      setExpandAllRules(false);
-                      setOpenRuleIndex(idx);
-                    } else {
-                      setOpenRuleIndex(isOpen ? -1 : idx);
-                    }
-                  }}
-                  className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50/60 transition"
+                  onClick={() => setActionQueueTab('BOOKINGS')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    actionQueueTab === 'BOOKINGS'
+                      ? 'bg-white text-indigo-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0 pr-3">
-                    <div
-                      className={`w-9 h-9 rounded-xl ${cat.iconBg} flex items-center justify-center shrink-0`}
-                    >
-                      <IconComponent className="w-4 h-4" />
+                  <CalendarCheck className="w-3.5 h-3.5" />
+                  <span>{t('Room Bookings', 'कोठा बुकिङ')}</span>
+                  {pendingReservations.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px]">
+                      {pendingReservations.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActionQueueTab('MOVEOUTS')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    actionQueueTab === 'MOVEOUTS'
+                      ? 'bg-white text-rose-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{t('Move-Outs', 'कोठा छोड्ने')}</span>
+                  {pendingMoveOuts.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px]">
+                      {pendingMoveOuts.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* SUB-TAB 1: REMITTANCE & METER AUDIT CLEARING */}
+            {actionQueueTab === 'BILLS' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-extrabold text-slate-600">
+                    {t('Filter Invoices:', 'बिल छान्नुहोस्:')}
+                  </span>
+                  <div className="inline-flex bg-slate-100 p-1 rounded-xl">
+                    {[
+                      {
+                        key: 'OPEN',
+                        label: t(
+                          `Open / Pending (${unpaidOrPendingBills.length})`,
+                          `बाँकी / प्रतीक्षामा (${unpaidOrPendingBills.length})`
+                        ),
+                      },
+                      {
+                        key: 'APPROVED',
+                        label: t(
+                          `Approved & Paid (${approvedOrPaidBills.length})`,
+                          `स्वीकृत र चुक्ता (${approvedOrPaidBills.length})`
+                        ),
+                      },
+                      {
+                        key: 'ALL',
+                        label: t(`All (${bills.length})`, `सबै (${bills.length})`),
+                      },
+                    ].map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setBillQueueFilter(tab.key)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                          billQueueFilter === tab.key
+                            ? 'bg-white text-indigo-600 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {displayedBillsQueue.length === 0 ? (
+                  <div className="py-10 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                    {t('No bills in this view.', 'यस दृश्यमा कुनै बिल छैन।')}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-5 space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      {displayedBillsQueue.map((b) => {
+                        const isSettled = b.status === 'APPROVED' || b.status === 'PAID_CASH';
+                        return (
+                          <div
+                            key={b.id}
+                            onClick={() => setSelectedBillForAudit(b)}
+                            className={`p-3.5 rounded-2xl border cursor-pointer transition ${
+                              activeAuditBill?.id === b.id
+                                ? 'border-indigo-600 bg-indigo-50/50'
+                                : 'border-slate-200 bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-bold text-slate-900 text-xs truncate pr-2">
+                                {t('Room', 'कोठा')} {b.room_number} • {b.tenant_name}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                  isSettled
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : b.status === 'PENDING_VERIFICATION'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {td(b.status_display)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-500">
+                              <span>
+                                {formatDualMonthLabel(b.billing_month_label)} •{' '}
+                                {t('Rs.', 'रु.')} {Number(b.total_payable).toLocaleString()}
+                              </span>
+                              {Number(b.damage_fine_amount || 0) > 0 && !isSettled && (
+                                <span className="text-rose-600 font-bold">
+                                  {t('Fine: Rs.', 'जरिवाना: रु.')}{' '}
+                                  {Number(b.damage_fine_amount).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3
-                          className={`text-xs sm:text-sm font-extrabold ${
-                            cat.isHighlightedFineCategory ? 'text-rose-900' : 'text-slate-900'
-                          }`}
-                        >
-                          {isNepali ? cat.titleNe : cat.title}
-                        </h3>
-                        {cat.isHighlightedFineCategory && (
-                          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-extrabold uppercase">
-                            {t('Fines', 'जरिवाना')}
-                          </span>
+
+                    {activeAuditBill && (
+                      <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-slate-900">
+                              {t('Room', 'कोठा')} {activeAuditBill.room_number} —{' '}
+                              {activeAuditBill.tenant_name}
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              {t('Cycle:', 'बिलिङ चक्र:')}{' '}
+                              {formatDualMonthLabel(activeAuditBill.billing_month_label)}
+                              {activeAuditBill.due_date
+                                ? ` • ${t('Due:', 'तिर्नुपर्ने:')} ${formatDualDate(
+                                    activeAuditBill.due_date
+                                  )}`
+                                : ''}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-sm font-extrabold text-indigo-600 block">
+                              {t('Total: Rs.', 'जम्मा: रु.')}{' '}
+                              {Number(activeAuditBill.total_payable).toLocaleString()}
+                            </span>
+                            {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
+                              <button
+                                type="button"
+                                onClick={() => openFineModalForUser(null, activeAuditBill)}
+                                className="text-[11px] font-extrabold text-rose-600 hover:underline"
+                              >
+                                {t('+ Add / Edit Fine', '+ जरिवाना थप्नुहोस् / सच्याउनुहोस्')}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {Number(activeAuditBill.damage_fine_amount || 0) > 0 && (
+                          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-extrabold text-rose-800 flex items-center gap-1.5">
+                                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                                {t('Applied Fine: Rs.', 'लगाइएको जरिवाना: रु.')}{' '}
+                                {Number(activeAuditBill.damage_fine_amount).toLocaleString()}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {activeAuditBill.fine_applied_at && (
+                                  <span className="text-[10px] text-rose-600 font-semibold">
+                                    {formatDualDate(activeAuditBill.fine_applied_at)}
+                                  </span>
+                                )}
+                                {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUndoFine(activeAuditBill.id)}
+                                    disabled={applyFineMutation.isPending}
+                                    className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition text-[10px] font-extrabold shadow-xs"
+                                  >
+                                    {t('Undo Fine', 'जरिवाना हटाउनुहोस्')}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-rose-700 font-medium">
+                              {t('Reason:', 'कारण:')}{' '}
+                              {activeAuditBill.damage_fine_reason || 'Rule / damage violation'}
+                            </p>
+                            {Array.isArray(activeAuditBill.fine_evidence_urls) &&
+                              activeAuditBill.fine_evidence_urls.length > 0 && (
+                                <div className="flex items-center gap-2 pt-1 overflow-x-auto">
+                                  {activeAuditBill.fine_evidence_urls.map((evUrl, idx) => {
+                                    const safeEv = getSafeMediaUrl(evUrl);
+                                    return (
+                                      <img
+                                        key={idx}
+                                        src={safeEv}
+                                        alt="Fine Evidence"
+                                        onClick={() =>
+                                          openPhotoLightbox(
+                                            activeAuditBill.fine_evidence_urls.map((u, i) => ({
+                                              url: getSafeMediaUrl(u),
+                                              title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
+                                                i + 1
+                                              } — ${t('Room', 'कोठा')} ${activeAuditBill.room_number}`,
+                                              subtitle: activeAuditBill.damage_fine_reason,
+                                            })),
+                                            idx
+                                          )
+                                        }
+                                        className="w-14 h-14 rounded-xl object-cover border border-rose-300 cursor-pointer hover:scale-105 transition"
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              )}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                              {t('Zone 1: Sub-Meter', 'क्षेत्र १: सब-मिटर फोटो')}
+                            </p>
+                            <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                              {activeAuditBill.meter_photo_url ? (
+                                <img
+                                  src={getSafeMediaUrl(activeAuditBill.meter_photo_url)}
+                                  alt="Meter"
+                                  onClick={() =>
+                                    openPhotoLightbox([
+                                      {
+                                        url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
+                                        title: `${t('Room', 'कोठा')} ${
+                                          activeAuditBill.room_number
+                                        } — ${t('Meter Photo', 'मिटर फोटो')}`,
+                                        subtitle: formatDualMonthLabel(
+                                          activeAuditBill.billing_month_label
+                                        ),
+                                      },
+                                    ])
+                                  }
+                                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                                  {t('No Meter Photo', 'मिटर फोटो छैन')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                              {t('Zone 2: Payment Receipt', 'क्षेत्र २: भुक्तानी भौचर')}
+                            </p>
+                            <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                              {activeAuditBill.payment_screenshot_url ? (
+                                <img
+                                  src={getSafeMediaUrl(activeAuditBill.payment_screenshot_url)}
+                                  alt="Payment"
+                                  onClick={() =>
+                                    openPhotoLightbox([
+                                      {
+                                        url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
+                                        title: `${t('Room', 'कोठा')} ${
+                                          activeAuditBill.room_number
+                                        } — ${t('Payment Screenshot', 'भुक्तानी भौचर')}`,
+                                        subtitle: formatDualMonthLabel(
+                                          activeAuditBill.billing_month_label
+                                        ),
+                                      },
+                                    ])
+                                  }
+                                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                                  {t('No Payment Slip', 'भुक्तानी भौचर छैन')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) ? (
+                          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              {t('Payment Verified & Settled', 'भुक्तानी प्रमाणित र चुक्ता भयो')} (
+                              {td(activeAuditBill.status_display)})
+                            </span>
+                            <span className="text-[11px] text-emerald-700 font-semibold">
+                              Ref:{' '}
+                              {activeAuditBill.transaction_reference || t('Verified', 'प्रमाणित')}
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              type="text"
+                              value={adminRemarks}
+                              onChange={(e) => setAdminRemarks(e.target.value)}
+                              placeholder={t('Remarks...', 'कैफियत लेख्नुहोस्...')}
+                              className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
+                            />
+                            <div className="flex items-center gap-3 pt-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  auditMutation.mutate({
+                                    billId: activeAuditBill.id,
+                                    action: 'REJECT',
+                                    remarks: adminRemarks || 'Please re-upload.',
+                                  })
+                                }
+                                className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
+                              >
+                                {t('Reject', 'अस्वीकार गर्नुहोस्')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  auditMutation.mutate({
+                                    billId: activeAuditBill.id,
+                                    action: 'APPROVE',
+                                    remarks: adminRemarks || 'Verified.',
+                                  })
+                                }
+                                className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
+                              >
+                                {t('Approve', 'स्वीकृत गर्नुहोस्')}
+                              </button>
+                            </div>
+                          </>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {isNepali ? cat.subtitleNe : cat.subtitle}
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUB-TAB 2: ROOM RESERVATIONS & VISIT REQUESTS */}
+            {actionQueueTab === 'BOOKINGS' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-extrabold text-slate-600">
+                    {t('Filter Booking Requests:', 'बुकिङ छान्नुहोस्:')}
+                  </span>
+                  <div className="inline-flex bg-slate-100 p-1 rounded-xl">
+                    {[
+                      {
+                        key: 'PENDING',
+                        label: t(
+                          `Pending (${pendingReservations.length})`,
+                          `प्रतीक्षामा (${pendingReservations.length})`
+                        ),
+                      },
+                      {
+                        key: 'APPROVED',
+                        label: t(
+                          `Approved & Assigned (${approvedReservations.length})`,
+                          `स्वीकृत र तोकिएको (${approvedReservations.length})`
+                        ),
+                      },
+                      {
+                        key: 'ALL',
+                        label: t(`All (${reservations.length})`, `सबै (${reservations.length})`),
+                      },
+                    ].map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setReservationFilter(tab.key)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${
+                          reservationFilter === tab.key
+                            ? 'bg-white text-indigo-600 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {displayedReservations.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                    {t(
+                      'No room reservations to display in this tab.',
+                      'यस ट्याबमा कुनै कोठा बुकिङ अनुरोध छैन।'
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-5 space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                      {displayedReservations.map((res) => (
+                        <div
+                          key={res.id}
+                          onClick={() => {
+                            setSelectedReservation(res);
+                            setStartingMeterOverride(String(res.current_meter_reading || 0));
+                          }}
+                          className={`p-3.5 rounded-2xl border cursor-pointer transition ${
+                            activeReviewReservation?.id === res.id
+                              ? 'border-indigo-600 bg-indigo-50/50'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-900 text-xs truncate pr-2">
+                              {t('Room', 'कोठा')} {res.room_number} •{' '}
+                              {res.user_full_name || res.user_email}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                res.status === 'APPROVED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : res.status === 'PENDING'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {td(res.status_display)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {t('Move-in:', 'सर्ने मिति:')}{' '}
+                            {formatDualDate(res.expected_move_in_date)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {activeReviewReservation && (
+                      <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-slate-900">
+                              {t('Room', 'कोठा')} {activeReviewReservation.room_number} —{' '}
+                              {activeReviewReservation.user_full_name ||
+                                activeReviewReservation.user_email}
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              {t('Expected Move-In:', 'सर्ने मिति:')}{' '}
+                              {formatDualDate(activeReviewReservation.expected_move_in_date)}
+                              {activeReviewReservation.phone_number
+                                ? ` • 📞 ${activeReviewReservation.phone_number}`
+                                : ''}
+                            </p>
+                          </div>
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase ${
+                              activeReviewReservation.status === 'APPROVED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : activeReviewReservation.status === 'PENDING'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-700'
+                            }`}
+                          >
+                            {td(activeReviewReservation.status_display)}
+                          </span>
+                        </div>
+
+                        {activeReviewReservation.status === 'PENDING' ? (
+                          <div className="space-y-3">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={startingMeterOverride}
+                              onChange={(e) => setStartingMeterOverride(e.target.value)}
+                              placeholder={t(
+                                'Initial Sub-Meter Reading',
+                                'सुरुवाती सब-मिटर रिडिङ'
+                              )}
+                              className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200"
+                            />
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  reservationActionMutation.mutate({
+                                    id: activeReviewReservation.id,
+                                    payload: {
+                                      action: 'REJECT',
+                                      admin_remarks: 'Rejected by Landlord',
+                                    },
+                                  })
+                                }
+                                className="flex-1 py-2.5 rounded-xl bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200"
+                              >
+                                {t('Reject', 'अस्वीकार गर्नुहोस्')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  reservationActionMutation.mutate({
+                                    id: activeReviewReservation.id,
+                                    payload: {
+                                      action: 'APPROVE',
+                                      starting_meter_reading:
+                                        startingMeterOverride ||
+                                        activeReviewReservation.current_meter_reading,
+                                      entry_date: activeReviewReservation.expected_move_in_date,
+                                    },
+                                  })
+                                }
+                                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
+                              >
+                                {t('Approve & Assign', 'स्वीकृत गरी कोठा तोक्नुहोस्')}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-4 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2.5">
+                              <CheckCircle2
+                                className={`w-5 h-5 shrink-0 ${
+                                  activeReviewReservation.status === 'APPROVED'
+                                    ? 'text-emerald-600'
+                                    : 'text-slate-400'
+                                }`}
+                              />
+                              <div>
+                                <p className="font-extrabold text-slate-900">
+                                  {activeReviewReservation.status === 'APPROVED'
+                                    ? t(
+                                        `Approved & Assigned to Room ${activeReviewReservation.room_number}`,
+                                        `स्वीकृत भई कोठा ${activeReviewReservation.room_number} मा तोकिएको छ`
+                                      )
+                                    : `${t('Request', 'अनुरोध')} ${td(
+                                        activeReviewReservation.status_display
+                                      )}`}
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  {activeReviewReservation.admin_remarks ||
+                                    t('Processed by Landlord Admin', 'घरधनी एडमिनद्वारा सम्पन्न')}
+                                </p>
+                              </div>
+                            </div>
+                            {activeReviewReservation.user && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedUserId(activeReviewReservation.user)}
+                                className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px] shrink-0"
+                              >
+                                {t('Inspect Tenant', 'भाडावाल हेर्नुहोस्')}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUB-TAB 3: TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE */}
+            {actionQueueTab === 'MOVEOUTS' && (
+              <div className="space-y-4">
+                {pendingMoveOuts.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                    {t(
+                      'No pending move-out requests from tenants right now.',
+                      'अहिले कोठा छोड्ने कुनै अनुरोध बाँकी छैन।'
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-5 space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                      {pendingMoveOuts.map((mo) => (
+                        <div
+                          key={mo.id}
+                          onClick={() => {
+                            setSelectedMoveOut(mo);
+                            setFinalMeterOverride(String(mo.current_meter_reading ?? ''));
+                          }}
+                          className={`p-4 rounded-2xl border cursor-pointer transition ${
+                            activeReviewMoveOut?.id === mo.id
+                              ? 'border-rose-600 bg-rose-50/50'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-900 text-xs">
+                              {t('Room', 'कोठा')} {mo.room_number} • {mo.tenant_name}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800">
+                              {td(mo.status_display || 'Pending')}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 font-semibold">
+                            {t('Planned Departure:', 'छोड्ने मिति:')}{' '}
+                            {formatDualDate(mo.requested_date)}
+                          </p>
+                          {mo.reason && (
+                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                              {t('Reason:', 'कारण:')} {mo.reason}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {activeReviewMoveOut && (
+                      <div className="lg:col-span-7 rounded-2xl bg-rose-50/40 border border-rose-200/80 p-5 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200/60 pb-3">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-slate-900">
+                              {t('Room', 'कोठा')} {activeReviewMoveOut.room_number} —{' '}
+                              {activeReviewMoveOut.tenant_name}
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              {activeReviewMoveOut.tenant_email}
+                              {activeReviewMoveOut.tenant_phone
+                                ? ` • 📞 ${activeReviewMoveOut.tenant_phone}`
+                                : ''}
+                            </p>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-lg bg-white text-rose-700 font-extrabold text-xs border border-rose-200">
+                            {t('Departure:', 'छोड्ने मिति:')}{' '}
+                            {formatDualDate(activeReviewMoveOut.requested_date)}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div className="p-3 rounded-xl bg-white border border-slate-200">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                              {t('Previous Sub-Meter Reading', 'अघिल्लो सब-मिटर रिडिङ')}
+                            </span>
+                            <strong className="text-sm text-indigo-600">
+                              {activeReviewMoveOut.current_meter_reading ?? 0}{' '}
+                              {t('units', 'युनिट')}
+                            </strong>
+                          </div>
+                          <div className="p-3 rounded-xl bg-white border border-slate-200">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                              {t('Tenant Reason', 'भाडावालको कारण')}
+                            </span>
+                            <strong className="text-slate-800">
+                              {activeReviewMoveOut.reason || t('Not specified', 'उल्लेख छैन')}
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
+                              {t(
+                                'Final Sub-Meter Reading (Units) *',
+                                'अन्तिम सब-मिटर रिडिङ (युनिट) *'
+                              )}
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={activeReviewMoveOut.current_meter_reading || 0}
+                              value={
+                                finalMeterOverride !== ''
+                                  ? finalMeterOverride
+                                  : String(activeReviewMoveOut.current_meter_reading ?? 0)
+                              }
+                              onChange={(e) => setFinalMeterOverride(e.target.value)}
+                              className="w-full px-3 py-2.5 text-xs font-bold rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
+                              {t('Admin Settlement Remarks', 'फरफारक कैफियत (ऐच्छिक)')}
+                            </label>
+                            <input
+                              type="text"
+                              value={moveOutRemarks}
+                              onChange={(e) => setMoveOutRemarks(e.target.value)}
+                              placeholder={t(
+                                'e.g. Keys returned & deposit settled',
+                                'जस्तै: साँचो बुझियो र हिसाब फरफारक भयो'
+                              )}
+                              className="w-full px-3 py-2.5 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-3 pt-1">
+                          <button
+                            type="button"
+                            disabled={moveOutActionMutation.isPending}
+                            onClick={() =>
+                              moveOutActionMutation.mutate({
+                                id: activeReviewMoveOut.id,
+                                payload: {
+                                  action: 'REJECT',
+                                  admin_remarks:
+                                    moveOutRemarks || 'Please clear pending dues before move-out.',
+                                },
+                              })
+                            }
+                            className="flex-1 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200 transition"
+                          >
+                            {t('Reject Request', 'अस्वीकार गर्नुहोस्')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={moveOutActionMutation.isPending}
+                            onClick={() =>
+                              moveOutActionMutation.mutate({
+                                id: activeReviewMoveOut.id,
+                                payload: {
+                                  action: 'APPROVE',
+                                  final_meter_reading:
+                                    finalMeterOverride !== ''
+                                      ? finalMeterOverride
+                                      : activeReviewMoveOut.current_meter_reading,
+                                  admin_remarks:
+                                    moveOutRemarks || 'Final move-out settlement invoice.',
+                                },
+                              })
+                            }
+                            className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-sm transition"
+                          >
+                            {moveOutActionMutation.isPending
+                              ? t('Processing...', 'प्रक्रियामा...')
+                              : t(
+                                  'Approve, Settle & Vacate',
+                                  'स्वीकृत गरी हिसाब मिलान र कोठा खाली गर्नुहोस्'
+                                )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* SECTION C: FINANCIAL VELOCITY CHARTS & WHOLE-HOUSE EXPENSE LOGGER */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-8 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs">
+              <h3 className="text-base font-extrabold text-slate-900 mb-1">
+                {t(
+                  'Financial Velocity (Bar Chart • AD / BS)',
+                  'मासिक आम्दानी र खर्च (बार चार्ट • AD / BS)'
+                )}
+              </h3>
+              <div className="w-full h-64 mt-4">
+                {!analyticsLoading && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyTrendChartData}>
+                      <XAxis dataKey="month" stroke="#94A3B8" fontSize={10} />
+                      <YAxis stroke="#94A3B8" fontSize={11} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar
+                        dataKey="income"
+                        name={t('Income (Rs.)', 'आम्दानी (रु.)')}
+                        fill="#4F46E5"
+                        radius={[6, 6, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="expenses"
+                        name={t('Expenses (Rs.)', 'खर्च (रु.)')}
+                        fill="#EF4444"
+                        radius={[6, 6, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+              <h3 className="text-base font-extrabold text-slate-900 mb-1">
+                {t('Utility Outflow (Pie Chart)', 'खर्च विवरण (पाई चार्ट)')}
+              </h3>
+              <div className="w-full h-56 my-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={analytics?.expense_pie_chart || []}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={78}
+                      paddingAngle={3}
+                    >
+                      {(analytics?.expense_pie_chart || []).map((entry, index) => (
+                        <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION D: RECORD WHOLE-HOUSE EXPENSE & BROADCAST HOUSE NOTICE */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left 5 Cols: Record Whole-House Expense */}
+            <div className="lg:col-span-5 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 mb-1">
+                  {t('Record Whole-House Expense', 'घरको कुल खर्च टिपोट गर्नुहोस्')}
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  {t(
+                    'Log main NEA electricity, water tanker, or plumbing costs',
+                    'मुख्य बिजुली, पानी ट्यांकर वा मर्मत खर्च टिपोट गर्नुहोस्'
+                  )}
+                </p>
+              </div>
+
+              <form onSubmit={handleLogExpense} className="space-y-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('CATEGORY', 'विधा')}
+                    </label>
+                    <select
+                      value={expenseCategory}
+                      onChange={(e) => setExpenseCategory(e.target.value)}
+                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    >
+                      <option value="ELECTRICITY_MAIN">
+                        {t('Main Electricity (NEA)', 'मुख्य बिजुली बिल (NEA)')}
+                      </option>
+                      <option value="WATER_SUPPLY">
+                        {t('Water Supply / Tanker', 'पानी आपूर्ति / ट्यांकर')}
+                      </option>
+                      <option value="MAINTENANCE">
+                        {t('Plumbing & Repairs', 'मर्मत सम्भार')}
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('AMOUNT (NPR)', 'रकम (रु.)')}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value)}
+                      placeholder="e.g. 1500"
+                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('TITLE', 'खर्च शीर्षक')}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={expenseTitle}
+                      onChange={(e) => setExpenseTitle(e.target.value)}
+                      placeholder={t('e.g. NEA Main Bill', 'जस्तै: मुख्य बिजुली बिल')}
+                      className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                      {t('DATE (AD / BS)', 'मिति (AD / BS)')}
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={expenseDate}
+                      onChange={(e) => setExpenseDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                    {expenseDate && (
+                      <p className="text-[10px] font-extrabold text-indigo-600 mt-1">
+                        📅 {formatBSOnly(expenseDate)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={expenseMutation.isPending}
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-sm transition"
+                >
+                  {expenseMutation.isPending
+                    ? t('Saving...', 'सुरक्षित हुँदैछ...')
+                    : t('Commit Expense', 'खर्च सुरक्षित गर्नुहोस्')}
+                </button>
+              </form>
+            </div>
+
+            {/* Right 7 Cols: Broadcast House Notice + Active Broadcasts */}
+            <div className="lg:col-span-7 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200/80 shadow-2xs grid grid-cols-1 md:grid-cols-12 gap-5">
+              <div className="md:col-span-7 space-y-3">
+                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-indigo-600" />{' '}
+                  {t('Broadcast House Notice', 'घरको सूचना प्रकाशन')}
+                </h3>
+                <form onSubmit={handlePostNotice} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <input
+                      type="text"
+                      required
+                      value={noticeTitle}
+                      onChange={(e) => setNoticeTitle(e.target.value)}
+                      placeholder={t('Notice Title...', 'सूचनाको शीर्षक...')}
+                      className="sm:col-span-2 px-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    />
+                    <select
+                      value={noticeCategory}
+                      onChange={(e) => setNoticeCategory(e.target.value)}
+                      className="px-2.5 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                    >
+                      <option value="GENERAL">{t('General', 'सामान्य')}</option>
+                      <option value="MAINTENANCE">{t('Maintenance', 'मर्मत')}</option>
+                      <option value="URGENT">{t('Urgent', 'जरुरी')}</option>
+                    </select>
+                  </div>
+                  <textarea
+                    required
+                    rows="3"
+                    value={noticeContent}
+                    onChange={(e) => setNoticeContent(e.target.value)}
+                    placeholder={t(
+                      'Write announcement for all tenants...',
+                      'सबै भाडावालका लागि सूचना लेख्नुहोस्...'
+                    )}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={createNoticeMutation.isPending}
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm transition"
+                  >
+                    {createNoticeMutation.isPending
+                      ? t('Publishing...', 'प्रकाशन हुँदैछ...')
+                      : t('Publish Notice to Tenants', 'सूचना प्रकाशन गर्नुहोस्')}
+                  </button>
+                </form>
+              </div>
+
+              <div className="md:col-span-5 rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 overflow-y-auto max-h-[240px] space-y-2.5">
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                  {t('Active Broadcasts', 'प्रकाशित सूचनाहरू')} ({notices.length})
+                </h4>
+                {notices.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">
+                    {t('No active notices.', 'कुनै सक्रिय सूचना छैन।')}
+                  </p>
+                ) : (
+                  notices.map((n) => (
+                    <div
+                      key={n.id}
+                      className="bg-white p-3 rounded-xl shadow-2xs border border-slate-200/80"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`text-[10px] font-extrabold ${
+                            n.category === 'URGENT' ? 'text-rose-600' : 'text-indigo-600'
+                          }`}
+                        >
+                          {td(n.category_display || n.category)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => deleteNoticeMutation.mutate(n.id)}
+                          className="text-slate-400 hover:text-rose-600 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <p className="text-xs font-bold text-slate-900 line-clamp-1">{n.title}</p>
+                      <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{n.content}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: EXECUTIVE USER DOSSIER & PHOTO INSPECTION MODAL                  */}
+      {/* ========================================================================= */}
+      {selectedUserModal && (() => {
+        const u = selectedUserModal;
+        const avatarUrl = getSafeMediaUrl(u.profile_picture_path || u.profile_picture_url);
+        const coverUrl = getSafeMediaUrl(u.cover_picture_path || u.cover_picture_url);
+        const citFrontUrl = getSafeMediaUrl(u.citizenship_front_url);
+        const citBackUrl = getSafeMediaUrl(u.citizenship_back_url);
+        const galleryItems = buildUserGalleryItems(u);
+        const userBills = Array.isArray(u.recent_bills) ? u.recent_bills : [];
+
+        return (
+          <div
+            onClick={() => setSelectedUserId(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-4xl rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col"
+            >
+              <div className="overflow-y-auto flex-1">
+                <div className="h-36 sm:h-48 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative overflow-hidden group">
+                  {coverUrl ? (
+                    <img
+                      src={coverUrl}
+                      alt="Cover Banner"
+                      onClick={() => {
+                        const idx = galleryItems.findIndex((item) => item.key === 'COVER');
+                        openPhotoLightbox(galleryItems, idx >= 0 ? idx : 0);
+                      }}
+                      className="w-full h-full object-cover cursor-pointer group-hover:scale-[1.02] transition duration-500"
+                    />
+                  ) : (
+                    <div
+                      className="absolute inset-0 opacity-20"
+                      style={{
+                        backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)',
+                        backgroundSize: '18px 18px',
+                      }}
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-slate-900/20 to-transparent pointer-events-none" />
+
+                  <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+                    <span className="px-3 py-1 rounded-full bg-slate-900/60 backdrop-blur-md text-white text-[11px] font-extrabold border border-white/20">
+                      {t('Tenant Inspection Dossier', 'भाडावाल निरीक्षण विवरण')} #{u.id}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {galleryItems.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openPhotoLightbox(galleryItems, 0)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/95 hover:bg-white text-slate-900 text-xs font-extrabold shadow-md transition"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5 text-indigo-600" />
+                          {t('Photo Mode', 'फोटो मोड')} ({galleryItems.length})
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserId(null)}
+                        className="p-2 rounded-full bg-slate-900/60 hover:bg-slate-900 text-white transition"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-6 sm:px-8 pb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-14 relative z-10 mb-6">
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                      <div
+                        onClick={() => {
+                          if (avatarUrl) {
+                            const idx = galleryItems.findIndex((item) => item.key === 'AVATAR');
+                            openPhotoLightbox(galleryItems, idx >= 0 ? idx : 0);
+                          }
+                        }}
+                        className={`w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-white p-1.5 shadow-xl border border-slate-200 shrink-0 relative group/av ${
+                          avatarUrl ? 'cursor-pointer' : ''
+                        }`}
+                      >
+                        {avatarUrl ? (
+                          <>
+                            <img
+                              src={avatarUrl}
+                              alt={u.full_name}
+                              className="w-full h-full rounded-2xl object-cover"
+                            />
+                            <div className="absolute inset-1.5 rounded-2xl bg-black/40 opacity-0 group-hover/av:opacity-100 flex items-center justify-center transition">
+                              <ZoomIn className="w-6 h-6 text-white" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white font-black text-3xl flex items-center justify-center">
+                            {u.full_name?.charAt(0)?.toUpperCase() || 'T'}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                            {u.full_name}
+                          </h2>
+                          <span className="px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-700 text-[10px] font-extrabold uppercase">
+                            {u.role}
+                          </span>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase ${
+                              u.kyc_status === 'VERIFIED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : u.kyc_status === 'REJECTED'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            KYC: {td(u.kyc_status)}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
+                          <span className="inline-flex items-center gap-1">
+                            <Mail className="w-3.5 h-3.5 text-indigo-600" /> {u.email}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5 text-emerald-600" />{' '}
+                            {u.phone_number || t('No Phone', 'फोन छैन')}
+                          </span>
+                          {u.joined_at && (
+                            <span>
+                              {t('Joined:', 'आबद्ध मिति:')} {formatDualDate(u.joined_at)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openFineModalForUser(u, null)}
+                        className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />{' '}
+                        {t('+ Apply Fine', '+ जरिवाना लगाउनुहोस्')}
+                      </button>
+                      {u.kyc_id && u.kyc_status !== 'VERIFIED' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            kycAuditMutation.mutate({
+                              kycId: u.kyc_id,
+                              action: 'VERIFY',
+                              notes: 'Verified by Admin',
+                            })
+                          }
+                          disabled={kycAuditMutation.isPending}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition"
+                        >
+                          {t('✓ Verify KYC', '✓ केवाईसी प्रमाणित गर्नुहोस्')}
+                        </button>
+                      )}
+                      {u.kyc_id && u.kyc_status !== 'REJECTED' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            kycAuditMutation.mutate({
+                              kycId: u.kyc_id,
+                              action: 'REJECT',
+                              notes: 'Please re-upload clearer citizenship photos.',
+                            })
+                          }
+                          disabled={kycAuditMutation.isPending}
+                          className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition"
+                        >
+                          {t('Reject KYC', 'केवाईसी अस्वीकार')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mb-6">
+                    <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 block">
+                        {t('Assigned Room', 'तोकिएको कोठा')}
+                      </span>
+                      <p className="text-base font-black text-slate-900 mt-1">
+                        {u.room_details
+                          ? `${t('Room', 'कोठा')} ${u.room_details.room_number}`
+                          : u.room_number
+                          ? `${t('Room', 'कोठा')} ${u.room_number}`
+                          : t('Unassigned', 'तोकिएको छैन')}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {u.room_details
+                          ? `${td(u.room_details.floor)} • ${t('Rs.', 'रु.')} ${
+                              u.room_details.base_rent
+                            }${t('/mo', '/महिना')}`
+                          : t('No active unit', 'कुनै सक्रिय कोठा छैन')}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`p-4 rounded-2xl border ${
+                        u.pending_bills_count > 0
+                          ? 'bg-rose-50/80 border-rose-200'
+                          : 'bg-emerald-50/70 border-emerald-200'
+                      }`}
+                    >
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
+                        {t('Pending / Unpaid Bills', 'तिर्न बाँकी बिलहरू')}
+                      </span>
+                      <p
+                        className={`text-base font-black mt-1 ${
+                          u.pending_bills_count > 0 ? 'text-rose-600' : 'text-emerald-700'
+                        }`}
+                      >
+                        {t('Rs.', 'रु.')} {Number(u.total_pending_amount || 0).toLocaleString()}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {u.pending_bills_count > 0
+                          ? `${u.pending_bills_count} ${t('open bill(s)', 'बाँकी बिल')}`
+                          : t('No pending dues', 'बक्यौता छैन')}
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                        {t('Total Paid History', 'कुल भुक्तानी इतिहास')}
+                      </span>
+                      <p className="text-base font-black text-slate-900 mt-1">
+                        {t('Rs.', 'रु.')} {Number(u.total_paid_amount || 0).toLocaleString()}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {u.paid_bills_count || 0} {t('settled invoice(s)', 'चुक्ता बिल')}
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                        {t('Digital Lease & ID', 'सम्झौता र परिचयपत्र')}
+                      </span>
+                      <p className="text-base font-black text-slate-900 mt-1 truncate">
+                        {u.citizenship_number || t('No ID No.', 'परिचयपत्र नं. छैन')}
+                      </p>
+                      <p className="text-[11px] text-emerald-600 font-bold mt-0.5">
+                        {u.has_accepted_lease
+                          ? `${t('✓ Lease Signed', '✓ हस्ताक्षरित')} (${formatDualDate(
+                              u.lease_accepted_at || 'Verified'
+                            )})`
+                          : t('Lease Pending', 'सम्झौता बाँकी')}
                       </p>
                     </div>
                   </div>
-                  <ChevronDown
-                    className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${
-                      isOpen ? 'rotate-180 text-indigo-600' : ''
-                    }`}
-                  />
-                </button>
 
-                {isOpen && (
-                  <div className="px-4 pb-4 pt-2 border-t border-slate-100/90 space-y-3">
-                    {cat.isHighlightedFineCategory && (
-                      <div className="overflow-x-auto rounded-xl border border-rose-200 bg-white">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-rose-50 text-rose-900 font-extrabold uppercase text-[10px] border-b border-rose-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                          <Home className="w-4 h-4 text-indigo-600" />{' '}
+                          {t('Room & Utility Telemetry', 'कोठा र सब-मिटर विवरण')}
+                        </h4>
+                        {u.room_details && (
+                          <button
+                            type="button"
+                            onClick={() => openEditMeterModal(u.room_details)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] shadow-xs transition"
+                          >
+                            <Edit3 className="w-3 h-3" />{' '}
+                            {t('Edit Meter', 'मिटर सच्याउनुहोस्')}
+                          </button>
+                        )}
+                      </div>
+                      {u.room_details ? (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div>
+                            <span className="text-slate-400 block">
+                              {t('Move-In Date (AD / BS)', 'सरेको मिति (AD / BS)')}
+                            </span>
+                            <strong>{formatDualDate(u.room_details.entry_date)}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block">
+                              {t('Next Due Date (AD / BS)', 'अर्को मिति (AD / BS)')}
+                            </span>
+                            <strong className="text-amber-700">
+                              {formatDualDate(u.room_details.next_due_date)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block">
+                              {t('Sub-Meter Reading', 'सब-मिटर रिडिङ')}
+                            </span>
+                            <strong className="text-indigo-600">
+                              {u.room_details.current_meter_reading} {t('units', 'युनिट')}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block">
+                              {t('Utility Rates', 'बिजुली र पानी दर')}
+                            </span>
+                            <strong>
+                              {t('Water Rs.', 'पानी रु.')} {u.room_details.fixed_water_bill} •{' '}
+                              {t('Elec Rs.', 'बिजुली रु.')} {u.room_details.electricity_rate}/u
+                            </strong>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-slate-400 py-2">
+                          {t(
+                            'This user is not currently assigned to an active room.',
+                            'यस प्रयोगकर्तालाई हाल कुनै कोठा तोकिएको छैन।'
+                          )}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                      <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />{' '}
+                        {t('Legal & Emergency Contact', 'कानुनी र आपतकालीन सम्पर्क')}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <div>
+                          <span className="text-slate-400 block">
+                            {t('Legal Full Name', 'पूरा कानुनी नाम')}
+                          </span>
+                          <strong>{u.full_name_legal || u.full_name}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">
+                            {t('Citizenship No.', 'नागरिकता नं.')}
+                          </span>
+                          <strong>
+                            {u.citizenship_number || t('Not submitted', 'पेश छैन')}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">
+                            {t('Emergency Contact', 'आपतकालीन व्यक्ति')}
+                          </span>
+                          <strong>
+                            {u.emergency_contact_name || t('Not provided', 'उपलब्ध छैन')}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">
+                            {t('Emergency Phone', 'आपतकालीन फोन')}
+                          </span>
+                          <strong>
+                            {u.emergency_contact_phone || t('Not provided', 'उपलब्ध छैन')}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Camera className="w-4 h-4 text-indigo-600" />{' '}
+                        {t(
+                          'Uploaded Identity & Profile Photos (Click Any Photo for Fullscreen View)',
+                          'अपलोड गरिएका परिचयपत्र र प्रोफाइल फोटोहरू (पूरा स्क्रिनमा हेर्न थिच्नुहोस्)'
+                        )}
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                      {[
+                        {
+                          label: t('Profile Avatar', 'प्रोफाइल फोटो'),
+                          url: avatarUrl,
+                          key: 'AVATAR',
+                        },
+                        {
+                          label: t('Cover Banner', 'कभर ब्यानर'),
+                          url: coverUrl,
+                          key: 'COVER',
+                        },
+                        {
+                          label: t('Citizenship Front', 'नागरिकता (अगाडि)'),
+                          url: citFrontUrl,
+                          key: 'CIT_FRONT',
+                        },
+                        {
+                          label: t('Citizenship Back', 'नागरिकता (पछाडि)'),
+                          url: citBackUrl,
+                          key: 'CIT_BACK',
+                        },
+                      ].map((photoItem) => {
+                        const galleryIdx = galleryItems.findIndex(
+                          (g) => g.key === photoItem.key
+                        );
+                        return (
+                          <div
+                            key={photoItem.key}
+                            onClick={() => {
+                              if (photoItem.url) {
+                                openPhotoLightbox(
+                                  galleryItems,
+                                  galleryIdx >= 0 ? galleryIdx : 0
+                                );
+                              }
+                            }}
+                            className={`rounded-2xl border overflow-hidden bg-slate-50 flex flex-col justify-between ${
+                              photoItem.url
+                                ? 'border-slate-200 cursor-pointer group hover:border-indigo-400 hover:shadow-md transition'
+                                : 'border-dashed border-slate-200 opacity-75'
+                            }`}
+                          >
+                            <div className="h-32 w-full bg-slate-900/5 relative overflow-hidden flex items-center justify-center">
+                              {photoItem.url ? (
+                                <>
+                                  <img
+                                    src={photoItem.url}
+                                    alt={photoItem.label}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 text-white text-xs font-extrabold transition">
+                                    <ZoomIn className="w-4 h-4" />{' '}
+                                    {t('View Photo', 'हेर्नुहोस्')}
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-[11px] font-bold text-slate-400">
+                                  {t('Not Uploaded', 'अपलोड छैन')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="px-3 py-2 bg-white border-t border-slate-100 flex items-center justify-between">
+                              <span className="text-[11px] font-extrabold text-slate-700 truncate">
+                                {photoItem.label}
+                              </span>
+                              {photoItem.url && (
+                                <ZoomIn className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-indigo-600" />{' '}
+                      {t('Billing & Payment Proof History', 'बिल र भुक्तानी प्रमाण इतिहास')} (
+                      {userBills.length})
+                    </h4>
+                    {userBills.length === 0 ? (
+                      <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 text-center text-xs text-slate-400">
+                        {t('No bills recorded for this user yet.', 'कुनै बिल रेकर्ड छैन।')}
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                          <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
                             <tr>
-                              <th className="py-2 px-3">{t('Violation', 'उल्लंघन / गल्ती')}</th>
-                              <th className="py-2 px-3">{t('Penalty', 'जरिवाना')}</th>
+                              <th className="py-3 px-4">
+                                {t('Cycle / Room (AD / BS)', 'चक्र / कोठा (AD / BS)')}
+                              </th>
+                              <th className="py-3 px-4">
+                                {t('Total Payable', 'कुल तिर्नुपर्ने')}
+                              </th>
+                              <th className="py-3 px-4">{t('Status', 'अवस्था')}</th>
+                              <th className="py-3 px-4">
+                                {t('Proof Photos', 'प्रमाण फोटोहरू')}
+                              </th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-rose-100">
-                            {DAMAGE_FINE_PENALTIES.map((row, rIdx) => (
-                              <tr key={rIdx}>
-                                <td className="py-2 px-3 font-semibold text-slate-800">
-                                  {isNepali ? row.violationNe : row.violation}
-                                </td>
-                                <td className="py-2 px-3 font-extrabold text-rose-600">
-                                  {isNepali ? row.penaltyNe : row.penalty}
-                                </td>
-                              </tr>
-                            ))}
+                          <tbody className="divide-y divide-slate-100">
+                            {userBills.map((b) => {
+                              const mUrl = getSafeMediaUrl(b.meter_photo_url);
+                              const pUrl = getSafeMediaUrl(b.payment_screenshot_url);
+                              const fullBillObj = bills.find((item) => item.id === b.id);
+                              const fineEvUrls = Array.isArray(fullBillObj?.fine_evidence_urls)
+                                ? fullBillObj.fine_evidence_urls
+                                : [];
+
+                              return (
+                                <tr key={b.id} className="hover:bg-slate-50/80">
+                                  <td className="py-3 px-4">
+                                    <p className="font-extrabold text-slate-900">
+                                      {formatDualMonthLabel(b.billing_month_label)}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">
+                                      {t('Room', 'कोठा')} {b.room_number} •{' '}
+                                      {t('Due:', 'तिर्नुपर्ने:')} {formatDualDate(b.due_date)}
+                                    </p>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <p className="font-black text-slate-900">
+                                      {t('Rs.', 'रु.')}{' '}
+                                      {Number(b.total_payable).toLocaleString()}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500">
+                                      {b.units_consumed} {t('units elec', 'युनिट बिजुली')}
+                                      {Number(b.damage_fine_amount || 0) > 0 && (
+                                        <span className="text-rose-600 font-bold ml-1">
+                                          • {t('Fine: Rs.', 'जरिवाना: रु.')}{' '}
+                                          {b.damage_fine_amount}
+                                        </span>
+                                      )}
+                                    </p>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <span
+                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold ${
+                                        b.status === 'APPROVED' || b.status === 'PAID_CASH'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : b.status === 'PENDING_VERIFICATION'
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-rose-100 text-rose-700'
+                                      }`}
+                                    >
+                                      {td(b.status_display)}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2">
+                                      {mUrl ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openPhotoLightbox([
+                                              {
+                                                url: mUrl,
+                                                title: `${t('Meter Photo', 'मिटर फोटो')} — ${formatDualMonthLabel(
+                                                  b.billing_month_label
+                                                )}`,
+                                                subtitle: `${t('Room', 'कोठा')} ${b.room_number} • ${u.full_name}`,
+                                              },
+                                            ])
+                                          }
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px]"
+                                        >
+                                          <Camera className="w-3 h-3" /> {t('Meter', 'मिटर')}
+                                        </button>
+                                      ) : (
+                                        <span className="text-[11px] text-slate-400">
+                                          {t('No Meter', 'मिटर छैन')}
+                                        </span>
+                                      )}
+                                      {pUrl ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openPhotoLightbox([
+                                              {
+                                                url: pUrl,
+                                                title: `${t('Payment Slip', 'भुक्तानी भौचर')} — ${formatDualMonthLabel(
+                                                  b.billing_month_label
+                                                )}`,
+                                                subtitle: `${t('Room', 'कोठा')} ${b.room_number} • ${t(
+                                                  'Rs.',
+                                                  'रु.'
+                                                )} ${b.total_payable}`,
+                                              },
+                                            ])
+                                          }
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px]"
+                                        >
+                                          <CreditCard className="w-3 h-3" />{' '}
+                                          {t('Receipt', 'भौचर')}
+                                        </button>
+                                      ) : (
+                                        <span className="text-[11px] text-slate-400">
+                                          {t('No Slip', 'भौचर छैन')}
+                                        </span>
+                                      )}
+                                      {fineEvUrls.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openPhotoLightbox(
+                                              fineEvUrls.map((ev, i) => ({
+                                                url: getSafeMediaUrl(ev),
+                                                title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
+                                                  i + 1
+                                                } — ${formatDualMonthLabel(
+                                                  b.billing_month_label
+                                                )}`,
+                                                subtitle: fullBillObj?.damage_fine_reason,
+                                              }))
+                                            )
+                                          }
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px]"
+                                        >
+                                          <AlertTriangle className="w-3 h-3" />{' '}
+                                          {t('Fine Proof', 'जरिवाना फोटो')} ({fineEvUrls.length})
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
 
-                    <ul className="space-y-1.5">
-                      {pointsList.map((point, pIdx) => (
-                        <li
-                          key={pIdx}
-                          className="flex items-start gap-2 text-xs text-slate-700"
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {u.room_number && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t(
+                              `Are you sure you want to ask ${u.full_name} to leave Room ${u.room_number}?`,
+                              `के तपाईं ${u.full_name} को कोठा ${u.room_number} खाली गराउन चाहनुहुन्छ?`
+                            )
+                          )
+                        ) {
+                          evictMutation.mutate({
+                            userId: u.id,
+                            actionType: 'VACATE',
+                          });
+                        }
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-sm transition"
+                    >
+                      {t(`Vacate Room ${u.room_number}`, `कोठा ${u.room_number} खाली गराउनुहोस्`)}
+                    </button>
+                  )}
+                  {u.role !== 'ADMIN' && (
+                    <button
+                      type="button"
+                      onClick={() => setUserToDelete(u)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-sm transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />{' '}
+                      {t('Delete Tenant & All Data', 'भाडावाल र सम्पूर्ण डाटा मेटाउनुहोस्')}
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedUserId(null)}
+                  className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition ml-auto"
+                >
+                  {t('Close Dossier', 'विवरण बन्द गर्नुहोस्')}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: FULLSCREEN PHOTO LIGHTBOX MODAL                                  */}
+      {/* ========================================================================= */}
+      {lightboxState.isOpen && lightboxState.items.length > 0 && (() => {
+        const currentPhoto =
+          lightboxState.items[lightboxState.currentIndex] || lightboxState.items[0];
+        const totalPhotos = lightboxState.items.length;
+
+        return (
+          <div
+            onClick={closePhotoLightbox}
+            className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 select-none"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10 text-white"
+            >
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold">{currentPhoto.title}</h3>
+                {currentPhoto.subtitle && (
+                  <p className="text-xs text-slate-400">{currentPhoto.subtitle}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-white/10 text-xs font-bold">
+                  {lightboxState.currentIndex + 1} / {totalPhotos}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: Math.max(0.5, Number((prev.zoom - 0.25).toFixed(2))),
+                    }))
+                  }
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                    }))
+                  }
+                  className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-extrabold text-white transition"
+                >
+                  {Math.round(lightboxState.zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: Math.min(2.5, Number((prev.zoom + 0.25).toFixed(2))),
+                    }))
+                  }
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadFileFromUrl(
+                      currentPhoto.url,
+                      `${(currentPhoto.title || 'SmartRent-Photo').replace(/\s+/g, '-')}.jpg`
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
+                >
+                  <Download className="w-3.5 h-3.5" /> {t('Download', 'डाउनलोड')}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePhotoLightbox}
+                  className="p-2 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="relative flex-1 flex items-center justify-center overflow-hidden my-4">
+              {totalPhotos > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                      currentIndex:
+                        (prev.currentIndex - 1 + prev.items.length) % prev.items.length,
+                    }));
+                  }}
+                  className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              )}
+
+              <img
+                src={currentPhoto.url}
+                alt={currentPhoto.title}
+                onClick={(e) => e.stopPropagation()}
+                style={{ transform: `scale(${lightboxState.zoom})` }}
+                className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl transition-transform duration-200"
+              />
+
+              {totalPhotos > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxState((prev) => ({
+                      ...prev,
+                      zoom: 1,
+                      currentIndex: (prev.currentIndex + 1) % prev.items.length,
+                    }));
+                  }}
+                  className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+
+            {totalPhotos > 1 && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center justify-center gap-2.5 overflow-x-auto py-2"
+              >
+                {lightboxState.items.map((item, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() =>
+                      setLightboxState((prev) => ({
+                        ...prev,
+                        currentIndex: idx,
+                        zoom: 1,
+                      }))
+                    }
+                    className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition shrink-0 ${
+                      lightboxState.currentIndex === idx
+                        ? 'border-indigo-400 scale-105 shadow-lg'
+                        : 'border-white/20 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={item.url} alt={item.title} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: ADMIN PAYMENT QR CODE UPLOAD & MANAGEMENT MODAL                  */}
+      {/* ========================================================================= */}
+      {showQRModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4">
+          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    {t('Official Payment QR Setup', 'आधिकारिक भुक्तानी QR सेटअप')}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {t(
+                      'Upload or update the QR code shown to all tenants',
+                      'सबै भाडावाललाई देखाइने QR कोड अपलोड वा अपडेट गर्नुहोस्'
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQRModal(false);
+                  setQrImageFile(null);
+                  setQrImagePreview(null);
+                }}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQRConfig} className="space-y-4">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center space-y-3">
+                {qrImagePreview || paymentQR?.qr_image_url ? (
+                  <>
+                    <img
+                      src={qrImagePreview || getSafeMediaUrl(paymentQR.qr_image_url)}
+                      alt="Payment QR Preview"
+                      className="w-48 h-48 object-contain rounded-xl bg-white p-2 border border-slate-200 shadow-xs"
+                    />
+                    <div className="flex items-center gap-2">
+                      {paymentQR?.qr_image_url && !qrImagePreview && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              downloadFileFromUrl(
+                                getSafeMediaUrl(paymentQR.qr_image_url),
+                                'SmartRent-Official-Payment-QR.png'
+                              )
+                            }
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition"
+                          >
+                            <Download className="w-3.5 h-3.5" />{' '}
+                            {t('Download Current QR', 'हालको QR डाउनलोड')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  t(
+                                    'Remove current Payment QR code?',
+                                    'हालको भुक्तानी QR हटाउने हो?'
+                                  )
+                                )
+                              ) {
+                                deleteQRMutation.mutate();
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-extrabold transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> {t('Remove', 'हटाउनुहोस्')}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    {t(
+                      'No QR code image uploaded yet. Select an image below.',
+                      'अहिलेसम्म कुनै QR फोटो अपलोड गरिएको छैन।'
+                    )}
+                  </div>
+                )}
+
+                <label className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-extrabold cursor-pointer transition border border-indigo-200">
+                  <Upload className="w-4 h-4" />
+                  <span>
+                    {paymentQR?.qr_image_url || qrImagePreview
+                      ? t('Choose New QR Image to Replace', 'नयाँ QR फोटो छान्नुहोस्')
+                      : t('Upload QR Code Image', 'QR कोड फोटो अपलोड गर्नुहोस्')}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setQrImageFile(f);
+                        setQrImagePreview(URL.createObjectURL(f));
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
+                  {t('Merchant / Account Title', 'खाता / मर्चेन्टको नाम')}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={qrMerchantName}
+                  onChange={(e) => setQrMerchantName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
+                  {t('Payment Instructions for Tenants', 'भाडावालका लागि भुक्तानी निर्देशन')}
+                </label>
+                <textarea
+                  rows={2}
+                  value={qrPaymentNote}
+                  onChange={(e) => setQrPaymentNote(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQRModal(false);
+                    setQrImageFile(null);
+                    setQrImagePreview(null);
+                  }}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700"
+                >
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateQRMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-md transition"
+                >
+                  {updateQRMutation.isPending
+                    ? t('Saving QR...', 'सुरक्षित हुँदैछ...')
+                    : t('Save & Publish QR', 'QR सुरक्षित र प्रकाशन गर्नुहोस्')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: 2-STEP DANGER CONFIRMATION MODAL FOR DATABASE FACTORY RESET      */}
+      {/* ========================================================================= */}
+      {resetStep > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border-2 border-rose-200 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-rose-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                    {resetStep === 1
+                      ? t('Danger Confirmation (1 of 2)', 'पहिलो चेतावनी (१/२)')
+                      : t('Final Irreversible Warning (2 of 2)', 'अन्तिम चेतावनी (२/२)')}
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    {t('Factory Reset SmartRent Database', 'स्मार्टरेन्ट डाटाबेस रिसेट')}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetStep(0);
+                  setResetConfirmText('');
+                  setResetModalError('');
+                }}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {resetModalError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                {resetModalError}
+              </div>
+            )}
+
+            {resetStep === 1 ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-950 space-y-2">
+                  <p className="font-extrabold text-rose-700">
+                    {t(
+                      'Are you sure you want to reset the entire system to brand new?',
+                      'के तपाईं सम्पूर्ण प्रणालीलाई नयाँ अवस्थामा रिसेट गर्न चाहनुहुन्छ?'
+                    )}
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1 text-[11px] text-rose-800">
+                    <li>
+                      {t(
+                        'Deletes all Tenant accounts and their KYC documents.',
+                        'सबै भाडावाल खाता र केवाईसी कागजात मेटिनेछन्।'
+                      )}
+                    </li>
+                    <li>
+                      {t(
+                        'Deletes all Monthly Bills, Expenses, Reservations, and Tenancies.',
+                        'सबै बिल, खर्च, बुकिङ र बसाइँ विवरण मेटिनेछन्।'
+                      )}
+                    </li>
+                    <li>
+                      {t(
+                        'Deletes all Chat Messages, Maintenance Tickets, and Notices.',
+                        'सबै च्याट सन्देश, मर्मत टिकट र सूचना मेटिनेछन्।'
+                      )}
+                    </li>
+                    <li>
+                      {t(
+                        'Resets all Rooms to Vacant with 0.00 meter reading.',
+                        'सबै कोठा खाली र ०.०० मिटर रिडिङमा रिसेट हुनेछन्।'
+                      )}
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>{t('Safe Protected:', 'सुरक्षित:')}</strong>{' '}
+                    {t(
+                      'Your logged-in Landlord Admin account and room structure will NOT be deleted.',
+                      'तपाईंको एडमिन खाता र कोठाहरूको संरचना मेटिने छैन।'
+                    )}
+                  </span>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetStep(0)}
+                    className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                  >
+                    {t('Cancel', 'रद्द गर्नुहोस्')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResetStep(2)}
+                    className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md transition"
+                  >
+                    {t('Yes, Proceed to Final Step →', 'अन्तिम चरणमा जानुहोस् →')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (resetConfirmText.trim().toUpperCase() !== 'RESET') return;
+                  resetDatabaseMutation.mutate('RESET');
+                }}
+                className="space-y-4"
+              >
+                <div className="p-4 rounded-2xl bg-rose-600 text-white text-xs space-y-1.5 shadow-inner">
+                  <p className="font-black uppercase tracking-wide flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />{' '}
+                    {t('SECOND & FINAL CONFIRMATION', 'दोस्रो तथा अन्तिम पुष्टि')}
+                  </p>
+                  <p className="text-[11px] text-rose-100 leading-relaxed">
+                    {t(
+                      'This action cannot be undone. Every tenant, bill, and chat will be permanently erased.',
+                      'यो कार्य फिर्ता गर्न सकिँदैन। सबै भाडावाल, बिल र च्याट स्थायी रूपमा मेटिनेछन्।'
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1.5">
+                    {t('Type ', 'तल ')}{' '}
+                    <span className="text-rose-600 font-black">RESET</span>{' '}
+                    {t('below to unlock final wipe:', 'लेखेर पुष्टि गर्नुहोस्:')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={resetConfirmText}
+                    onChange={(e) => setResetConfirmText(e.target.value)}
+                    placeholder="RESET"
+                    className="w-full px-3.5 py-2.5 text-xs font-extrabold tracking-widest uppercase rounded-xl border-2 border-rose-300 focus:border-rose-600 outline-none"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetStep(0);
+                      setResetConfirmText('');
+                      setResetModalError('');
+                    }}
+                    className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                  >
+                    {t('Cancel & Keep Data', 'रद्द गर्नुहोस्')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      resetConfirmText.trim().toUpperCase() !== 'RESET' ||
+                      resetDatabaseMutation.isPending
+                    }
+                    className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-800 disabled:opacity-40 text-white text-xs font-extrabold shadow-lg transition"
+                  >
+                    {resetDatabaseMutation.isPending
+                      ? t('Wiping Database...', 'रिसेट हुँदैछ...')
+                      : t('🔥 Wipe & Reset Database Now', '🔥 डाटाबेस रिसेट गर्नुहोस्')}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: ADD ADMIN MODAL                                                  */}
+      {/* ========================================================================= */}
+      {showAddAdminModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-extrabold text-slate-900">
+                {t('Create New Administrator', 'नयाँ एडमिन खाता बनाउनुहोस्')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewAdminPassword(false);
+                  setShowAddAdminModal(false);
+                }}
+                className="p-1 rounded-full hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                manageAdminMutation.mutate({
+                  action: 'CREATE',
+                  email: newAdminEmail,
+                  full_name: newAdminName,
+                  phone_number: newAdminPhone,
+                  password: newAdminPassword,
+                });
+              }}
+              className="space-y-3.5"
+            >
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  {t('Full Name', 'पूरा नाम')}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newAdminName}
+                  onChange={(e) => setNewAdminName(e.target.value)}
+                  placeholder="e.g. Subash Chaudhary"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-600"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  {t('Email Address', 'इमेल ठेगाना')}
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  placeholder="admin@smartrent.com"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-600"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  {t('Phone Number', 'मोबाइल नम्बर')}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newAdminPhone}
+                  onChange={(e) => setNewAdminPhone(e.target.value)}
+                  placeholder="9848800000"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-600"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  {t('Secure Password', 'सुरक्षित पासवर्ड')}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewAdminPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={newAdminPassword}
+                    onChange={(e) => setNewAdminPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-3.5 pr-10 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewAdminPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-indigo-600 transition"
+                    tabIndex={-1}
+                  >
+                    {showNewAdminPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewAdminPassword(false);
+                    setShowAddAdminModal(false);
+                  }}
+                  className="flex-1 py-3 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700"
+                >
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={manageAdminMutation.isPending}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md"
+                >
+                  {manageAdminMutation.isPending
+                    ? t('Creating...', 'बनाउँदै...')
+                    : t('Create Admin', 'एडमिन बनाउनुहोस्')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 6: ASSIGN TENANT MODAL                                              */}
+      {/* ========================================================================= */}
+      {assignModalRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">
+              {t('Assign Room', 'कोठा तोक्नुहोस्')} {assignModalRoom.room_number}
+            </h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                assignTenantMutation.mutate({
+                  roomId: assignModalRoom.id,
+                  payload: {
+                    tenant_id: Number(selectedTenantId),
+                    entry_date: entryDate,
+                    starting_meter_reading: startingMeter,
+                  },
+                });
+              }}
+              className="space-y-4"
+            >
+              <select
+                required
+                value={selectedTenantId}
+                onChange={(e) => setSelectedTenantId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl text-xs font-semibold"
+              >
+                <option value="">{t('Choose User', 'भाडावाल छान्नुहोस्')}</option>
+                {tenantUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name} ({u.email})
+                  </option>
+                ))}
+              </select>
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  {t('Move-In Date (AD)', 'सरेको मिति (AD)')}
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={entryDate}
+                  onChange={(e) => setEntryDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl text-xs"
+                />
+                {entryDate && (
+                  <p className="text-[11px] font-extrabold text-indigo-600 mt-1">
+                    📅 {t('Nepali Date (BS):', 'नेपाली मिति (बि.सं.):')}{' '}
+                    {formatBSOnly(entryDate)}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
+                  {t('Starting Sub-Meter Reading', 'सुरुवाती सब-मिटर रिडिङ')}
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={startingMeter}
+                  onChange={(e) => setStartingMeter(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl text-xs"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAssignModalRoom(null)}
+                  className="flex-1 py-2 border rounded-xl text-xs font-bold"
+                >
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold"
+                >
+                  {t('Confirm', 'पक्का गर्नुहोस्')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: CASH OVERRIDE MODAL                                              */}
+      {/* ========================================================================= */}
+      {showCashModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4">
+              {t('Record Cash Payment', 'नगद भुक्तानी रेकर्ड गर्नुहोस्')}
+            </h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                cashOverrideMutation.mutate({
+                  bill_id: cashBillId ? Number(cashBillId) : undefined,
+                  tenant_id: cashTenantId ? Number(cashTenantId) : undefined,
+                  current_meter_reading: cashMeterReading,
+                  damage_fine_amount: cashFine || '0',
+                  damage_fine_reason: cashReason,
+                  admin_remarks: 'Paid via Cash',
+                });
+              }}
+              className="space-y-4"
+            >
+              <select
+                required={!cashTenantId}
+                value={cashBillId}
+                onChange={(e) => setCashBillId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl text-xs font-semibold"
+              >
+                <option value="">{t('Choose Bill', 'बिल छान्नुहोस्')}</option>
+                {selectableBillsForDropdown.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {t('Room', 'कोठा')} {b.room_number} — {b.tenant_name} (
+                    {formatDualMonthLabel(b.billing_month_label)}) • {t('Rs.', 'रु.')}{' '}
+                    {b.total_payable}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={cashMeterReading}
+                onChange={(e) => setCashMeterReading(e.target.value)}
+                placeholder={t('New Meter Reading', 'नयाँ मिटर रिडिङ')}
+                className="w-full px-3 py-2 border rounded-xl text-xs"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCashModal(false)}
+                  className="flex-1 py-2 border rounded-xl text-xs font-bold"
+                >
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold"
+                >
+                  {t('Confirm', 'पक्का गर्नुहोस्')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 8: UPGRADED APPLY FINE MODAL                                        */}
+      {/* ========================================================================= */}
+      {showFineModal && (
+        <div
+          onClick={() => setShowFineModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 my-auto max-h-[92vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    {t(
+                      'Apply Property Damage / Rule Violation Fine',
+                      'सम्पत्ति क्षति / नियम उल्लंघन जरिवाना लगाउनुहोस्'
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {t(
+                      'Select a tenant or bill, attach evidence photos, and send an automated email notice',
+                      'भाडावाल वा बिल छान्नुहोस्, प्रमाण फोटो राख्नुहोस् र इमेल सूचना पठाउनुहोस्'
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFineModal(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {fineModalError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{fineModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleApplyFineSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  {t('1. Select Tenant / Registered User *', '१. भाडावाल छान्नुहोस् *')}
+                </label>
+                <select
+                  value={fineTenantId}
+                  onChange={(e) => handleSelectFineTenant(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none transition"
+                >
+                  <option value="">
+                    {t(
+                      `-- Choose Tenant / User (${tenantUsers.length} Registered) --`,
+                      `-- भाडावाल छान्नुहोस् (${tenantUsers.length} दर्ता) --`
+                    )}
+                  </option>
+                  {tenantUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name} ({u.email}){' '}
+                      {u.room_number
+                        ? `• ${t('Room', 'कोठा')} ${u.room_number}`
+                        : `• ${t('No Room Assigned', 'कोठा तोकिएको छैन')}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
+                    {t('2. Choose Bill (AD / BS)', '२. बिल छान्नुहोस् (AD / BS)')}
+                  </label>
+                  {fineTenantId && filteredBillsForFine.length === 0 && (
+                    <span className="text-[10px] font-extrabold text-emerald-600">
+                      {t(
+                        '✨ New invoice will be auto-created',
+                        '✨ नयाँ बिल स्वतः तयार हुनेछ'
+                      )}
+                    </span>
+                  )}
+                </div>
+                <select
+                  value={fineBillId}
+                  onChange={(e) => handleSelectFineBill(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none transition"
+                >
+                  <option value="">
+                    {fineTenantId && filteredBillsForFine.length === 0
+                      ? t(
+                          'Auto-Create Fresh Invoice for Selected Tenant',
+                          'छानिएको भाडावालका लागि नयाँ बिल स्वतः बनाउनुहोस्'
+                        )
+                      : t(
+                          '-- Choose Existing Bill (or leave blank to auto-select) --',
+                          '-- भइरहेको बिल छान्नुहोस् (वा स्वतः छान्न खाली छोड्नुहोस्) --'
+                        )}
+                  </option>
+                  {filteredBillsForFine.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {t('Room', 'कोठा')} {b.room_number} — {b.tenant_name || 'Tenant'} (
+                      {formatDualMonthLabel(b.billing_month_label)}) • {t('Rs.', 'रु.')}{' '}
+                      {Number(b.total_payable || 0).toLocaleString()} [{td(b.status_display)}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(selectedFineTenantObj || selectedFineBillObj) && (
+                <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div>
+                    <p className="font-extrabold text-slate-900">
+                      {selectedFineTenantObj?.full_name || selectedFineBillObj?.tenant_name}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {selectedFineTenantObj?.email || ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedFineBillObj && Number(selectedFineBillObj.damage_fine_amount || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleUndoFine(selectedFineBillObj.id)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] shadow-xs transition"
+                      >
+                        {t('Undo Current Fine', 'हालको जरिवाना हटाउनुहोस्')} ({t('Rs.', 'रु.')}{' '}
+                        {selectedFineBillObj.damage_fine_amount})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                    {t('3. Fine Amount (NPR) *', '३. जरिवाना रकम (रु.) *')}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    required
+                    value={fineAmount}
+                    onChange={(e) => setFineAmount(e.target.value)}
+                    placeholder="e.g. 500"
+                    className="w-full px-3.5 py-2.5 text-sm font-black text-rose-600 rounded-xl border border-slate-200 outline-none focus:border-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                    {t('Calculation Mode', 'गणना मोड')}
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setFineMode('SET')}
+                      className={`py-2 rounded-lg text-[11px] font-extrabold transition ${
+                        fineMode === 'SET'
+                          ? 'bg-white text-indigo-600 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {t('Set Exact Fine', 'निश्चित रकम राख्ने')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFineMode('ADD')}
+                      className={`py-2 rounded-lg text-[11px] font-extrabold transition ${
+                        fineMode === 'ADD'
+                          ? 'bg-white text-rose-600 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {t('+ Add to Fine', '+ पुरानोमा थप्ने')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  {t(
+                    '4. Violation / Damage Reason (Included in Email) *',
+                    '४. जरिवानाको कारण (इमेलमा पठाइनेछ) *'
+                  )}
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={fineReason}
+                  onChange={(e) => setFineReason(e.target.value)}
+                  placeholder={t(
+                    'Describe the damage, dirt, broken item, or rule violation...',
+                    'क्षति, फोहोर वा नियम उल्लंघनको कारण लेख्नुहोस्...'
+                  )}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-rose-500 resize-none"
+                />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {FINE_REASON_PRESETS.map((preset, idx) => {
+                    const label = isNepali ? preset.ne : preset.en;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setFineReason(label)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-[10px] font-bold transition"
+                      >
+                        + {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  {t(
+                    '5. Attach Evidence Photos (Optional • Up to 5 MB each)',
+                    '५. प्रमाण फोटोहरू जोड्नुहोस् (ऐच्छिक • ५ MB सम्म)'
+                  )}
+                </label>
+                <label className="flex flex-col items-center justify-center p-4 rounded-2xl border-2 border-dashed border-rose-200 hover:border-rose-500 bg-rose-50/30 cursor-pointer transition text-center">
+                  <ImagePlus className="w-6 h-6 text-rose-500 mb-1" />
+                  <span className="text-xs font-extrabold text-slate-800">
+                    {t(
+                      'Upload Photos of Damage, Dirt, or Broken Items',
+                      'क्षति, फोहोर वा फुटेका सामानको फोटो अपलोड गर्नुहोस्'
+                    )}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.avif"
+                    multiple
+                    onChange={handleFineEvidenceSelect}
+                    className="hidden"
+                  />
+                </label>
+
+                {fineEvidencePreviews.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2.5 mt-3">
+                    {fineEvidencePreviews.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="relative h-16 rounded-xl overflow-hidden border border-rose-200 bg-slate-100"
+                      >
+                        <img
+                          src={item.url}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeFineEvidenceFile(idx)}
+                          className="absolute top-1 right-1 p-0.5 rounded-full bg-slate-900/80 text-white hover:bg-rose-600"
                         >
-                          <CheckCircle2
-                            className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-                              cat.isHighlightedFineCategory
-                                ? 'text-rose-600'
-                                : 'text-indigo-600'
-                            }`}
-                          />
-                          <span>{point}</span>
-                        </li>
-                      ))}
-                    </ul>
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
 
-        {/* SEPARATE HIGHLIGHTED CARD FOR DAMAGE FINES & PENALTIES */}
-        <div className="rounded-3xl bg-gradient-to-br from-rose-50 via-white to-amber-50/50 border border-rose-200 p-5 sm:p-7 shadow-xs space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-200/70 pb-3.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-4 h-4" />
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFineModal(false)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                >
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={applyFineMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-rose-600/20 transition inline-flex items-center justify-center gap-1.5"
+                >
+                  {applyFineMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('Applying & Emailing...', 'लागू हुँदैछ...')}
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-4 h-4" />
+                      {t('Apply Fine & Notify Tenant', 'जरिवाना लगाई जानकारी पठाउनुहोस्')}
+                    </>
+                  )}
+                </button>
               </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black text-slate-900">
-                  {t('Damage Fines & Penalties Schedule', 'क्षति जरिवाना र दण्ड तालिका')}
-                </h3>
-              </div>
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 text-[11px] font-extrabold self-start sm:self-auto">
-              {t('Evidence-Backed Policy', 'फोटो प्रमाणसहित लागू हुने')}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            <div className="lg:col-span-7 overflow-x-auto rounded-2xl border border-rose-200 bg-white">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-rose-600 text-white text-[10px] font-extrabold uppercase">
-                  <tr>
-                    <th className="py-2.5 px-3.5">{t('Violation', 'उल्लंघन / क्षति विवरण')}</th>
-                    <th className="py-2.5 px-3.5">{t('Penalty', 'जरिवाना / दण्ड')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {DAMAGE_FINE_PENALTIES.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-rose-50/40">
-                      <td className="py-2.5 px-3.5 font-bold text-slate-800">
-                        {isNepali ? item.violationNe : item.violation}
-                      </td>
-                      <td className="py-2.5 px-3.5 font-black text-rose-600">
-                        {isNepali ? item.penaltyNe : item.penalty}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="lg:col-span-5 rounded-2xl bg-white p-4 border border-rose-200/90 space-y-2.5">
-              <h4 className="text-xs font-extrabold uppercase text-rose-700 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-rose-600" />{' '}
-                {t('Official Fine Guidelines', 'जरिवाना निर्देशिका')}
-              </h4>
-              <ul className="space-y-2 text-xs text-slate-700">
-                {FINE_GUIDELINES_LIST.map((item, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>{isNepali ? item.ne : item.en}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            </form>
           </div>
         </div>
+      )}
 
-        {/* IMPORTANT NOTICE & "I AGREE & ACCEPT" TENANT ACKNOWLEDGMENT CARD */}
-        <div className="rounded-3xl bg-slate-900 text-white p-5 sm:p-7 shadow-lg space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1.5 max-w-2xl">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-extrabold uppercase border border-indigo-400/30">
-                <FileCheck2 className="w-3 h-3" />{' '}
-                {t('Important Notice', 'महत्त्वपूर्ण सूचना')}
+      {/* ========================================================================= */}
+      {/* MODAL 9: PERMANENT TENANT & DATA DELETION CONFIRMATION MODAL              */}
+      {/* ========================================================================= */}
+      {userToDelete && (
+        <div
+          onClick={() => setUserToDelete(null)}
+          className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border-2 border-rose-200 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-rose-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
+                    {t('Permanent Removal', 'स्थायी रूपमा हटाउने')}
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    {t('Delete Tenant & All Data?', 'भाडावाल र सम्पूर्ण डाटा मेटाउने हो?')}
+                  </h3>
+                </div>
               </div>
-              <h3 className="text-base sm:text-lg font-extrabold text-white">
-                {t(
-                  'Tenant Acknowledgment & Responsibility Charter',
-                  'भाडावालको सहमति र जिम्मेवारी प्रतिबद्धता'
-                )}
-              </h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {t(
-                  'By accepting these rules, tenants acknowledge their responsibilities toward maintaining a clean, safe, and peaceful living environment.',
-                  'यी नियमहरू स्वीकार गरेर, भाडावालहरूले सफा, सुरक्षित र शान्त वातावरण कायम राख्ने आफ्नो जिम्मेवारी स्वीकार गर्दछन्।'
-                )}
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <p className="font-extrabold text-slate-900 text-sm">{userToDelete.full_name}</p>
+              <p className="text-slate-500">{userToDelete.email}</p>
+              {userToDelete.phone_number && (
+                <p className="text-slate-500">📞 {userToDelete.phone_number}</p>
+              )}
+              <p className="pt-1 font-bold text-indigo-600">
+                {userToDelete.room_number
+                  ? t(
+                      `Currently Assigned: Room ${userToDelete.room_number} (Will be marked Vacant)`,
+                      `हाल तोकिएको: कोठा ${userToDelete.room_number} (स्वतः खाली हुनेछ)`
+                    )
+                  : t('No Active Room Assigned', 'कुनै सक्रिय कोठा तोकिएको छैन')}
               </p>
             </div>
 
-            <div className="shrink-0">
-              {hasAcceptedRules ? (
-                <div className="px-4 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>
-                    {t('✓ Rules Acknowledged', '✓ नियमहरू स्वीकार गरियो')}
-                  </span>
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-[11px] text-rose-900 space-y-1">
+              <p className="font-extrabold text-rose-700">
+                {t(
+                  'This will permanently erase from the database:',
+                  'यसले डाटाबेसबाट स्थायी रूपमा मेटाउनेछ:'
+                )}
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5 text-rose-800">
+                <li>
+                  {t(
+                    'Tenant login account, profile avatar & cover banner',
+                    'भाडावालको लगइन खाता र प्रोफाइल/कभर फोटो'
+                  )}
+                </li>
+                <li>
+                  {t(
+                    'KYC citizenship photos & digital lease records',
+                    'केवाईसी नागरिकता फोटो र भाडा सम्झौता'
+                  )}
+                </li>
+                <li>
+                  {t(
+                    'All monthly bills, receipts, reservations & move-out requests',
+                    'सबै मासिक बिल, रसिद, बुकिङ र कोठा छोड्ने अनुरोध'
+                  )}
+                </li>
+                <li>
+                  {t(
+                    'All chat messages & maintenance tickets',
+                    'सबै च्याट सन्देश र मर्मत टिकटहरू'
+                  )}
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition"
+              >
+                {t('Cancel', 'रद्द गर्नुहोस्')}
+              </button>
+              <button
+                type="button"
+                disabled={evictMutation.isPending}
+                onClick={() =>
+                  evictMutation.mutate({
+                    userId: userToDelete.id,
+                    actionType: 'DELETE',
+                  })
+                }
+                className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-rose-600/20 transition inline-flex items-center justify-center gap-1.5"
+              >
+                {evictMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {t('Deleting...', 'मेटिँदैछ...')}
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    {t('Yes, Delete Tenant', 'हो, भाडावाल मेटाउनुहोस्')}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 10: EDIT ROOM INITIAL / CURRENT SUB-METER READING MODAL             */}
+      {/* ========================================================================= */}
+      {editMeterRoom && (
+        <div
+          onClick={() => setEditMeterRoom(null)}
+          className="fixed inset-0 z-[58] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Zap className="w-5 h-5" />
                 </div>
-              ) : (
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 block">
+                    {t('Sub-Meter Calibration', 'सब-मिटर रिडिङ समायोजन')}
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    {t(
+                      `Edit Room ${editMeterRoom.room_number} Sub-Meter`,
+                      `कोठा ${editMeterRoom.room_number} को सब-मिटर सच्याउनुहोस्`
+                    )}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditMeterRoom(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-semibold">
+                  {t('Room Status:', 'कोठाको अवस्था:')}
+                </span>
+                <span className="font-extrabold text-slate-900">
+                  {editMeterRoom.is_occupied
+                    ? `${t('Occupied', 'बसोबास छ')} (${
+                        editMeterRoom.active_tenancy?.full_name || t('Active Tenant', 'सक्रिय भाडावाल')
+                      })`
+                    : t('Vacant / Available', 'खाली / उपलब्ध')}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-semibold">
+                  {t('Previous Saved Reading:', 'अघिल्लो सुरक्षित रिडिङ:')}
+                </span>
+                <strong className="text-indigo-600">
+                  {editMeterRoom.current_meter_reading ?? 0} {t('units', 'युनिट')}
+                </strong>
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateRoomMeterMutation.mutate({
+                  roomId: editMeterRoom.id,
+                  newMeter: editMeterValue,
+                });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+                  {t(
+                    'New Initial / Current Sub-Meter Reading (kWh Units) *',
+                    'नयाँ सुरुवाती / हालको सब-मिटर रिडिङ (युनिट) *'
+                  )}
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={editMeterValue}
+                  onChange={(e) => setEditMeterValue(e.target.value)}
+                  placeholder="e.g. 1250.00"
+                  className="w-full px-4 py-3 text-lg font-black text-slate-900 rounded-xl border-2 border-indigo-200 focus:border-indigo-600 outline-none transition"
+                />
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                  {t(
+                    `Saving this updates Room ${editMeterRoom.room_number}'s sub-meter baseline and automatically syncs any open/unpaid bill's previous reading on the tenant dashboard.`,
+                    `यो सुरक्षित गर्दा कोठा ${editMeterRoom.room_number} को सब-मिटर रिडिङ अपडेट हुन्छ र भाडावालको खुला बिलमा अघिल्लो रिडिङ स्वतः सिंक हुन्छ।`
+                  )}
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={handleAcceptHouseRules}
-                  disabled={acceptRulesMutation.isPending}
-                  className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={() => setEditMeterRoom(null)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition"
                 >
-                  {acceptRulesMutation.isPending ? (
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateRoomMeterMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-indigo-600/20 transition inline-flex items-center justify-center gap-1.5"
+                >
+                  {updateRoomMeterMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       {t('Saving...', 'सुरक्षित हुँदैछ...')}
@@ -1662,425 +5026,15 @@ export default function PublicLanding() {
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      {t('I Agree & Accept', 'म सहमत छु र स्वीकार गर्दछु')}
+                      {t('Save Meter Reading', 'मिटर रिडिङ सुरक्षित गर्नुहोस्')}
                     </>
                   )}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {rulesAckMsg && (
-            <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2">
-              <span>{rulesAckMsg}</span>
-              <button
-                type="button"
-                onClick={() => setRulesAckMsg('')}
-                className="text-emerald-300 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* FULLSCREEN HERO SLIDESHOW LIGHTBOX MODAL */}
-      {showLightbox && (
-        <div
-          onClick={() => setShowLightbox(false)}
-          className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 select-none"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center justify-between text-white pb-3 border-b border-white/10"
-          >
-            <div>
-              <h3 className="text-sm sm:text-base font-extrabold">{currentBanner.title}</h3>
-              <p className="text-xs text-slate-400">{currentBanner.subtitle}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {banners.length > 1 && (
-                <span className="px-3 py-1 rounded-full bg-white/10 text-xs font-bold">
-                  {activeSlide + 1} / {banners.length}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowLightbox(false)}
-                className="p-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          <div className="relative flex-1 flex items-center justify-center my-4 overflow-hidden">
-            {banners.length > 1 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1));
-                }}
-                className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-
-            <img
-              src={currentBanner.resolved_url}
-              alt={currentBanner.title}
-              onClick={(e) => e.stopPropagation()}
-              className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl"
-            />
-
-            {banners.length > 1 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1));
-                }}
-                className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
-          </div>
-
-          {banners.length > 1 && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center justify-center gap-2 overflow-x-auto py-2"
-            >
-              {banners.map((b, idx) => (
-                <button
-                  key={b.id || idx}
-                  type="button"
-                  onClick={() => setActiveSlide(idx)}
-                  className={`w-16 h-12 rounded-xl overflow-hidden border-2 transition shrink-0 ${
-                    idx === activeSlide
-                      ? 'border-indigo-400 scale-105'
-                      : 'border-white/20 opacity-60 hover:opacity-100'
-                  }`}
-                >
-                  <img src={b.resolved_url} alt={b.title} className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ROOM RESERVATION & VISIT BOOKING MODAL */}
-      {reservingRoom && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-100 my-8">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
-              <div>
-                <h3 className="text-lg font-extrabold text-slate-900">
-                  {t('Book Room', 'कोठा बुक गर्नुहोस्')} {reservingRoom.room_number} (
-                  {String(reservingRoom.room_number).startsWith('B')
-                    ? t('First Floor', 'पहिलो तल्ला')
-                    : t('Ground Floor', 'भुइँ तल्ला')}
-                  )
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {t('Base Rent:', 'मासिक भाडा:')} {t('Rs.', 'रु.')}{' '}
-                  {Number(reservingRoom.base_rent).toLocaleString()}
-                  {t('/month', '/महिना')}
-                </p>
-              </div>
-              <button
-                onClick={() => setReservingRoom(null)}
-                className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {reservationMsg.text && (
-              <div
-                className={`mb-4 p-3 rounded-xl text-xs font-bold ${
-                  reservationMsg.type === 'error'
-                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                }`}
-              >
-                {reservationMsg.text}
-              </div>
-            )}
-
-            <form onSubmit={handleReservationSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  {t('REQUEST TYPE', 'अनुरोधको प्रकार')}
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRequestType('RESERVE')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition ${
-                      requestType === 'RESERVE'
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {t('Instant Room Reservation', 'तत्काल कोठा बुकिङ')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRequestType('VISIT')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition ${
-                      requestType === 'VISIT'
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {t('Schedule Physical Visit', 'प्रत्यक्ष कोठा हेर्ने समय')}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t('EXPECTED MOVE-IN / VISIT DATE (AD)', 'सर्ने वा कोठा हेर्ने मिति (AD)')}
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={moveInDate}
-                    onChange={(e) => setMoveInDate(e.target.value)}
-                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                  />
-                  {moveInDate && (
-                    <p className="text-[11px] font-extrabold text-indigo-600 mt-1">
-                      📅 {t('BS:', 'नेपाली मिति:')} {formatBSOnly(moveInDate)}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t('TOTAL OCCUPANTS', 'बस्ने व्यक्ति संख्या')}
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="5"
-                    required
-                    value={occupantsCount}
-                    onChange={(e) => setOccupantsCount(e.target.value)}
-                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t('PHONE NUMBER', 'मोबाइल नम्बर')}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={phoneNum}
-                    onChange={(e) => setPhoneNum(e.target.value)}
-                    placeholder="9848800000"
-                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {t('OCCUPATION / PROFESSION', 'पेशा / अध्ययन')}
-                  </label>
-                  <input
-                    type="text"
-                    value={occupation}
-                    onChange={(e) => setOccupation(e.target.value)}
-                    placeholder={t('e.g. BCA Student / IT Intern', 'जस्तै: विद्यार्थी / कर्मचारी')}
-                    className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
-                  />
-                </div>
-              </div>
-
-              {requestType === 'RESERVE' && (
-                <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100 space-y-3">
-                  <p className="text-xs font-bold text-indigo-900">
-                    {t('Token Deposit (Optional)', 'बैना रकम (ऐच्छिक)')}
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        {t('Token Amount (NPR)', 'बैना रकम (रु.)')}
-                      </label>
-                      <input
-                        type="number"
-                        value={tokenAmount}
-                        onChange={(e) => setTokenAmount(e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        {t('Payment Screenshot Slip', 'भुक्तानी भौचर फोटो')}
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => setPaymentScreenshot(e.target.files?.[0] || null)}
-                        className="text-[11px] text-slate-600 pt-1"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {t(
-                    'CITIZENSHIP / ID CARD PHOTO (FOR KYC ONBOARDING)',
-                    'नागरिकता वा परिचयपत्रको फोटो (KYC का लागि)'
-                  )}
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setCitizenshipDoc(e.target.files?.[0] || null)}
-                  className="w-full text-xs text-slate-600 px-3 py-2 rounded-xl border border-slate-200 bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {t(
-                    'ADDITIONAL NOTES / PREFERRED VISIT TIME',
-                    'थप जानकारी वा कोठा हेर्न आउने समय'
-                  )}
-                </label>
-                <textarea
-                  rows="2"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder={t(
-                    'Any special inquiries or time preferences...',
-                    'कुनै जिज्ञासा वा समय भए उल्लेख गर्नुहोस्...'
-                  )}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600 resize-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setReservingRoom(null)}
-                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
-                >
-                  {t('Cancel', 'रद्द गर्नुहोस्')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={reserveMutation.isPending}
-                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 transition"
-                >
-                  {reserveMutation.isPending
-                    ? t('Submitting...', 'पठाउँदै...')
-                    : t('Confirm Request', 'अनुरोध पक्का गर्नुहोस्')}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function RoomCard({ room, onAction, t }) {
-  const isSmall = room.room_type === 'SMALL';
-  const occupied = room.is_occupied;
-  const pendingCount = room.pending_reservations_count || 0;
-
-  return (
-    <div
-      className={`rounded-2xl bg-white p-4 sm:p-5 border transition flex flex-col justify-between ${
-        occupied
-          ? 'border-slate-200/70 opacity-90'
-          : 'border-indigo-200/80 shadow-sm hover:shadow-md hover:border-indigo-500'
-      }`}
-    >
-      <div>
-        <div className="flex items-center justify-between gap-2 mb-1.5">
-          <div className="flex items-center gap-1.5">
-            <h4 className="text-base font-extrabold text-slate-900">
-              {t('Room', 'कोठा')} {room.room_number}
-            </h4>
-            {isSmall && (
-              <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[10px]">
-                {t('Small', 'सानो')}
-              </span>
-            )}
-          </div>
-
-          <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-              occupied
-                ? 'bg-slate-100 text-slate-600'
-                : 'bg-emerald-100 text-emerald-700'
-            }`}
-          >
-            {occupied ? t('• Occupied', '• बुक छ') : t('• Available', '• खाली छ')}
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-500 font-medium mb-3">
-          {room.title} • {room.area_sqft} {t('sq.ft', 'वर्ग फिट')}
-        </p>
-
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[11px] font-semibold text-slate-700">
-            <Droplets className="w-3 h-3 text-emerald-600" />
-            {t('Water Rs.', 'पानी रु.')} {Number(room.fixed_water_bill).toFixed(0)}
-          </span>
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[11px] font-semibold text-slate-700">
-            <Zap className="w-3 h-3 text-amber-500" />
-            {t('Elec Rs.', 'बिजुली रु.')} {Number(room.electricity_rate_per_unit).toFixed(0)}/u
-          </span>
-        </div>
-      </div>
-
-      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-        <div>
-          <p className="text-base font-extrabold text-slate-900">
-            {t('Rs.', 'रु.')} {Number(room.base_rent).toLocaleString()}
-          </p>
-          <p className="text-[10px] text-slate-400 font-medium">
-            {t('/ month', '/ महिना')}
-          </p>
-        </div>
-
-        {occupied ? (
-          <span className="px-3 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold">
-            {t('Occupied', 'बुक भइसकेको')}
-          </span>
-        ) : (
-          <button
-            onClick={onAction}
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition relative"
-          >
-            {t('Reserve', 'बुक गर्नुहोस्')}
-            {pendingCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-        )}
-      </div>
     </div>
   );
 }
