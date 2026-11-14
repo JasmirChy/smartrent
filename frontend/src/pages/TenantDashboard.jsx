@@ -37,6 +37,7 @@ import axiosClient, {
   downloadFileFromUrl,
 } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
   formatDualDate,
   formatDualMonthLabel,
@@ -85,6 +86,7 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
 export default function TenantDashboard() {
   const { user, refreshProfile } = useAuth();
+  const { t, td } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -272,7 +274,15 @@ export default function TenantDashboard() {
         })
       ).data,
     onSuccess: (data) => {
-      setFeedback({ type: 'success', text: data.message });
+      setFeedback({
+        type: 'success',
+        text:
+          data.message ||
+          t(
+            'Meter reading and payment proof submitted!',
+            'मिटर रिडिङ र भुक्तानी प्रमाण सफलतापूर्वक पेश गरियो!'
+          ),
+      });
       queryClient.invalidateQueries({ queryKey: ['tenantBills'] });
       setMeterPhoto(null);
       setPaymentPhoto(null);
@@ -282,24 +292,44 @@ export default function TenantDashboard() {
     onError: (err) =>
       setFeedback({
         type: 'error',
-        text: err.response?.data?.error || 'Failed to submit proofs.',
+        text:
+          err.response?.data?.error ||
+          t('Failed to submit proofs.', 'प्रमाण पेश गर्न सकिएन।'),
       }),
   });
 
   const updateKYCMutation = useMutation({
     mutationFn: updateKYCProfile,
     onSuccess: () => {
-      setFeedback({ type: 'success', text: 'KYC documents saved successfully!' });
+      setFeedback({
+        type: 'success',
+        text: t(
+          'KYC documents saved successfully!',
+          'केवाईसी कागजातहरू सफलतापूर्वक सुरक्षित गरियो!'
+        ),
+      });
       queryClient.invalidateQueries({ queryKey: ['tenantKYC'] });
       queryClient.invalidateQueries({ queryKey: ['tenantMeProfile'] });
     },
-    onError: () => setFeedback({ type: 'error', text: 'Could not update KYC.' }),
+    onError: () =>
+      setFeedback({
+        type: 'error',
+        text: t('Could not update KYC.', 'केवाईसी अपडेट गर्न सकिएन।'),
+      }),
   });
 
   const acceptLeaseMutation = useMutation({
     mutationFn: acceptDigitalLease,
     onSuccess: (data) => {
-      setFeedback({ type: 'success', text: data.message });
+      setFeedback({
+        type: 'success',
+        text:
+          data.message ||
+          t(
+            'Digital lease agreement accepted!',
+            'डिजिटल भाडा सम्झौता स्वीकार गरियो!'
+          ),
+      });
       queryClient.invalidateQueries({ queryKey: ['tenantKYC'] });
     },
   });
@@ -307,7 +337,10 @@ export default function TenantDashboard() {
   const cancelResMutation = useMutation({
     mutationFn: (resId) => processReservationAction(resId, { action: 'CANCEL' }),
     onSuccess: () => {
-      setFeedback({ type: 'success', text: 'Reservation cancelled.' });
+      setFeedback({
+        type: 'success',
+        text: t('Reservation cancelled.', 'बुकिङ अनुरोध रद्द गरियो।'),
+      });
       queryClient.invalidateQueries({ queryKey: ['tenantReservations'] });
     },
   });
@@ -317,7 +350,10 @@ export default function TenantDashboard() {
     onSuccess: () => {
       setFeedback({
         type: 'success',
-        text: 'Move-out request submitted. Admin will review shortly.',
+        text: t(
+          'Move-out request submitted. Admin will review shortly.',
+          'कोठा छोड्ने अनुरोध पेश गरियो। एडमिनले छिट्टै जाँच गर्नुहुनेछ।'
+        ),
       });
       setShowMoveOutModal(false);
       queryClient.invalidateQueries({ queryKey: ['moveOutStatus'] });
@@ -327,7 +363,9 @@ export default function TenantDashboard() {
     onError: (err) =>
       setFeedback({
         type: 'error',
-        text: err.response?.data?.error || 'Failed to request move out.',
+        text:
+          err.response?.data?.error ||
+          t('Failed to request move out.', 'कोठा छोड्ने अनुरोध पठाउन सकिएन।'),
       }),
   });
 
@@ -335,11 +373,23 @@ export default function TenantDashboard() {
     e.preventDefault();
     if (!activeBill) return;
     if (Number(meterInput) < prevReading) {
-      setFeedback({ type: 'error', text: `Reading cannot be less than ${prevReading}.` });
+      setFeedback({
+        type: 'error',
+        text: t(
+          `Reading cannot be less than ${prevReading}.`,
+          `नयाँ मिटर रिडिङ ${prevReading} भन्दा कम हुन सक्दैन।`
+        ),
+      });
       return;
     }
     if (!meterPhoto || !paymentPhoto) {
-      setFeedback({ type: 'error', text: 'Upload both Zone 1 and Zone 2 photos.' });
+      setFeedback({
+        type: 'error',
+        text: t(
+          'Upload both Zone 1 and Zone 2 photos.',
+          'कृपया क्षेत्र १ (मिटर फोटो) र क्षेत्र २ (भुक्तानी भौचर) दुवै अपलोड गर्नुहोस्।'
+        ),
+      });
       return;
     }
     const formData = new FormData();
@@ -375,12 +425,14 @@ export default function TenantDashboard() {
     if (!win) return;
     const dualCycle = formatDualMonthLabel(bill.billing_month_label);
     const dualDueDate = formatDualDate(bill.due_date, 'N/A');
-    const dualPaidAt = bill.paid_at ? formatDualDate(bill.paid_at) : 'Verified by Admin';
+    const dualPaidAt = bill.paid_at
+      ? formatDualDate(bill.paid_at)
+      : t('Verified by Admin', 'एडमिनद्वारा प्रमाणित');
 
     win.document.write(`
       <html>
         <head>
-          <title>SmartRent Receipt - Room ${bill.room_number}</title>
+          <title>${t('SmartRent Receipt - Room', 'स्मार्टरेन्ट रसिद - कोठा')} ${bill.room_number}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 32px; color: #0f172a; }
             .box { border: 2px solid #4f46e5; border-radius: 12px; padding: 24px; }
@@ -390,17 +442,17 @@ export default function TenantDashboard() {
         </head>
         <body>
           <div class="box">
-            <h2>SmartRent Official Payment Receipt</h2>
-            <p><strong>Tenant:</strong> ${bill.tenant_name} | <strong>Room:</strong> ${bill.room_number}</p>
-            <p><strong>Billing Cycle:</strong> ${dualCycle} | <strong>Due Date:</strong> ${dualDueDate}</p>
-            <p><strong>Status:</strong> ${bill.status_display}</p>
+            <h2>${t('SmartRent Official Payment Receipt', 'स्मार्टरेन्ट आधिकारिक भुक्तानी रसिद')}</h2>
+            <p><strong>${t('Tenant:', 'भाडावाल:')}</strong> ${bill.tenant_name} | <strong>${t('Room:', 'कोठा:')}</strong> ${bill.room_number}</p>
+            <p><strong>${t('Billing Cycle:', 'बिलिङ चक्र:')}</strong> ${dualCycle} | <strong>${t('Due Date:', 'तिर्नुपर्ने मिति:')}</strong> ${dualDueDate}</p>
+            <p><strong>${t('Status:', 'अवस्था:')}</strong> ${td(bill.status_display)}</p>
             <hr/>
-            <div class="row"><span>Base Room Rent</span><span>Rs. ${bill.base_rent}</span></div>
-            <div class="row"><span>Fixed Water Supply</span><span>Rs. ${bill.water_bill}</span></div>
-            <div class="row"><span>Electricity (${bill.previous_meter_reading} → ${bill.current_meter_reading} = ${bill.units_consumed} units × Rs. 15)</span><span>Rs. ${bill.electricity_amount}</span></div>
-            <div class="row"><span>Property Damage / Rule Fine ${bill.damage_fine_reason ? `(${bill.damage_fine_reason})` : ''}</span><span>Rs. ${bill.damage_fine_amount}</span></div>
-            <div class="row total"><span>Total Paid</span><span>Rs. ${bill.total_payable}</span></div>
-            <p style="margin-top:20px;font-size:12px;color:#64748b;">Ref: ${bill.transaction_reference || 'Verified'} • Paid At: ${dualPaidAt}</p>
+            <div class="row"><span>${t('Base Room Rent', 'कोठाको आधारभूत भाडा')}</span><span>${t('Rs.', 'रु.')} ${bill.base_rent}</span></div>
+            <div class="row"><span>${t('Fixed Water Supply', 'निश्चित पानी महसुल')}</span><span>${t('Rs.', 'रु.')} ${bill.water_bill}</span></div>
+            <div class="row"><span>${t('Electricity', 'बिजुली महसुल')} (${bill.previous_meter_reading} → ${bill.current_meter_reading} = ${bill.units_consumed} ${t('units', 'युनिट')} × ${t('Rs.', 'रु.')} 15)</span><span>${t('Rs.', 'रु.')} ${bill.electricity_amount}</span></div>
+            <div class="row"><span>${t('Property Damage / Rule Fine', 'क्षति / नियम उल्लंघन जरिवाना')} ${bill.damage_fine_reason ? `(${bill.damage_fine_reason})` : ''}</span><span>${t('Rs.', 'रु.')} ${bill.damage_fine_amount}</span></div>
+            <div class="row total"><span>${t('Total Paid', 'कुल भुक्तानी रकम')}</span><span>${t('Rs.', 'रु.')} ${bill.total_payable}</span></div>
+            <p style="margin-top:20px;font-size:12px;color:#64748b;">Ref: ${bill.transaction_reference || t('Verified', 'प्रमाणित')} • ${t('Paid At:', 'भुक्तानी मिति:')} ${dualPaidAt}</p>
           </div>
           <script>window.print();</script>
         </body>
@@ -434,7 +486,10 @@ export default function TenantDashboard() {
                   openPhotoLightbox([
                     {
                       url: userAvatarUrl,
-                      title: `${user?.full_name || 'Tenant'} — Profile Photo`,
+                      title: `${user?.full_name || t('Tenant', 'भाडावाल')} — ${t(
+                        'Profile Photo',
+                        'प्रोफाइल फोटो'
+                      )}`,
                       subtitle: user?.email,
                     },
                   ])
@@ -450,24 +505,28 @@ export default function TenantDashboard() {
               <div className="flex flex-wrap items-center gap-2 mb-1">
                 <h1 className="text-xl font-extrabold text-slate-900">{user?.full_name}</h1>
                 <span className="px-2.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase tracking-wide">
-                  Verified Tenant
+                  {t('Verified Tenant', 'प्रमाणित भाडावाल')}
                 </span>
               </div>
               <p className="text-sm text-slate-500 flex items-center gap-1.5 font-medium">
                 <Home className="w-4 h-4 text-indigo-600" />
                 {assignedRoom
-                  ? `Room ${assignedRoom.room_number} • ${assignedRoom.floor || 'Active Unit'}`
-                  : 'No Room Assigned Yet'}
+                  ? `${t('Room', 'कोठा')} ${assignedRoom.room_number} • ${td(
+                      assignedRoom.floor || 'Active Unit'
+                    )}`
+                  : t('No Room Assigned Yet', 'अहिले कुनै कोठा तोकिएको छैन')}
               </p>
             </div>
           </div>
           <div className="sm:text-right border-t sm:border-t-0 pt-4 sm:pt-0 border-slate-100">
             <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-0.5">
-              BASE AGREEMENT
+              {t('BASE AGREEMENT', 'आधारभूत भाडा सम्झौता')}
             </p>
             <p className="text-2xl font-extrabold text-indigo-600">
-              Rs. {Number(headerBaseRent).toLocaleString()}{' '}
-              <span className="text-sm font-medium text-slate-500">/month</span>
+              {t('Rs.', 'रु.')} {Number(headerBaseRent).toLocaleString()}{' '}
+              <span className="text-sm font-medium text-slate-500">
+                {t('/month', '/महिना')}
+              </span>
             </p>
           </div>
         </div>
@@ -475,28 +534,32 @@ export default function TenantDashboard() {
         <div className="lg:col-span-4 rounded-3xl bg-amber-50 border border-amber-200 p-6 flex flex-col justify-between">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-amber-900 uppercase tracking-wide">
-              <Clock className="w-4 h-4 text-amber-600" /> Billing Cycle
+              <Clock className="w-4 h-4 text-amber-600" />{' '}
+              {t('Billing Cycle', 'बिलिङ चक्र')}
             </span>
             <span className="px-3 py-1 rounded-full bg-white text-amber-800 text-[11px] font-bold border border-amber-200">
               {assignedRoom || isBillOpen
                 ? formatDualMonthLabel(activeBill?.billing_month_label || 'Active Cycle')
-                : 'No Active Cycle'}
+                : t('No Active Cycle', 'कुनै सक्रिय चक्र छैन')}
             </span>
           </div>
           <div className="mt-4">
             {assignedRoom || isBillOpen ? (
               <div>
                 <p className="text-lg sm:text-xl font-extrabold text-slate-900">
-                  Due: {rawDueDate || 'Pending'}
+                  {t('Due:', 'तिर्नुपर्ने मिति:')}{' '}
+                  {rawDueDate || t('Pending', 'प्रतीक्षामा')}
                 </p>
                 {rawDueDate && formatBSOnly(rawDueDate) && (
                   <p className="text-xs font-bold text-amber-800 mt-0.5">
-                    Nepali Date: {formatBSOnly(rawDueDate)}
+                    {t('Nepali Date:', 'नेपाली मिति:')} {formatBSOnly(rawDueDate)}
                   </p>
                 )}
               </div>
             ) : (
-              <p className="text-2xl font-extrabold text-slate-900">No Pending Dues</p>
+              <p className="text-2xl font-extrabold text-slate-900">
+                {t('No Pending Dues', 'कुनै बक्यौता बाँकी छैन')}
+              </p>
             )}
           </div>
         </div>
@@ -527,9 +590,24 @@ export default function TenantDashboard() {
       {/* 2. NAVIGATION TABS */}
       <div className="flex overflow-x-auto gap-2 border-b border-slate-200 pb-4">
         {[
-          { key: 'BILLING', label: '1. Monthly Billing & Receipts' },
-          { key: 'KYC_LEASE', label: '2. KYC Verification & Digital Lease' },
-          { key: 'RESERVATIONS', label: `3. Room Bookings (${reservations.length})` },
+          {
+            key: 'BILLING',
+            label: t('1. Monthly Billing & Receipts', '१. मासिक बिल र रसिदहरू'),
+          },
+          {
+            key: 'KYC_LEASE',
+            label: t(
+              '2. KYC Verification & Digital Lease',
+              '२. केवाईसी प्रमाणीकरण र डिजिटल सम्झौता'
+            ),
+          },
+          {
+            key: 'RESERVATIONS',
+            label: t(
+              `3. Room Bookings (${reservations.length})`,
+              `३. कोठा बुकिङ (${reservations.length})`
+            ),
+          },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -553,12 +631,16 @@ export default function TenantDashboard() {
               <Home className="w-7 h-7" />
             </div>
             <h2 className="text-xl font-extrabold text-slate-900">
-              No Active Room or Pending Monthly Bill
+              {t(
+                'No Active Room or Pending Monthly Bill',
+                'कुनै सक्रिय कोठा वा बाँकी मासिक बिल छैन'
+              )}
             </h2>
             <p className="text-sm text-slate-500 max-w-lg mx-auto leading-relaxed">
-              You do not currently have an active room assigned or any open unpaid bills. You can
-              view and print your past official payment receipts in the table below, or browse
-              available units to book a room.
+              {t(
+                'You do not currently have an active room assigned or any open unpaid bills. You can view and print your past official payment receipts in the table below, or browse available units to book a room.',
+                'तपाईंको खातामा हाल कुनै सक्रिय कोठा वा तिर्न बाँकी बिल छैन। तपाईंले तलको तालिकाबाट आफ्ना पुराना आधिकारिक रसिदहरू हेर्न र प्रिन्ट गर्न सक्नुहुन्छ, वा नयाँ कोठा बुक गर्न सक्नुहुन्छ।'
+              )}
             </p>
             <div className="pt-2">
               <button
@@ -566,7 +648,7 @@ export default function TenantDashboard() {
                 onClick={() => navigate('/')}
                 className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition"
               >
-                Browse Available Rooms
+                {t('Browse Available Rooms', 'उपलब्ध कोठाहरू हेर्नुहोस्')}
               </button>
             </div>
           </div>
@@ -575,14 +657,16 @@ export default function TenantDashboard() {
             <div className="lg:col-span-7 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-extrabold text-slate-900">Monthly Bill Telemetry</h2>
+                  <h2 className="text-lg font-extrabold text-slate-900">
+                    {t('Monthly Bill Telemetry', 'मासिक बिल विवरण')}
+                  </h2>
                   {!assignedRoom && selectedBillId && (
                     <button
                       type="button"
                       onClick={() => setSelectedBillId(null)}
                       className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-600"
                     >
-                      Close Past Invoice View
+                      {t('Close Past Invoice View', 'पुरानो बिल दृश्य बन्द गर्नुहोस्')}
                     </button>
                   )}
                 </div>
@@ -597,8 +681,8 @@ export default function TenantDashboard() {
                   >
                     {bills.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {formatDualMonthLabel(b.billing_month_label)} — Rs.{' '}
-                        {Number(b.total_payable).toLocaleString()} ({b.status_display})
+                        {formatDualMonthLabel(b.billing_month_label)} — {t('Rs.', 'रु.')}{' '}
+                        {Number(b.total_payable).toLocaleString()} ({td(b.status_display)})
                       </option>
                     ))}
                   </select>
@@ -609,19 +693,23 @@ export default function TenantDashboard() {
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
                   <div className="flex items-center gap-3">
                     <Home className="w-5 h-5 text-indigo-600" />
-                    <p className="text-sm font-bold text-slate-900">Base Room Rent</p>
+                    <p className="text-sm font-bold text-slate-900">
+                      {t('Base Room Rent', 'कोठाको आधारभूत भाडा')}
+                    </p>
                   </div>
                   <span className="text-base font-extrabold text-slate-900">
-                    Rs. {baseRent.toLocaleString()}
+                    {t('Rs.', 'रु.')} {baseRent.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
                   <div className="flex items-center gap-3">
                     <Droplets className="w-5 h-5 text-emerald-600" />
-                    <p className="text-sm font-bold text-slate-900">Fixed Water Supply</p>
+                    <p className="text-sm font-bold text-slate-900">
+                      {t('Fixed Water Supply', 'निश्चित पानी महसुल')}
+                    </p>
                   </div>
                   <span className="text-base font-extrabold text-slate-900">
-                    Rs. {waterBill.toLocaleString()}
+                    {t('Rs.', 'रु.')} {waterBill.toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -636,24 +724,30 @@ export default function TenantDashboard() {
                       </div>
                       <div>
                         <h3 className="text-xs font-extrabold uppercase tracking-wider text-rose-950">
-                          Property Damage / Rule Violation Fine
+                          {t(
+                            'Property Damage / Rule Violation Fine',
+                            'सम्पत्ति क्षति / नियम उल्लंघन जरिवाना'
+                          )}
                         </h3>
                         {fineAppliedAt && (
                           <p className="text-[11px] text-rose-600 font-semibold">
-                            Issued on {formatDualDate(fineAppliedAt)}
+                            {t('Issued on', 'जारी मिति:')} {formatDualDate(fineAppliedAt)}
                           </p>
                         )}
                       </div>
                     </div>
                     <span className="text-lg font-black text-rose-600">
-                      + Rs. {fineAmount.toLocaleString()}
+                      + {t('Rs.', 'रु.')} {fineAmount.toLocaleString()}
                     </span>
                   </div>
 
                   {fineReason && (
                     <div className="p-3 rounded-xl bg-white/90 border border-rose-200/80 text-xs text-rose-950">
                       <span className="font-extrabold uppercase text-[10px] text-rose-500 block mb-0.5">
-                        Official Admin Reason / Remarks:
+                        {t(
+                          'Official Admin Reason / Remarks:',
+                          'आधिकारिक एडमिन कारण / कैफियत:'
+                        )}
                       </span>
                       <p className="font-semibold leading-relaxed">{fineReason}</p>
                     </div>
@@ -662,9 +756,13 @@ export default function TenantDashboard() {
                   {fineEvidenceUrls.length > 0 && (
                     <div className="space-y-2 pt-1">
                       <p className="text-[11px] font-extrabold uppercase tracking-wide text-rose-800 flex items-center gap-1.5">
-                        <Camera className="w-3.5 h-3.5 text-rose-600" /> Attached Inspection
-                        Evidence ({fineEvidenceUrls.length} Photo
-                        {fineEvidenceUrls.length > 1 ? 's' : ''} — Tap to Zoom)
+                        <Camera className="w-3.5 h-3.5 text-rose-600" />{' '}
+                        {t(
+                          `Attached Inspection Evidence (${fineEvidenceUrls.length} Photo${
+                            fineEvidenceUrls.length > 1 ? 's' : ''
+                          } — Tap to Zoom)`,
+                          `संलग्न निरीक्षण प्रमाण (${fineEvidenceUrls.length} फोटो — ठूलो पार्न थिच्नुहोस्)`
+                        )}
                       </p>
                       <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
                         {fineEvidenceUrls.map((evUrl, idx) => (
@@ -674,8 +772,13 @@ export default function TenantDashboard() {
                               openPhotoLightbox(
                                 fineEvidenceUrls.map((u, i) => ({
                                   url: u,
-                                  title: `Fine Evidence Photo #${i + 1}`,
-                                  subtitle: `Fine: Rs. ${fineAmount} • Reason: ${fineReason}`,
+                                  title: `${t('Fine Evidence Photo', 'जरिवाना प्रमाण फोटो')} #${
+                                    i + 1
+                                  }`,
+                                  subtitle: `${t('Fine: Rs.', 'जरिवाना: रु.')} ${fineAmount} • ${t(
+                                    'Reason:',
+                                    'कारण:'
+                                  )} ${fineReason}`,
                                 })),
                                 idx
                               )
@@ -701,22 +804,23 @@ export default function TenantDashboard() {
               <div className="rounded-2xl bg-indigo-50 border border-indigo-100 p-5 space-y-5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-extrabold text-indigo-950 flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-indigo-600" /> Sub-Meter Telemetry
+                    <Zap className="w-5 h-5 text-indigo-600" />{' '}
+                    {t('Sub-Meter Telemetry', 'सब-मिटर विवरण')}
                   </span>
                   <span className="px-3 py-1 rounded-lg bg-white text-xs font-extrabold text-indigo-700 border border-indigo-200">
-                    Rs. {elecRate} / unit
+                    {t('Rs.', 'रु.')} {elecRate} {t('/ unit', '/ युनिट')}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white p-4 rounded-2xl border border-slate-200">
                     <p className="text-[10px] font-extrabold text-slate-400 uppercase">
-                      PREV READING
+                      {t('PREV READING', 'अघिल्लो रिडिङ')}
                     </p>
                     <p className="text-2xl font-black text-slate-800 mt-1">{prevReading}</p>
                   </div>
                   <div className="bg-white p-4 rounded-2xl border-2 border-indigo-500">
                     <p className="text-[10px] font-extrabold text-indigo-600 uppercase">
-                      NEW READING
+                      {t('NEW READING', 'नयाँ रिडिङ')}
                     </p>
                     <input
                       type="number"
@@ -732,11 +836,13 @@ export default function TenantDashboard() {
                 </div>
                 <div className="bg-white rounded-xl p-3.5 border border-indigo-100 text-sm flex justify-between items-center">
                   <span className="font-medium text-slate-600">
-                    Consumed:{' '}
-                    <strong className="text-slate-900">{unitsConsumed.toFixed(2)} units</strong>
+                    {t('Consumed:', 'खपत:')}{' '}
+                    <strong className="text-slate-900">
+                      {unitsConsumed.toFixed(2)} {t('units', 'युनिट')}
+                    </strong>
                   </span>
                   <strong className="text-indigo-700">
-                    Rs. {liveElectricityCost.toLocaleString()}
+                    {t('Rs.', 'रु.')} {liveElectricityCost.toLocaleString()}
                   </strong>
                 </div>
               </div>
@@ -744,26 +850,35 @@ export default function TenantDashboard() {
               <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400">
-                    GRAND TOTAL PAYABLE
+                    {t('GRAND TOTAL PAYABLE', 'कुल तिर्नुपर्ने रकम')}
                   </p>
                   <p className="text-4xl font-black mt-2 text-white">
-                    Rs. {liveGrandTotal.toLocaleString()}
+                    {t('Rs.', 'रु.')} {liveGrandTotal.toLocaleString()}
                   </p>
                   {fineAmount > 0 && isBillOpen && (
                     <p className="text-xs font-bold text-rose-400 mt-1">
-                      Includes Rs. {fineAmount.toLocaleString()} violation/damage fine
+                      {t(
+                        `Includes Rs. ${fineAmount.toLocaleString()} violation/damage fine`,
+                        `रु. ${fineAmount.toLocaleString()} जरिवाना समावेश छ`
+                      )}
                     </p>
                   )}
                 </div>
                 <span className="px-4 py-2 rounded-xl text-xs font-extrabold bg-white/20 text-white">
-                  {activeBill?.status_display || 'Awaiting Submission'}
+                  {td(
+                    activeBill?.status_display ||
+                      t('Awaiting Submission', 'प्रमाण पेश गर्न बाँकी')
+                  )}
                 </span>
               </div>
             </div>
 
             <div className="lg:col-span-5 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
               <h2 className="text-lg font-extrabold text-slate-900">
-                Verification & QR Payment Desk
+                {t(
+                  'Verification & QR Payment Desk',
+                  'प्रमाणीकरण र क्यूआर (QR) भुक्तानी कक्ष'
+                )}
               </h2>
 
               {/* SCAN & DOWNLOAD OFFICIAL PAYMENT QR BOX */}
@@ -775,10 +890,15 @@ export default function TenantDashboard() {
                     </div>
                     <div>
                       <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">
-                        {paymentQR?.merchant_name || 'SmartRent Official Payment QR'}
+                        {paymentQR?.merchant_name ||
+                          t(
+                            'SmartRent Official Payment QR',
+                            'स्मार्टरेन्ट आधिकारिक भुक्तानी QR'
+                          )}
                       </h3>
                       <p className="text-[11px] text-slate-600">
-                        Scan to pay Rs. {liveGrandTotal.toLocaleString()}
+                        {t('Scan to pay Rs.', 'स्क्यान गरी तिर्नुहोस्: रु.')}{' '}
+                        {liveGrandTotal.toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -793,7 +913,8 @@ export default function TenantDashboard() {
                       }
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition shrink-0"
                     >
-                      <Download className="w-3.5 h-3.5" /> Download QR
+                      <Download className="w-3.5 h-3.5" />{' '}
+                      {t('Download QR', 'QR डाउनलोड')}
                     </button>
                   )}
                 </div>
@@ -812,7 +933,8 @@ export default function TenantDashboard() {
                         onClick={() => setShowQRZoomModal(true)}
                         className="mt-2 w-full inline-flex items-center justify-center gap-1 text-[11px] font-extrabold text-indigo-600 hover:text-indigo-800"
                       >
-                        <Maximize2 className="w-3 h-3" /> Tap to View Fullscreen
+                        <Maximize2 className="w-3 h-3" />{' '}
+                        {t('Tap to View Fullscreen', 'पूरा स्क्रिनमा हेर्न थिच्नुहोस्')}
                       </button>
                     </div>
                     {paymentQR?.payment_note && (
@@ -823,8 +945,10 @@ export default function TenantDashboard() {
                   </div>
                 ) : (
                   <div className="p-4 rounded-xl bg-white/80 border border-dashed border-emerald-300 text-center text-xs text-slate-500">
-                    Official payment QR code has not been uploaded by Admin yet. Please ask Admin or
-                    pay via cash/eSewa.
+                    {t(
+                      'Official payment QR code has not been uploaded by Admin yet. Please ask Admin or pay via cash/eSewa.',
+                      'एडमिनद्वारा आधिकारिक भुक्तानी QR अपलोड गरिएको छैन। कृपया एडमिनसँग सम्पर्क गर्नुहोस् वा नगद/ई-सेवा मार्फत तिर्नुहोस्।'
+                    )}
                   </div>
                 )}
               </div>
@@ -832,7 +956,7 @@ export default function TenantDashboard() {
               <form onSubmit={handleSubmitOnlineProof} className="space-y-5">
                 <div>
                   <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
-                    METER PHOTO (ZONE 1)
+                    {t('METER PHOTO (ZONE 1)', 'मिटरको फोटो (क्षेत्र १)')}
                   </label>
                   <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 cursor-pointer overflow-hidden">
                     {meterPreview || activeBill?.meter_photo_url ? (
@@ -844,7 +968,12 @@ export default function TenantDashboard() {
                     ) : (
                       <div className="text-center">
                         <Camera className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
-                        <p className="text-sm font-bold text-slate-600">Upload Meter Reading</p>
+                        <p className="text-sm font-bold text-slate-600">
+                          {t(
+                            'Upload Meter Reading',
+                            'मिटर रिडिङको फोटो अपलोड गर्नुहोस्'
+                          )}
+                        </p>
                       </div>
                     )}
                     <input
@@ -866,7 +995,10 @@ export default function TenantDashboard() {
 
                 <div>
                   <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
-                    PAYMENT SCREENSHOT (ZONE 2)
+                    {t(
+                      'PAYMENT SCREENSHOT (ZONE 2)',
+                      'भुक्तानी भौचर स्क्रीनशट (क्षेत्र २)'
+                    )}
                   </label>
                   <label className="flex flex-col items-center justify-center w-full h-36 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 cursor-pointer overflow-hidden">
                     {paymentPreview || activeBill?.payment_screenshot_url ? (
@@ -879,7 +1011,10 @@ export default function TenantDashboard() {
                       <div className="text-center">
                         <CreditCard className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
                         <p className="text-sm font-bold text-slate-600">
-                          Upload eSewa/Bank Receipt
+                          {t(
+                            'Upload eSewa/Bank Receipt',
+                            'ई-सेवा वा बैंक भौचर अपलोड गर्नुहोस्'
+                          )}
                         </p>
                       </div>
                     )}
@@ -902,14 +1037,14 @@ export default function TenantDashboard() {
 
                 <div>
                   <label className="block text-[11px] font-extrabold text-slate-600 mb-2 uppercase">
-                    TRANSACTION REF ID
+                    {t('TRANSACTION REF ID', 'कारोबार रेफरेन्स आईडी (Ref ID)')}
                   </label>
                   <input
                     type="text"
                     disabled={!isBillOpen}
                     value={transactionRef}
                     onChange={(e) => setTransactionRef(e.target.value)}
-                    placeholder="e.g. ESEWA-12345"
+                    placeholder={t('e.g. ESEWA-12345', 'जस्तै: ESEWA-12345')}
                     className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 outline-none focus:border-indigo-600 disabled:bg-slate-100"
                   />
                 </div>
@@ -920,10 +1055,13 @@ export default function TenantDashboard() {
                   className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-2xl shadow-lg disabled:opacity-50"
                 >
                   {submitBillMutation.isPending
-                    ? 'Submitting...'
+                    ? t('Submitting...', 'पेश हुँदैछ...')
                     : isBillOpen
-                    ? 'Submit Proofs for Approval'
-                    : 'Bill Already Settled ✓'}
+                    ? t(
+                        'Submit Proofs for Approval',
+                        'स्वीकृतिका लागि प्रमाण पेश गर्नुहोस्'
+                      )
+                    : t('Bill Already Settled ✓', 'बिल भुक्तानी भइसकेको छ ✓')}
                 </button>
               </form>
             </div>
@@ -935,7 +1073,9 @@ export default function TenantDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-7 rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-extrabold text-slate-900">Identity Verification (KYC)</h2>
+              <h2 className="text-lg font-extrabold text-slate-900">
+                {t('Identity Verification (KYC)', 'पहिचान प्रमाणीकरण (KYC)')}
+              </h2>
               <span
                 className={`px-3 py-1 rounded-lg text-xs font-extrabold ${
                   kycProfile?.status === 'VERIFIED'
@@ -943,14 +1083,14 @@ export default function TenantDashboard() {
                     : 'bg-amber-100 text-amber-800'
                 }`}
               >
-                {kycProfile?.status_display || 'Pending'}
+                {td(kycProfile?.status_display || 'Pending')}
               </span>
             </div>
             <form onSubmit={handleKYCSubmit} className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-xs font-extrabold mb-1.5 text-slate-600 uppercase">
-                    LEGAL NAME
+                    {t('LEGAL NAME', 'पूरा कानुनी नाम')}
                   </label>
                   <input
                     type="text"
@@ -962,7 +1102,7 @@ export default function TenantDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-extrabold mb-1.5 text-slate-600 uppercase">
-                    CITIZENSHIP NO
+                    {t('CITIZENSHIP NO', 'नागरिकता नम्बर')}
                   </label>
                   <input
                     type="text"
@@ -974,7 +1114,10 @@ export default function TenantDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-extrabold mb-1.5 text-slate-600 uppercase">
-                    EMERGENCY CONTACT NAME
+                    {t(
+                      'EMERGENCY CONTACT NAME',
+                      'आपतकालीन सम्पर्क व्यक्तिको नाम'
+                    )}
                   </label>
                   <input
                     type="text"
@@ -986,7 +1129,10 @@ export default function TenantDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-extrabold mb-1.5 text-slate-600 uppercase">
-                    EMERGENCY CONTACT PHONE
+                    {t(
+                      'EMERGENCY CONTACT PHONE',
+                      'आपतकालीन सम्पर्क फोन नम्बर'
+                    )}
                   </label>
                   <input
                     type="text"
@@ -998,7 +1144,7 @@ export default function TenantDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-extrabold mb-2 text-slate-600 uppercase">
-                    CITIZENSHIP FRONT
+                    {t('CITIZENSHIP FRONT', 'नागरिकताको अगाडिको फोटो')}
                   </label>
                   <input
                     type="file"
@@ -1009,7 +1155,7 @@ export default function TenantDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-extrabold mb-2 text-slate-600 uppercase">
-                    CITIZENSHIP BACK
+                    {t('CITIZENSHIP BACK', 'नागरिकताको पछाडिको फोटो')}
                   </label>
                   <input
                     type="file"
@@ -1024,59 +1170,73 @@ export default function TenantDashboard() {
                 disabled={updateKYCMutation.isPending}
                 className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm rounded-2xl"
               >
-                Update KYC Documents
+                {updateKYCMutation.isPending
+                  ? t('Saving...', 'सुरक्षित हुँदैछ...')
+                  : t('Update KYC Documents', 'केवाईसी कागजात अपडेट गर्नुहोस्')}
               </button>
             </form>
           </div>
 
           <div className="lg:col-span-5 space-y-6">
             <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
-              <h3 className="text-lg font-extrabold text-slate-900">Digital Lease Agreement</h3>
+              <h3 className="text-lg font-extrabold text-slate-900">
+                {t('Digital Lease Agreement', 'डिजिटल भाडा सम्झौता')}
+              </h3>
               <p className="text-sm text-slate-600 leading-relaxed">
-                All tenants must abide by sub-meter utility terms (Rs. 15/unit), quiet hours, and
-                100% replacement fine policy for property damage.
+                {t(
+                  'All tenants must abide by sub-meter utility terms (Rs. 15/unit), quiet hours, and 100% replacement fine policy for property damage.',
+                  'सबै भाडावालहरूले सब-मिटर बिजुली नियम (रु. १५/युनिट), शान्त समय, र सम्पत्ति क्षतिमा लागू हुने जरिवाना नियमहरू पूर्ण रूपमा पालना गर्नुपर्नेछ।'
+                )}
               </p>
               {!kycProfile?.has_accepted_lease ? (
                 <button
                   onClick={() => acceptLeaseMutation.mutate()}
                   className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl"
                 >
-                  ✓ I Accept the Digital Lease
+                  {t(
+                    '✓ I Accept the Digital Lease',
+                    '✓ म डिजिटल भाडा सम्झौता स्वीकार गर्दछु'
+                  )}
                 </button>
               ) : (
                 <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-sm text-emerald-700 font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 shrink-0" /> Signed on{' '}
+                  <CheckCircle2 className="w-5 h-5 shrink-0" />{' '}
+                  {t('Signed on', 'हस्ताक्षर मिति:')}{' '}
                   {kycProfile.lease_accepted_at
                     ? formatDualDate(kycProfile.lease_accepted_at)
-                    : 'Verified'}
+                    : t('Verified', 'प्रमाणित')}
                 </div>
               )}
               <button
                 onClick={() => setShowLeaseModal(true)}
                 className="w-full py-3 border-2 border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-extrabold"
               >
-                View Printable Lease
+                {t('View Printable Lease', 'प्रिन्ट गर्न मिल्ने सम्झौता हेर्नुहोस्')}
               </button>
             </div>
 
             {assignedRoom && (
               <div className="rounded-3xl bg-rose-50 border border-rose-100 p-6 sm:p-8 shadow-sm">
                 <h3 className="text-base font-extrabold text-rose-900 flex items-center gap-2 mb-2">
-                  <LogOut className="w-5 h-5 text-rose-600" /> End Tenancy / Move Out
+                  <LogOut className="w-5 h-5 text-rose-600" />{' '}
+                  {t('End Tenancy / Move Out', 'कोठा छोड्ने / बसाइँ सर्ने')}
                 </h3>
                 <p className="text-xs text-rose-700 mb-5 leading-relaxed">
-                  Initiate a room vacate request. Admin will conduct a final meter reading and
-                  settle your security deposit.
+                  {t(
+                    'Initiate a room vacate request. Admin will conduct a final meter reading and settle your security deposit.',
+                    'कोठा छोड्न पूर्व अनुरोध पठाउनुहोस्। एडमिनले अन्तिम सब-मिटर रिडिङ जाँच गरी हिसाब फरफारक गर्नुहुनेछ।'
+                  )}
                 </p>
 
                 {moveOutStatus?.has_active_request ? (
                   <div className="p-4 bg-white rounded-xl border border-rose-100 text-sm font-bold text-slate-800">
-                    Status:{' '}
+                    {t('Status:', 'अवस्था:')}{' '}
                     <span className="text-amber-600 uppercase">
-                      {moveOutStatus.request?.status_display || 'Pending'}
+                      {td(moveOutStatus.request?.status_display || 'Pending')}
                     </span>
                     <p className="text-xs text-slate-500 mt-1 font-normal">
-                      Requested for: {formatDualDate(moveOutStatus.request?.requested_date)}
+                      {t('Requested for:', 'छोड्ने मिति:')}{' '}
+                      {formatDualDate(moveOutStatus.request?.requested_date)}
                     </p>
                   </div>
                 ) : (
@@ -1085,7 +1245,10 @@ export default function TenantDashboard() {
                     onClick={handleRequestMoveOutClick}
                     className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-sm rounded-xl"
                   >
-                    Request Move-Out Settlement
+                    {t(
+                      'Request Move-Out Settlement',
+                      'कोठा छोड्ने र हिसाब फरफारक अनुरोध'
+                    )}
                   </button>
                 )}
               </div>
@@ -1098,17 +1261,24 @@ export default function TenantDashboard() {
       {activeTab === 'RESERVATIONS' && (
         <div className="rounded-3xl bg-white p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <h2 className="text-lg font-extrabold text-slate-900">My Room Reservation Requests</h2>
+            <h2 className="text-lg font-extrabold text-slate-900">
+              {t('My Room Reservation Requests', 'मेरा कोठा बुकिङ अनुरोधहरू')}
+            </h2>
             <button
               onClick={() => navigate('/')}
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-extrabold rounded-xl"
             >
-              Browse Rooms
+              {t('Browse Rooms', 'कोठाहरू हेर्नुहोस्')}
             </button>
           </div>
           {reservations.length === 0 ? (
             <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
-              <p className="text-sm font-bold text-slate-400">No reservations submitted yet.</p>
+              <p className="text-sm font-bold text-slate-400">
+                {t(
+                  'No reservations submitted yet.',
+                  'अहिलेसम्म कुनै बुकिङ अनुरोध पेश गरिएको छैन।'
+                )}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1120,23 +1290,26 @@ export default function TenantDashboard() {
                   <div>
                     <div className="flex justify-between items-start mb-3">
                       <span className="text-lg font-black text-slate-900">
-                        Room {r.room_number}
+                        {t('Room', 'कोठा')} {r.room_number}
                       </span>
                       <span className="px-3 py-1 text-[10px] font-extrabold uppercase rounded-lg bg-amber-100 text-amber-800">
-                        {r.status_display}
+                        {td(r.status_display)}
                       </span>
                     </div>
                     <p className="text-sm font-bold text-slate-700 mb-1">
-                      Move-In: {formatDualDate(r.expected_move_in_date)}
+                      {t('Move-In:', 'सर्ने मिति:')}{' '}
+                      {formatDualDate(r.expected_move_in_date)}
                     </p>
-                    <p className="text-xs text-slate-500 mb-4">{r.request_type_display}</p>
+                    <p className="text-xs text-slate-500 mb-4">
+                      {td(r.request_type_display)}
+                    </p>
                   </div>
                   {r.status === 'PENDING' && (
                     <button
                       onClick={() => cancelResMutation.mutate(r.id)}
                       className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold rounded-xl"
                     >
-                      Cancel Request
+                      {t('Cancel Request', 'अनुरोध रद्द गर्नुहोस्')}
                     </button>
                   )}
                 </div>
@@ -1153,54 +1326,71 @@ export default function TenantDashboard() {
           className="p-5 bg-white border border-slate-200 hover:border-emerald-500 text-left rounded-3xl shadow-sm"
         >
           <Download className="w-6 h-6 text-emerald-500 mb-3" />
-          <p className="text-sm font-extrabold text-slate-900">Get Receipt</p>
+          <p className="text-sm font-extrabold text-slate-900">
+            {t('Get Receipt', 'रसिद प्राप्त गर्नुहोस्')}
+          </p>
         </button>
         <button
           onClick={() => navigate('/support')}
           className="p-5 bg-white border border-slate-200 hover:border-rose-500 text-left rounded-3xl shadow-sm"
         >
           <Wrench className="w-6 h-6 text-rose-500 mb-3" />
-          <p className="text-sm font-extrabold text-slate-900">Report Issue</p>
+          <p className="text-sm font-extrabold text-slate-900">
+            {t('Report Issue', 'समस्या टिपाउनुहोस्')}
+          </p>
         </button>
         <button
           onClick={() => navigate('/support')}
           className="p-5 bg-white border border-slate-200 hover:border-indigo-500 text-left rounded-3xl shadow-sm"
         >
           <MessageSquare className="w-6 h-6 text-indigo-500 mb-3" />
-          <p className="text-sm font-extrabold text-slate-900">Chat Admin</p>
+          <p className="text-sm font-extrabold text-slate-900">
+            {t('Chat Admin', 'एडमिनसँग च्याट')}
+          </p>
         </button>
         <button
           onClick={() => navigate('/profile')}
           className="p-5 bg-white border border-slate-200 hover:border-amber-500 text-left rounded-3xl shadow-sm"
         >
           <ShieldCheck className="w-6 h-6 text-amber-500 mb-3" />
-          <p className="text-sm font-extrabold text-slate-900">Security</p>
+          <p className="text-sm font-extrabold text-slate-900">
+            {t('Security', 'सुरक्षा सेटिङ')}
+          </p>
         </button>
       </div>
 
       <div className="rounded-3xl bg-white border border-slate-200 shadow-sm mt-8 overflow-hidden">
         <div className="p-6 border-b border-slate-100 bg-slate-50/50">
           <h3 className="text-base font-extrabold text-slate-900">
-            Payment History & Past Invoices
+            {t('Payment History & Past Invoices', 'भुक्तानी इतिहास र पुराना बिलहरू')}
           </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left whitespace-nowrap">
             <thead>
               <tr className="bg-white text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                <th className="py-4 px-6">Billing Cycle (AD / BS)</th>
-                <th className="py-4 px-6">Rent + Water</th>
-                <th className="py-4 px-6">Telemetry & Fines</th>
-                <th className="py-4 px-6">Total Payable</th>
-                <th className="py-4 px-6">Status</th>
-                <th className="py-4 px-6 text-right">Actions</th>
+                <th className="py-4 px-6">
+                  {t('Billing Cycle (AD / BS)', 'बिलिङ चक्र (AD / BS)')}
+                </th>
+                <th className="py-4 px-6">{t('Rent + Water', 'भाडा + पानी')}</th>
+                <th className="py-4 px-6">
+                  {t('Telemetry & Fines', 'युनिट र जरिवाना')}
+                </th>
+                <th className="py-4 px-6">
+                  {t('Total Payable', 'कुल तिर्नुपर्ने')}
+                </th>
+                <th className="py-4 px-6">{t('Status', 'अवस्था')}</th>
+                <th className="py-4 px-6 text-right">{t('Actions', 'कार्य')}</th>
               </tr>
             </thead>
             <tbody className="text-sm divide-y divide-slate-100">
               {bills.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-xs text-slate-400 font-bold">
-                    No billing history or past invoices found.
+                    {t(
+                      'No billing history or past invoices found.',
+                      'कुनै बिलिङ इतिहास वा पुराना बिलहरू फेला परेनन्।'
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -1221,18 +1411,22 @@ export default function TenantDashboard() {
                       <td className="py-4 px-6 font-bold text-slate-900">
                         {formatDualMonthLabel(b.billing_month_label)}
                         <span className="block text-[11px] font-normal text-slate-500">
-                          Room {b.room_number} • Due: {formatDualDate(b.due_date)}
+                          {t('Room', 'कोठा')} {b.room_number} • {t('Due:', 'तिर्नुपर्ने:')}{' '}
+                          {formatDualDate(b.due_date)}
                         </span>
                       </td>
                       <td className="py-4 px-6 text-slate-600">
-                        Rs. {b.base_rent} + {b.water_bill}
+                        {t('Rs.', 'रु.')} {b.base_rent} + {b.water_bill}
                       </td>
                       <td className="py-4 px-6 text-slate-600">
-                        <strong className="text-indigo-600">{b.units_consumed} units</strong>
+                        <strong className="text-indigo-600">
+                          {b.units_consumed} {t('units', 'युनिट')}
+                        </strong>
                         {Number(b.damage_fine_amount || 0) > 0 && !isRowPaid && (
                           <div className="mt-1">
                             <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 text-[11px] font-extrabold">
-                              Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
+                              {t('Fine: Rs.', 'जरिवाना: रु.')}{' '}
+                              {Number(b.damage_fine_amount).toLocaleString()}
                             </span>
                             {b.damage_fine_reason && (
                               <span className="block text-[11px] text-rose-600 truncate max-w-[200px]">
@@ -1243,7 +1437,7 @@ export default function TenantDashboard() {
                         )}
                       </td>
                       <td className="py-4 px-6 font-black text-slate-900">
-                        Rs. {Number(b.total_payable).toLocaleString()}
+                        {t('Rs.', 'रु.')} {Number(b.total_payable).toLocaleString()}
                       </td>
                       <td className="py-4 px-6">
                         <span
@@ -1255,7 +1449,7 @@ export default function TenantDashboard() {
                               : 'bg-slate-100 text-slate-700'
                           }`}
                         >
-                          {b.status_display}
+                          {td(b.status_display)}
                         </span>
                       </td>
                       <td className="py-4 px-6 text-right">
@@ -1270,13 +1464,18 @@ export default function TenantDashboard() {
                                 openPhotoLightbox(
                                   rowFineEv.map((u, i) => ({
                                     url: u,
-                                    title: `Fine Evidence #${i + 1} — ${b.billing_month_label}`,
+                                    title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
+                                      i + 1
+                                    } — ${formatDualMonthLabel(b.billing_month_label)}`,
                                     subtitle: b.damage_fine_reason,
                                   }))
                                 )
                               }
                               className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg"
-                              title="View Fine Evidence Photos"
+                              title={t(
+                                'View Fine Evidence Photos',
+                                'जरिवाना प्रमाण फोटो हेर्नुहोस्'
+                              )}
                             >
                               <Eye className="w-4 h-4" />
                             </button>
@@ -1285,7 +1484,10 @@ export default function TenantDashboard() {
                             type="button"
                             onClick={() => handlePrintReceipt(b)}
                             className="p-2 hover:bg-slate-200 rounded-lg"
-                            title="Print Official Receipt"
+                            title={t(
+                              'Print Official Receipt',
+                              'आधिकारिक रसिद प्रिन्ट गर्नुहोस्'
+                            )}
                           >
                             <FileText className="w-5 h-5 text-slate-500" />
                           </button>
@@ -1374,7 +1576,8 @@ export default function TenantDashboard() {
                   }
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
                 >
-                  <Download className="w-3.5 h-3.5" /> Download
+                  <Download className="w-3.5 h-3.5" />{' '}
+                  {t('Download', 'डाउनलोड')}
                 </button>
                 <button
                   type="button"
@@ -1477,10 +1680,12 @@ export default function TenantDashboard() {
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="text-left">
                 <h3 className="text-sm font-black text-slate-900">
-                  {paymentQR?.merchant_name || 'Official Payment QR'}
+                  {paymentQR?.merchant_name ||
+                    t('Official Payment QR', 'आधिकारिक भुक्तानी QR')}
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Total Payable: Rs. {liveGrandTotal.toLocaleString()}
+                  {t('Total Payable: Rs.', 'कुल तिर्नुपर्ने: रु.')}{' '}
+                  {liveGrandTotal.toLocaleString()}
                 </p>
               </div>
               <button
@@ -1510,7 +1715,7 @@ export default function TenantDashboard() {
                 onClick={() => setShowQRZoomModal(false)}
                 className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700"
               >
-                Close
+                {t('Close', 'बन्द गर्नुहोस्')}
               </button>
               <button
                 type="button"
@@ -1522,7 +1727,8 @@ export default function TenantDashboard() {
                 }
                 className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold inline-flex items-center justify-center gap-1.5 shadow-md"
               >
-                <Download className="w-4 h-4" /> Download QR
+                <Download className="w-4 h-4" />{' '}
+                {t('Download QR', 'QR डाउनलोड गर्नुहोस्')}
               </button>
             </div>
           </div>
@@ -1536,7 +1742,9 @@ export default function TenantDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl p-8 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black text-slate-900">Digital Lease Summary</h3>
+              <h3 className="text-xl font-black text-slate-900">
+                {t('Digital Lease Summary', 'डिजिटल भाडा सम्झौता सारांश')}
+              </h3>
               <button
                 onClick={() => setShowLeaseModal(false)}
                 className="p-2 hover:bg-slate-100 rounded-full"
@@ -1546,30 +1754,42 @@ export default function TenantDashboard() {
             </div>
             <div className="space-y-4 text-sm text-slate-700 leading-relaxed mb-8 bg-slate-50 p-6 rounded-2xl border border-slate-100">
               <p>
-                <strong className="text-slate-900">Tenant:</strong>{' '}
+                <strong className="text-slate-900">
+                  {t('Tenant:', 'भाडावाल:')}
+                </strong>{' '}
                 {kycProfile?.full_name_legal || user?.full_name}
               </p>
               <p>
-                <strong className="text-slate-900">Assigned Unit:</strong>{' '}
-                {assignedRoom?.room_number ? `Room ${assignedRoom.room_number}` : 'No Active Room'}
+                <strong className="text-slate-900">
+                  {t('Assigned Unit:', 'तोकिएको कोठा:')}
+                </strong>{' '}
+                {assignedRoom?.room_number
+                  ? `${t('Room', 'कोठा')} ${assignedRoom.room_number}`
+                  : t('No Active Room', 'कुनै सक्रिय कोठा छैन')}
               </p>
               {assignedRoom?.entry_date && (
                 <p>
-                  <strong className="text-slate-900">Move-In Date (AD / BS):</strong>{' '}
+                  <strong className="text-slate-900">
+                    {t('Move-In Date (AD / BS):', 'कोठामा सरेको मिति (AD / BS):')}
+                  </strong>{' '}
                   {formatDualDate(assignedRoom.entry_date)}
                 </p>
               )}
               <p>
-                <strong className="text-slate-900">Financials:</strong> Base Rent Rs.{' '}
-                {assignedRoom?.base_rent || '2,500 / 3,800'} + Fixed Water Rs. 100/mo +
-                Sub-metered Electricity @ Rs. 15/unit.
+                <strong className="text-slate-900">
+                  {t('Financials:', 'आर्थिक विवरण:')}
+                </strong>{' '}
+                {t(
+                  `Base Rent Rs. ${assignedRoom?.base_rent || '2,500 / 3,800'} + Fixed Water Rs. 100/mo + Sub-metered Electricity @ Rs. 15/unit.`,
+                  `आधारभूत भाडा रु. ${assignedRoom?.base_rent || '२,५०० / ३,८००'} + निश्चित पानी रु. १००/महिना + सब-मिटर बिजुली रु. १५/युनिट।`
+                )}
               </p>
             </div>
             <button
               onClick={() => window.print()}
               className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-2xl"
             >
-              Print PDF Copy
+              {t('Print PDF Copy', 'पीडीएफ (PDF) प्रतिलिपि प्रिन्ट गर्नुहोस्')}
             </button>
           </div>
         </div>
@@ -1581,10 +1801,14 @@ export default function TenantDashboard() {
       {showMoveOutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-xl font-black text-slate-900 mb-2">Request Move-Out</h3>
+            <h3 className="text-xl font-black text-slate-900 mb-2">
+              {t('Request Move-Out', 'कोठा छोड्ने अनुरोध')}
+            </h3>
             <p className="text-sm text-slate-500 mb-6">
-              Select your planned departure date. Admin will verify final utility bills and process
-              your deposit refund.
+              {t(
+                'Select your planned departure date. Admin will verify final utility bills and process your deposit refund.',
+                'आफ्नो कोठा छोड्ने मिति छान्नुहोस्। एडमिनले अन्तिम सब-मिटर जाँच गरी हिसाब फरफारक गर्नुहुनेछ।'
+              )}
             </p>
             <form
               onSubmit={(e) => {
@@ -1595,7 +1819,7 @@ export default function TenantDashboard() {
             >
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
-                  Expected Move-Out Date (AD)
+                  {t('Expected Move-Out Date (AD)', 'कोठा छोड्ने संभावित मिति (AD)')}
                 </label>
                 <input
                   type="date"
@@ -1606,19 +1830,23 @@ export default function TenantDashboard() {
                 />
                 {moveOutDate && (
                   <p className="text-xs font-extrabold text-indigo-600 mt-1.5">
-                    📅 Nepali Date (BS): {formatBSOnly(moveOutDate)}
+                    📅 {t('Nepali Date (BS):', 'नेपाली मिति (बि.सं.):')}{' '}
+                    {formatBSOnly(moveOutDate)}
                   </p>
                 )}
               </div>
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-2 uppercase">
-                  Reason (Optional)
+                  {t('Reason (Optional)', 'कारण (ऐच्छिक)')}
                 </label>
                 <input
                   type="text"
                   value={moveOutReason}
                   onChange={(e) => setMoveOutReason(e.target.value)}
-                  placeholder="e.g. Graduation, Relocation"
+                  placeholder={t(
+                    'e.g. Graduation, Relocation',
+                    'जस्तै: पढाइ सकिएको, स्थानान्तरण'
+                  )}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"
                 />
               </div>
@@ -1628,14 +1856,16 @@ export default function TenantDashboard() {
                   onClick={() => setShowMoveOutModal(false)}
                   className="flex-1 py-3.5 border-2 border-slate-200 rounded-xl font-extrabold text-sm text-slate-700"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   disabled={moveOutMutation.isPending}
                   className="flex-1 py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-extrabold text-sm"
                 >
-                  {moveOutMutation.isPending ? 'Submitting...' : 'Submit Request'}
+                  {moveOutMutation.isPending
+                    ? t('Submitting...', 'पठाउँदै...')
+                    : t('Submit Request', 'अनुरोध पेश गर्नुहोस्')}
                 </button>
               </div>
             </form>
@@ -1662,10 +1892,13 @@ export default function TenantDashboard() {
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
-                    Action Required
+                    {t('Action Required', 'आवश्यक कारबाही')}
                   </span>
                   <h3 className="text-lg font-black text-slate-900">
-                    Please Pay Your Bill First
+                    {t(
+                      'Please Pay Your Bill First',
+                      'कृपया पहिले आफ्नो बाँकी बिल तिर्नुहोस्'
+                    )}
                   </h3>
                 </div>
               </div>
@@ -1679,36 +1912,47 @@ export default function TenantDashboard() {
             </div>
 
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              You have an unsettled monthly bill on your account. Please pay and clear your pending
-              bill before submitting a move-out settlement request.
+              {t(
+                'You have an unsettled monthly bill on your account. Please pay and clear your pending bill before submitting a move-out settlement request.',
+                'तपाईंको खातामा मासिक बिल भुक्तानी गर्न बाँकी छ। कोठा छोड्ने अनुरोध पठाउनुअघि कृपया आफ्नो बाँकी बिल चुक्ता गर्नुहोस्।'
+              )}
             </p>
 
             {openUnpaidBill && (
               <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-600">Billing Cycle:</span>
+                  <span className="font-bold text-slate-600">
+                    {t('Billing Cycle:', 'बिलिङ चक्र:')}
+                  </span>
                   <strong className="text-slate-900">
                     {formatDualMonthLabel(openUnpaidBill.billing_month_label)}
                   </strong>
                 </div>
                 {openUnpaidBill.due_date && (
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-600">Due Date:</span>
+                    <span className="font-bold text-slate-600">
+                      {t('Due Date:', 'तिर्नुपर्ने मिति:')}
+                    </span>
                     <strong className="text-slate-800">
                       {formatDualDate(openUnpaidBill.due_date)}
                     </strong>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-600">Current Status:</span>
+                  <span className="font-bold text-slate-600">
+                    {t('Current Status:', 'हालको अवस्था:')}
+                  </span>
                   <span className="px-2 py-0.5 rounded bg-white text-rose-700 font-extrabold text-[11px] border border-rose-200">
-                    {openUnpaidBill.status_display}
+                    {td(openUnpaidBill.status_display)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-rose-200/70">
-                  <span className="font-extrabold text-slate-800">Total Payable:</span>
+                  <span className="font-extrabold text-slate-800">
+                    {t('Total Payable:', 'कुल तिर्नुपर्ने रकम:')}
+                  </span>
                   <strong className="text-base font-black text-rose-600">
-                    Rs. {Number(openUnpaidBill.total_payable).toLocaleString()}
+                    {t('Rs.', 'रु.')}{' '}
+                    {Number(openUnpaidBill.total_payable).toLocaleString()}
                   </strong>
                 </div>
               </div>
@@ -1720,7 +1964,7 @@ export default function TenantDashboard() {
                 onClick={() => setShowPayBillFirstModal(false)}
                 className="flex-1 py-3.5 border-2 border-slate-200 rounded-xl font-extrabold text-xs sm:text-sm text-slate-700 hover:bg-slate-50 transition"
               >
-                Close
+                {t('Close', 'बन्द गर्नुहोस्')}
               </button>
               <button
                 type="button"
@@ -1733,7 +1977,8 @@ export default function TenantDashboard() {
                 }}
                 className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-xs sm:text-sm shadow-lg shadow-indigo-600/20 transition inline-flex items-center justify-center gap-1.5"
               >
-                <CreditCard className="w-4 h-4" /> Pay Bill First
+                <CreditCard className="w-4 h-4" />{' '}
+                {t('Pay Bill First', 'पहिले बिल तिर्नुहोस्')}
               </button>
             </div>
           </div>

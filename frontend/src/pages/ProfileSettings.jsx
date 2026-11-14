@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import axiosClient, { downloadFileFromUrl } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { formatDualDate, formatDualMonthLabel } from '../utils/nepaliDate';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -62,8 +63,6 @@ function resolveMobileSafeImageUrl(rawUrl, cacheBuster = '') {
 
   let finalUrl = rawUrl.trim();
 
-  // If the URL contains a /media/ path (even if saved with localhost or http://),
-  // always attach it to the active backendOrigin
   const mediaIndex = finalUrl.indexOf('/media/');
   if (mediaIndex !== -1) {
     finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
@@ -71,7 +70,6 @@ function resolveMobileSafeImageUrl(rawUrl, cacheBuster = '') {
     finalUrl = `${backendOrigin}${finalUrl}`;
   }
 
-  // Upgrade http:// to https:// whenever running on HTTPS (Vercel / Render)
   if (
     finalUrl.startsWith('http://') &&
     !finalUrl.includes('localhost') &&
@@ -90,6 +88,7 @@ function resolveMobileSafeImageUrl(rawUrl, cacheBuster = '') {
 
 export default function ProfileSettings() {
   const { user, isAdmin, refreshProfile } = useAuth();
+  const { t, td } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -162,7 +161,10 @@ export default function ProfileSettings() {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
       setBanner({
         type: 'error',
-        text: `${label} is ${sizeMB} MB. Maximum allowed size is 5 MB.`,
+        text: t(
+          `${label} is ${sizeMB} MB. Maximum allowed size is 5 MB.`,
+          `${label} ${sizeMB} MB छ। अधिकतम ५ MB मात्र अनुमति छ।`
+        ),
       });
       return false;
     }
@@ -172,7 +174,10 @@ export default function ProfileSettings() {
     if (!isImageMime && !ALLOWED_EXTENSIONS.includes(ext)) {
       setBanner({
         type: 'error',
-        text: `Unsupported format for ${label}. Please choose a JPG, JPEG, PNG, WEBP, or HEIC image.`,
+        text: t(
+          `Unsupported format for ${label}. Please choose a JPG, JPEG, PNG, WEBP, or HEIC image.`,
+          `अमान्य फोटो ढाँचा। कृपया JPG, PNG, WEBP वा HEIC फोटो छान्नुहोस्।`
+        ),
       });
       return false;
     }
@@ -227,7 +232,12 @@ export default function ProfileSettings() {
 
       setBanner({
         type: 'success',
-        text: data.message || 'Updated successfully across all devices!',
+        text:
+          data.message ||
+          t(
+            'Updated successfully across all devices!',
+            'प्रोफाइल विवरण सफलतापूर्वक अपडेट गरियो!'
+          ),
       });
     },
     onError: (err) => {
@@ -237,7 +247,10 @@ export default function ProfileSettings() {
         errData?.profile_picture?.[0] ||
         errData?.full_name?.[0] ||
         errData?.detail ||
-        'Failed to update profile. Please try again.';
+        t(
+          'Failed to update profile. Please try again.',
+          'प्रोफाइल अपडेट गर्न सकिएन। कृपया फेरि प्रयास गर्नुहोस्।'
+        );
       setBanner({ type: 'error', text: errMsg });
     },
   });
@@ -246,7 +259,7 @@ export default function ProfileSettings() {
   const handleAvatarChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!validateSelectedImage(file, 'Profile image')) {
+    if (!validateSelectedImage(file, t('Profile image', 'प्रोफाइल फोटो'))) {
       e.target.value = '';
       return;
     }
@@ -268,7 +281,7 @@ export default function ProfileSettings() {
   const handleCoverChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!validateSelectedImage(file, 'Cover banner image')) {
+    if (!validateSelectedImage(file, t('Cover banner image', 'कभर ब्यानर फोटो'))) {
       e.target.value = '';
       return;
     }
@@ -317,13 +330,23 @@ export default function ProfileSettings() {
       setResetStep(2);
       setBanner({
         type: 'success',
-        text: data.message || `6-digit verification OTP sent to ${activeUser.email}.`,
+        text:
+          data.message ||
+          t(
+            `6-digit verification OTP sent to ${activeUser.email}.`,
+            `${activeUser.email} मा ६-अंकको प्रमाणीकरण ओटिपी पठाइयो।`
+          ),
       });
     },
     onError: (err) => {
       setBanner({
         type: 'error',
-        text: err.response?.data?.error || 'Failed to send OTP. Please try again.',
+        text:
+          err.response?.data?.error ||
+          t(
+            'Failed to send OTP. Please try again.',
+            'ओटिपी पठाउन सकिएन। कृपया फेरि प्रयास गर्नुहोस्।'
+          ),
       });
     },
   });
@@ -343,7 +366,9 @@ export default function ProfileSettings() {
       setShowConfirmPassword(false);
       setBanner({
         type: 'success',
-        text: data.message || 'Password updated successfully!',
+        text:
+          data.message ||
+          t('Password updated successfully!', 'पासवर्ड सफलतापूर्वक अपडेट गरियो!'),
       });
     },
     onError: (err) => {
@@ -353,7 +378,7 @@ export default function ProfileSettings() {
           err.response?.data?.error ||
           err.response?.data?.otp_code?.[0] ||
           err.response?.data?.new_password?.[0] ||
-          'Invalid or expired OTP code.',
+          t('Invalid or expired OTP code.', 'अमान्य वा म्याद सकिएको ओटिपी कोड।'),
       });
     },
   });
@@ -363,14 +388,20 @@ export default function ProfileSettings() {
     if (newPassword.length < 6) {
       setBanner({
         type: 'error',
-        text: 'New password must be at least 6 characters long.',
+        text: t(
+          'New password must be at least 6 characters long.',
+          'नयाँ पासवर्ड कम्तीमा ६ अक्षरको हुनुपर्छ।'
+        ),
       });
       return;
     }
     if (confirmPassword && newPassword !== confirmPassword) {
       setBanner({
         type: 'error',
-        text: 'New password and confirm password do not match.',
+        text: t(
+          'New password and confirm password do not match.',
+          'नयाँ पासवर्ड र पुष्टि पासवर्ड मिलेन।'
+        ),
       });
       return;
     }
@@ -407,7 +438,7 @@ export default function ProfileSettings() {
     galleryItems.push({
       key: 'AVATAR',
       url: displayedAvatarUrl,
-      title: `${activeUser.full_name || 'User'} — Profile Photo`,
+      title: `${activeUser.full_name || 'User'} — ${t('Profile Photo', 'प्रोफाइल फोटो')}`,
       subtitle: activeUser.email,
     });
   }
@@ -415,7 +446,7 @@ export default function ProfileSettings() {
     galleryItems.push({
       key: 'COVER',
       url: displayedCoverUrl,
-      title: `${activeUser.full_name || 'User'} — Cover Banner`,
+      title: `${activeUser.full_name || 'User'} — ${t('Cover Banner', 'कभर ब्यानर')}`,
       subtitle: activeUser.email,
     });
   }
@@ -423,16 +454,16 @@ export default function ProfileSettings() {
     galleryItems.push({
       key: 'CIT_FRONT',
       url: citFrontUrl,
-      title: 'Citizenship ID — Front Side',
-      subtitle: `Citizenship No: ${activeUser.citizenship_number || 'N/A'}`,
+      title: t('Citizenship ID — Front Side', 'नागरिकता — अगाडिको भाग'),
+      subtitle: `${t('Citizenship No:', 'नागरिकता नं:')} ${activeUser.citizenship_number || 'N/A'}`,
     });
   }
   if (citBackUrl) {
     galleryItems.push({
       key: 'CIT_BACK',
       url: citBackUrl,
-      title: 'Citizenship ID — Back Side',
-      subtitle: `Citizenship No: ${activeUser.citizenship_number || 'N/A'}`,
+      title: t('Citizenship ID — Back Side', 'नागरिकता — पछाडिको भाग'),
+      subtitle: `${t('Citizenship No:', 'नागरिकता नं:')} ${activeUser.citizenship_number || 'N/A'}`,
     });
   }
 
@@ -459,7 +490,7 @@ export default function ProfileSettings() {
       <div className="min-h-[65vh] flex flex-col items-center justify-center gap-3 text-slate-500">
         <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
         <p className="text-xs font-extrabold uppercase tracking-wider">
-          Loading Profile & Telemetry...
+          {t('Loading Profile & Telemetry...', 'प्रोफाइल र विवरण लोड हुँदैछ...')}
         </p>
       </div>
     );
@@ -500,8 +531,14 @@ export default function ProfileSettings() {
           className="h-44 sm:h-60 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative overflow-hidden cursor-pointer group"
           title={
             displayedCoverUrl
-              ? 'Click to view Cover Banner fullscreen'
-              : 'Click to upload Cover Banner (up to 5 MB)'
+              ? t(
+                  'Click to view Cover Banner fullscreen',
+                  'कभर ब्यानर पूरा स्क्रिनमा हेर्न थिच्नुहोस्'
+                )
+              : t(
+                  'Click to upload Cover Banner (up to 5 MB)',
+                  'कभर ब्यानर अपलोड गर्न थिच्नुहोस् (५ MB सम्म)'
+                )
           }
         >
           {displayedCoverUrl ? (
@@ -530,12 +567,14 @@ export default function ProfileSettings() {
           >
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/55 backdrop-blur-md text-white text-[11px] font-extrabold border border-white/20">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              {isAdmin ? 'Landlord Executive Account' : 'Verified SmartRent Member'}
+              {isAdmin
+                ? t('Landlord Executive Account', 'घरधनी प्रमुख खाता')
+                : t('Verified SmartRent Member', 'प्रमाणित स्मार्टरेन्ट सदस्य')}
             </span>
             {activeUser.joined_at && (
               <span className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900/45 backdrop-blur-md text-white/90 text-[11px] font-bold border border-white/15">
-                <Calendar className="w-3 h-3 text-indigo-300" /> Joined{' '}
-                {formatDualDate(activeUser.joined_at)}
+                <Calendar className="w-3 h-3 text-indigo-300" />{' '}
+                {t('Joined', 'आबद्ध मिति:')} {formatDualDate(activeUser.joined_at)}
               </span>
             )}
           </div>
@@ -550,10 +589,12 @@ export default function ProfileSettings() {
                 type="button"
                 onClick={() => openPhotoLightbox(galleryItems, 0)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/65 hover:bg-slate-900 text-white text-xs font-extrabold backdrop-blur-md border border-white/20 transition"
-                title="Open Photo Viewer"
+                title={t('Open Photo Viewer', 'फोटो दर्शक खोल्नुहोस्')}
               >
                 <ZoomIn className="w-3.5 h-3.5 text-indigo-300" />
-                <span className="hidden sm:inline">Photos ({galleryItems.length})</span>
+                <span className="hidden sm:inline">
+                  {t('Photos', 'फोटोहरू')} ({galleryItems.length})
+                </span>
               </button>
             )}
 
@@ -562,14 +603,21 @@ export default function ProfileSettings() {
               onClick={() => coverInputRef.current?.click()}
               disabled={updateProfileMutation.isPending}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/95 hover:bg-white text-slate-900 text-xs font-extrabold shadow-lg backdrop-blur-md transition transform hover:scale-[1.02]"
-              title="Upload Cover Banner (JPG, PNG, WEBP, HEIC up to 5 MB)"
+              title={t(
+                'Upload Cover Banner (JPG, PNG, WEBP, HEIC up to 5 MB)',
+                'कभर ब्यानर अपलोड गर्नुहोस् (५ MB सम्म)'
+              )}
             >
               {updateProfileMutation.isPending ? (
                 <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
               ) : (
                 <Camera className="w-3.5 h-3.5 text-indigo-600" />
               )}
-              <span>{displayedCoverUrl ? 'Change Cover' : 'Add Cover'}</span>
+              <span>
+                {displayedCoverUrl
+                  ? t('Change Cover', 'कभर बदल्नुहोस्')
+                  : t('Add Cover', 'कभर राख्नुहोस्')}
+              </span>
             </button>
 
             {displayedCoverUrl && (
@@ -578,7 +626,7 @@ export default function ProfileSettings() {
                 onClick={handleRemoveCover}
                 disabled={updateProfileMutation.isPending}
                 className="p-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white shadow-lg transition"
-                title="Remove Cover Banner"
+                title={t('Remove Cover Banner', 'कभर ब्यानर हटाउनुहोस्')}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -603,8 +651,14 @@ export default function ProfileSettings() {
                 className="relative group w-28 h-28 sm:w-32 sm:h-32 rounded-3xl bg-white p-1.5 shadow-xl border border-slate-200/80 shrink-0 cursor-pointer"
                 title={
                   displayedAvatarUrl
-                    ? 'Click to view Profile Photo fullscreen'
-                    : 'Click to upload Profile Photo (up to 5 MB)'
+                    ? t(
+                        'Click to view Profile Photo fullscreen',
+                        'प्रोफाइल फोटो पूरा स्क्रिनमा हेर्न थिच्नुहोस्'
+                      )
+                    : t(
+                        'Click to upload Profile Photo (up to 5 MB)',
+                        'प्रोफाइल फोटो अपलोड गर्न थिच्नुहोस्'
+                      )
                 }
               >
                 {displayedAvatarUrl ? (
@@ -635,7 +689,10 @@ export default function ProfileSettings() {
                   }}
                   disabled={updateProfileMutation.isPending}
                   className="absolute -bottom-2 -right-2 p-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/30 border-2 border-white transition transform hover:scale-105"
-                  title="Upload New Profile Avatar (Up to 5 MB)"
+                  title={t(
+                    'Upload New Profile Avatar (Up to 5 MB)',
+                    'नयाँ प्रोफाइल फोटो अपलोड गर्नुहोस्'
+                  )}
                 >
                   {updateProfileMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -648,7 +705,7 @@ export default function ProfileSettings() {
               <div className="pt-1 sm:pb-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    {activeUser.full_name || 'SmartRent User'}
+                    {activeUser.full_name || t('SmartRent User', 'स्मार्टरेन्ट प्रयोगकर्ता')}
                   </h1>
                   <span
                     className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wider ${
@@ -657,7 +714,9 @@ export default function ProfileSettings() {
                         : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                     }`}
                   >
-                    {isAdmin ? 'Landlord Admin' : 'Verified Tenant'}
+                    {isAdmin
+                      ? t('Landlord Admin', 'घरधनी एडमिन')
+                      : t('Verified Tenant', 'प्रमाणित भाडावाल')}
                   </span>
                   <span
                     className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wider ${
@@ -668,7 +727,7 @@ export default function ProfileSettings() {
                         : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    KYC: {activeUser.kyc_status || 'PENDING'}
+                    KYC: {td(activeUser.kyc_status || 'PENDING')}
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-slate-500 font-medium flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -692,7 +751,11 @@ export default function ProfileSettings() {
                 onClick={() => navigate(isAdmin ? '/admin-deck' : '/tenant')}
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition"
               >
-                <span>Open {isAdmin ? 'Command Center' : 'Billing & Lease Desk'}</span>
+                <span>
+                  {isAdmin
+                    ? t('Open Command Center', 'कमाण्ड सेन्टर खोल्नुहोस्')
+                    : t('Open Billing & Lease Desk', 'बिलिङ र सम्झौता कक्ष खोल्नुहोस्')}
+                </span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -705,21 +768,21 @@ export default function ProfileSettings() {
             {/* Card 1: Assigned Room */}
             <div className="p-4 sm:p-5 rounded-2xl bg-indigo-50/60 border border-indigo-100/90 flex flex-col justify-between">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 block">
-                ASSIGNED ROOM
+                {t('ASSIGNED ROOM', 'तोकिएको कोठा')}
               </span>
               <p className="text-xl font-black text-slate-900 mt-1">
                 {roomDetails?.room_number
-                  ? `Room ${roomDetails.room_number}`
+                  ? `${t('Room', 'कोठा')} ${roomDetails.room_number}`
                   : activeUser.room_number
-                  ? `Room ${activeUser.room_number}`
-                  : 'Unassigned'}
+                  ? `${t('Room', 'कोठा')} ${activeUser.room_number}`
+                  : t('Unassigned', 'तोकिएको छैन')}
               </p>
               <p className="text-xs text-slate-500 mt-0.5">
                 {roomDetails
-                  ? `${roomDetails.floor || 'Active Unit'} • Rs. ${Number(
+                  ? `${td(roomDetails.floor || 'Active Unit')} • ${t('Rs.', 'रु.')} ${Number(
                       roomDetails.base_rent || 0
-                    ).toLocaleString()}/mo`
-                  : 'No active unit'}
+                    ).toLocaleString()}${t('/mo', '/महिना')}`
+                  : t('No active unit', 'कुनै सक्रिय कोठा छैन')}
               </p>
             </div>
 
@@ -733,7 +796,7 @@ export default function ProfileSettings() {
               }`}
             >
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
-                PENDING / UNPAID BILLS
+                {t('PENDING / UNPAID BILLS', 'तिर्न बाँकी बिलहरू')}
               </span>
               <p
                 className={`text-xl font-black mt-1 ${
@@ -742,25 +805,31 @@ export default function ProfileSettings() {
                     : 'text-emerald-700'
                 }`}
               >
-                Rs. {Number(activeUser.total_pending_amount || 0).toLocaleString()}
+                {t('Rs.', 'रु.')} {Number(activeUser.total_pending_amount || 0).toLocaleString()}
               </p>
               <p className="text-xs text-slate-500 mt-0.5">
                 {Number(activeUser.pending_bills_count || 0) > 0
-                  ? `${activeUser.pending_bills_count} open bill(s) awaiting action`
-                  : 'No pending dues'}
+                  ? t(
+                      `${activeUser.pending_bills_count} open bill(s) awaiting action`,
+                      `${activeUser.pending_bills_count} बिल भुक्तानी गर्न बाँकी`
+                    )
+                  : t('No pending dues', 'कुनै बक्यौता छैन')}
               </p>
             </div>
 
             {/* Card 3: Total Paid History */}
             <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col justify-between">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
-                TOTAL PAID HISTORY
+                {t('TOTAL PAID HISTORY', 'कुल भुक्तानी इतिहास')}
               </span>
               <p className="text-xl font-black text-slate-900 mt-1">
-                Rs. {Number(activeUser.total_paid_amount || 0).toLocaleString()}
+                {t('Rs.', 'रु.')} {Number(activeUser.total_paid_amount || 0).toLocaleString()}
               </p>
               <p className="text-xs text-slate-500 mt-0.5">
-                {activeUser.paid_bills_count || 0} settled invoice(s)
+                {t(
+                  `${activeUser.paid_bills_count || 0} settled invoice(s)`,
+                  `${activeUser.paid_bills_count || 0} चुक्ता गरिएका बिल(हरू)`
+                )}
               </p>
             </div>
 
@@ -770,21 +839,17 @@ export default function ProfileSettings() {
               className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 border border-slate-200/80 hover:border-indigo-200 cursor-pointer transition flex flex-col justify-between"
             >
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
-                DIGITAL LEASE & ID
+                {t('DIGITAL LEASE & ID', 'डिजिटल सम्झौता र परिचयपत्र')}
               </span>
               <p className="text-xl font-black text-slate-900 mt-1 truncate">
-                {activeUser.citizenship_number || 'No ID No.'}
+                {activeUser.citizenship_number || t('No ID No.', 'परिचयपत्र नं. छैन')}
               </p>
-              <p
-                className={`text-xs font-extrabold mt-0.5 ${
-                  activeUser.has_accepted_lease ? 'text-emerald-600' : 'text-emerald-600'
-                }`}
-              >
+              <p className="text-xs font-extrabold mt-0.5 text-emerald-600">
                 {activeUser.has_accepted_lease
-                  ? `✓ Lease Signed (${formatDualDate(
+                  ? `${t('✓ Lease Signed', '✓ सम्झौता हस्ताक्षरित')} (${formatDualDate(
                       activeUser.lease_accepted_at || 'Verified'
                     )})`
-                  : 'Lease Pending'}
+                  : t('Lease Pending', 'सम्झौता बाँकी')}
               </p>
             </div>
           </div>
@@ -828,11 +893,12 @@ export default function ProfileSettings() {
         <div className="rounded-3xl bg-white p-6 border border-slate-200/90 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <Home className="w-4 h-4 text-indigo-600" /> Room & Utility Telemetry
+              <Home className="w-4 h-4 text-indigo-600" />{' '}
+              {t('Room & Utility Telemetry', 'कोठा र बिजुली/पानी विवरण')}
             </h3>
             {roomDetails && (
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-                Active Tenancy
+                {t('Active Tenancy', 'सक्रिय बसाइँ')}
               </span>
             )}
           </div>
@@ -841,7 +907,7 @@ export default function ProfileSettings() {
             <div className="grid grid-cols-2 gap-4 text-xs">
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
                 <span className="text-slate-400 font-bold uppercase text-[10px] block">
-                  Move-In Date (AD / BS)
+                  {t('Move-In Date (AD / BS)', 'कोठामा सरेको मिति (AD / BS)')}
                 </span>
                 <strong className="text-xs sm:text-sm text-slate-900 mt-0.5 block">
                   {formatDualDate(roomDetails.entry_date || activeUser.entry_date || 'Verified')}
@@ -849,7 +915,7 @@ export default function ProfileSettings() {
               </div>
               <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/70">
                 <span className="text-amber-700 font-bold uppercase text-[10px] block">
-                  Next Rent Due Date (AD / BS)
+                  {t('Next Rent Due Date (AD / BS)', 'अर्को भाडा तिर्ने मिति (AD / BS)')}
                 </span>
                 <strong className="text-xs sm:text-sm text-slate-900 mt-0.5 block">
                   {formatDualDate(roomDetails.next_due_date || 'Upcoming')}
@@ -857,18 +923,19 @@ export default function ProfileSettings() {
               </div>
               <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100">
                 <span className="text-indigo-600 font-bold uppercase text-[10px] block">
-                  Last Sub-Meter Reading
+                  {t('Last Sub-Meter Reading', 'अन्तिम सब-मिटर रिडिङ')}
                 </span>
                 <strong className="text-sm text-indigo-950 mt-0.5 block">
-                  {roomDetails.current_meter_reading ?? 0} kWh units
+                  {roomDetails.current_meter_reading ?? 0} {t('kWh units', 'युनिट')}
                 </strong>
               </div>
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
                 <span className="text-slate-400 font-bold uppercase text-[10px] block">
-                  Utility Tariff
+                  {t('Utility Tariff', 'बिजुली र पानी दर')}
                 </span>
                 <strong className="text-sm text-slate-900 mt-0.5 block">
-                  Rs. {roomDetails.electricity_rate ?? 15}/u • Water Rs.{' '}
+                  {t('Rs.', 'रु.')} {roomDetails.electricity_rate ?? 15}
+                  {t('/u • Water Rs.', '/युनिट • पानी रु.')}{' '}
                   {roomDetails.fixed_water_bill ?? 100}
                 </strong>
               </div>
@@ -876,14 +943,18 @@ export default function ProfileSettings() {
           ) : (
             <div className="p-6 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
               <p className="text-xs font-bold text-slate-600">
-                No active room assigned to your account right now.
+                {t(
+                  'No active room assigned to your account right now.',
+                  'तपाईंको खातामा हाल कुनै सक्रिय कोठा तोकिएको छैन।'
+                )}
               </p>
               <button
                 type="button"
                 onClick={() => navigate('/')}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition"
               >
-                Browse Available Rooms <ArrowRight className="w-3.5 h-3.5" />
+                {t('Browse Available Rooms', 'उपलब्ध कोठाहरू हेर्नुहोस्')}{' '}
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
@@ -893,48 +964,57 @@ export default function ProfileSettings() {
         <div className="rounded-3xl bg-white p-6 border border-slate-200/90 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" /> Legal Identity & Emergency Contact
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />{' '}
+              {t(
+                'Legal Identity & Emergency Contact',
+                'कानुनी पहिचान र आपतकालीन सम्पर्क'
+              )}
             </h3>
             <button
               type="button"
               onClick={() => navigate('/tenant')}
               className="text-xs font-extrabold text-indigo-600 hover:text-indigo-800"
             >
-              Manage KYC →
+              {t('Manage KYC →', 'केवाईसी व्यवस्थापन →')}
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
               <span className="text-slate-400 font-bold uppercase text-[10px] block">
-                Legal Full Name
+                {t('Legal Full Name', 'पूरा कानुनी नाम')}
               </span>
               <strong className="text-sm text-slate-900 mt-0.5 block truncate">
-                {activeUser.full_name_legal || activeUser.full_name || 'Not set'}
+                {activeUser.full_name_legal ||
+                  activeUser.full_name ||
+                  t('Not set', 'राखिएको छैन')}
               </strong>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
               <span className="text-slate-400 font-bold uppercase text-[10px] block">
-                Citizenship Number
+                {t('Citizenship Number', 'नागरिकता नम्बर')}
               </span>
               <strong className="text-sm text-slate-900 mt-0.5 block truncate">
-                {activeUser.citizenship_number || 'Not submitted'}
+                {activeUser.citizenship_number ||
+                  t('Not submitted', 'पेश गरिएको छैन')}
               </strong>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
               <span className="text-slate-400 font-bold uppercase text-[10px] block">
-                Emergency Contact
+                {t('Emergency Contact', 'आपतकालीन सम्पर्क व्यक्ति')}
               </span>
               <strong className="text-sm text-slate-900 mt-0.5 block truncate">
-                {activeUser.emergency_contact_name || 'Not provided'}
+                {activeUser.emergency_contact_name ||
+                  t('Not provided', 'उपलब्ध छैन')}
               </strong>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
               <span className="text-slate-400 font-bold uppercase text-[10px] block">
-                Emergency Phone
+                {t('Emergency Phone', 'आपतकालीन फोन नम्बर')}
               </span>
               <strong className="text-sm text-slate-900 mt-0.5 block truncate">
-                {activeUser.emergency_contact_phone || 'Not provided'}
+                {activeUser.emergency_contact_phone ||
+                  t('Not provided', 'उपलब्ध छैन')}
               </strong>
             </div>
           </div>
@@ -954,10 +1034,13 @@ export default function ProfileSettings() {
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-extrabold text-slate-900">
-                  Personal Information
+                  {t('Personal Information', 'व्यक्तिगत विवरण')}
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Update your full name and registered contact number
+                  {t(
+                    'Update your full name and registered contact number',
+                    'आफ्नो पूरा नाम र दर्ता गरिएको मोबाइल नम्बर अपडेट गर्नुहोस्'
+                  )}
                 </p>
               </div>
             </div>
@@ -967,7 +1050,7 @@ export default function ProfileSettings() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="sm:col-span-2">
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Full Name
+                  {t('Full Name', 'पूरा नाम')}
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -976,7 +1059,7 @@ export default function ProfileSettings() {
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Enter your full name"
+                    placeholder={t('Enter your full name', 'आफ्नो पूरा नाम लेख्नुहोस्')}
                     className="w-full pl-10 pr-4 py-3 text-sm font-semibold rounded-xl border border-slate-200 focus:border-indigo-600 outline-none transition"
                   />
                 </div>
@@ -984,7 +1067,7 @@ export default function ProfileSettings() {
 
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Email (Locked)
+                  {t('Email (Locked)', 'इमेल (लक गरिएको)')}
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -999,7 +1082,7 @@ export default function ProfileSettings() {
 
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Mobile Number
+                  {t('Mobile Number', 'मोबाइल नम्बर')}
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1023,12 +1106,12 @@ export default function ProfileSettings() {
               {updateProfileMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving Changes...
+                  {t('Saving Changes...', 'परिवर्तन सुरक्षित हुँदैछ...')}
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  Save Personal Details
+                  {t('Save Personal Details', 'व्यक्तिगत विवरण सुरक्षित गर्नुहोस्')}
                 </>
               )}
             </button>
@@ -1043,10 +1126,13 @@ export default function ProfileSettings() {
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-slate-900">
-                Password Security
+                {t('Password Security', 'पासवर्ड सुरक्षा')}
               </h2>
               <p className="text-xs text-slate-500">
-                2-Step Email OTP verification for password changes
+                {t(
+                  '2-Step Email OTP verification for password changes',
+                  'पासवर्ड परिवर्तनका लागि २-चरण इमेल ओटिपी प्रमाणीकरण'
+                )}
               </p>
             </div>
           </div>
@@ -1056,11 +1142,17 @@ export default function ProfileSettings() {
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-extrabold text-slate-800">
                   <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                  <span>Protected by Email Verification</span>
+                  <span>
+                    {t('Protected by Email Verification', 'इमेल प्रमाणीकरणद्वारा सुरक्षित')}
+                  </span>
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  To change your password, we send a secure 6-digit verification code to{' '}
-                  <strong className="text-slate-900">{activeUser.email}</strong>.
+                  {t(
+                    'To change your password, we send a secure 6-digit verification code to ',
+                    'पासवर्ड परिवर्तन गर्न तपाईंको इमेल '
+                  )}
+                  <strong className="text-slate-900">{activeUser.email}</strong>
+                  {t('.', ' मा ६-अंकको सुरक्षित ओटिपी कोड पठाइनेछ।')}
                 </p>
               </div>
 
@@ -1073,12 +1165,12 @@ export default function ProfileSettings() {
                 {requestOTPMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Sending OTP to Email...
+                    {t('Sending OTP to Email...', 'इमेलमा ओटिपी पठाउँदै...')}
                   </>
                 ) : (
                   <>
                     <Lock className="w-4 h-4" />
-                    Send Password Reset OTP
+                    {t('Send Password Reset OTP', 'पासवर्ड रिसेट ओटिपी पठाउनुहोस्')}
                   </>
                 )}
               </button>
@@ -1087,7 +1179,8 @@ export default function ProfileSettings() {
             <form onSubmit={handleConfirmPasswordChange} className="space-y-4">
               <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
                 <span className="truncate pr-2">
-                  OTP sent to <strong>{activeUser.email}</strong>
+                  {t('OTP sent to', 'ओटिपी पठाइएको इमेल:')}{' '}
+                  <strong>{activeUser.email}</strong>
                 </span>
                 <button
                   type="button"
@@ -1095,13 +1188,13 @@ export default function ProfileSettings() {
                   disabled={requestOTPMutation.isPending}
                   className="inline-flex items-center gap-1 font-extrabold text-emerald-700 hover:text-emerald-900 shrink-0"
                 >
-                  <RefreshCw className="w-3 h-3" /> Resend
+                  <RefreshCw className="w-3 h-3" /> {t('Resend', 'फेरि पठाउनुहोस्')}
                 </button>
               </div>
 
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
-                  6-Digit OTP
+                  {t('6-Digit OTP', '६-अंकको ओटिपी')}
                 </label>
                 <input
                   type="text"
@@ -1116,7 +1209,7 @@ export default function ProfileSettings() {
 
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
-                  New Password
+                  {t('New Password', 'नयाँ पासवर्ड')}
                 </label>
                 <div className="relative">
                   <input
@@ -1125,7 +1218,7 @@ export default function ProfileSettings() {
                     minLength={6}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Minimum 6 characters"
+                    placeholder={t('Minimum 6 characters', 'कम्तीमा ६ अक्षर')}
                     className="w-full pl-4 pr-10 py-3 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
                   />
                   <button
@@ -1133,7 +1226,11 @@ export default function ProfileSettings() {
                     onClick={() => setShowPassword((prev) => !prev)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
                     tabIndex={-1}
-                    title={showPassword ? 'Hide password' : 'Show password'}
+                    title={
+                      showPassword
+                        ? t('Hide password', 'पासवर्ड लुकाउनुहोस्')
+                        : t('Show password', 'पासवर्ड हेर्नुहोस्')
+                    }
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -1142,7 +1239,7 @@ export default function ProfileSettings() {
 
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Confirm New Password
+                  {t('Confirm New Password', 'नयाँ पासवर्ड पुष्टि गर्नुहोस्')}
                 </label>
                 <div className="relative">
                   <input
@@ -1151,7 +1248,7 @@ export default function ProfileSettings() {
                     minLength={6}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
+                    placeholder={t('Re-enter new password', 'नयाँ पासवर्ड फेरि लेख्नुहोस्')}
                     className="w-full pl-4 pr-10 py-3 text-sm rounded-xl border border-slate-200 focus:border-indigo-600 outline-none"
                   />
                   <button
@@ -1159,7 +1256,11 @@ export default function ProfileSettings() {
                     onClick={() => setShowConfirmPassword((prev) => !prev)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
                     tabIndex={-1}
-                    title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    title={
+                      showConfirmPassword
+                        ? t('Hide password', 'पासवर्ड लुकाउनुहोस्')
+                        : t('Show password', 'पासवर्ड हेर्नुहोस्')
+                    }
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="w-4 h-4" />
@@ -1183,14 +1284,16 @@ export default function ProfileSettings() {
                   }}
                   className="py-3 px-4 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-600 hover:bg-slate-50"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   disabled={confirmOTPMutation.isPending}
                   className="flex-1 py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-md transition"
                 >
-                  {confirmOTPMutation.isPending ? 'Updating...' : 'Verify OTP & Update Password'}
+                  {confirmOTPMutation.isPending
+                    ? t('Updating...', 'अपडेट हुँदैछ...')
+                    : t('Verify OTP & Update Password', 'ओटिपी प्रमाणित गरी पासवर्ड अपडेट गर्नुहोस्')}
                 </button>
               </div>
             </form>
@@ -1205,20 +1308,43 @@ export default function ProfileSettings() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              <Camera className="w-4 h-4 text-indigo-600" /> My Uploaded Identity & Profile Photos
+              <Camera className="w-4 h-4 text-indigo-600" />{' '}
+              {t(
+                'My Uploaded Identity & Profile Photos',
+                'मेरा अपलोड गरिएका परिचयपत्र र प्रोफाइल फोटोहरू'
+              )}
             </h3>
             <p className="text-xs text-slate-500">
-              Click any photo below to open it in fullscreen photo viewer mode
+              {t(
+                'Click any photo below to open it in fullscreen photo viewer mode',
+                'पूरा स्क्रिनमा हेर्न तलको कुनै पनि फोटोमा थिच्नुहोस्'
+              )}
             </p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: 'Profile Avatar', url: displayedAvatarUrl, key: 'AVATAR' },
-            { label: 'Cover Banner', url: displayedCoverUrl, key: 'COVER' },
-            { label: 'Citizenship Front', url: citFrontUrl, key: 'CIT_FRONT' },
-            { label: 'Citizenship Back', url: citBackUrl, key: 'CIT_BACK' },
+            {
+              label: t('Profile Avatar', 'प्रोफाइल फोटो'),
+              url: displayedAvatarUrl,
+              key: 'AVATAR',
+            },
+            {
+              label: t('Cover Banner', 'कभर ब्यानर'),
+              url: displayedCoverUrl,
+              key: 'COVER',
+            },
+            {
+              label: t('Citizenship Front', 'नागरिकता (अगाडि)'),
+              url: citFrontUrl,
+              key: 'CIT_FRONT',
+            },
+            {
+              label: t('Citizenship Back', 'नागरिकता (पछाडि)'),
+              url: citBackUrl,
+              key: 'CIT_BACK',
+            },
           ].map((item) => {
             const gIdx = galleryItems.findIndex((g) => g.key === item.key);
             return (
@@ -1244,11 +1370,14 @@ export default function ProfileSettings() {
                         className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                       />
                       <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 text-white text-xs font-extrabold transition">
-                        <ZoomIn className="w-4 h-4" /> View Photo
+                        <ZoomIn className="w-4 h-4" />{' '}
+                        {t('View Photo', 'फोटो हेर्नुहोस्')}
                       </div>
                     </>
                   ) : (
-                    <span className="text-[11px] font-bold text-slate-400">Not Uploaded</span>
+                    <span className="text-[11px] font-bold text-slate-400">
+                      {t('Not Uploaded', 'अपलोड गरिएको छैन')}
+                    </span>
                   )}
                 </div>
                 <div className="px-3 py-2.5 bg-white border-t border-slate-100 flex items-center justify-between">
@@ -1266,16 +1395,19 @@ export default function ProfileSettings() {
         {recentBills.length > 0 && (
           <div className="pt-4 border-t border-slate-100">
             <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-indigo-600" /> Recent Billing & Payment Proofs
+              <FileText className="w-4 h-4 text-indigo-600" />{' '}
+              {t('Recent Billing & Payment Proofs', 'हालका बिलिङ र भुक्तानी प्रमाणहरू')}
             </h4>
             <div className="overflow-x-auto rounded-2xl border border-slate-200">
               <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
                   <tr>
-                    <th className="py-3 px-4">Billing Cycle (AD / BS)</th>
-                    <th className="py-3 px-4">Total Payable</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Proof Photos</th>
+                    <th className="py-3 px-4">
+                      {t('Billing Cycle (AD / BS)', 'बिलिङ चक्र (AD / BS)')}
+                    </th>
+                    <th className="py-3 px-4">{t('Total Payable', 'कुल तिर्नुपर्ने')}</th>
+                    <th className="py-3 px-4">{t('Status', 'अवस्था')}</th>
+                    <th className="py-3 px-4">{t('Proof Photos', 'प्रमाण फोटोहरू')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1289,11 +1421,12 @@ export default function ProfileSettings() {
                             {formatDualMonthLabel(b.billing_month_label)}
                           </p>
                           <p className="text-[11px] text-slate-500">
-                            Room {b.room_number} • Due: {formatDualDate(b.due_date)}
+                            {t('Room', 'कोठा')} {b.room_number} •{' '}
+                            {t('Due:', 'तिर्नुपर्ने:')} {formatDualDate(b.due_date)}
                           </p>
                         </td>
                         <td className="py-3 px-4 font-black text-slate-900">
-                          Rs. {Number(b.total_payable).toLocaleString()}
+                          {t('Rs.', 'रु.')} {Number(b.total_payable).toLocaleString()}
                         </td>
                         <td className="py-3 px-4">
                           <span
@@ -1305,7 +1438,7 @@ export default function ProfileSettings() {
                                 : 'bg-rose-100 text-rose-700'
                             }`}
                           >
-                            {b.status_display}
+                            {td(b.status_display)}
                           </span>
                         </td>
                         <td className="py-3 px-4">
@@ -1317,19 +1450,21 @@ export default function ProfileSettings() {
                                   openPhotoLightbox([
                                     {
                                       url: mUrl,
-                                      title: `Meter Photo — ${formatDualMonthLabel(
+                                      title: `${t('Meter Photo', 'मिटर फोटो')} — ${formatDualMonthLabel(
                                         b.billing_month_label
                                       )}`,
-                                      subtitle: `Room ${b.room_number}`,
+                                      subtitle: `${t('Room', 'कोठा')} ${b.room_number}`,
                                     },
                                   ])
                                 }
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px]"
                               >
-                                <Camera className="w-3 h-3" /> Meter
+                                <Camera className="w-3 h-3" /> {t('Meter', 'मिटर')}
                               </button>
                             ) : (
-                              <span className="text-[11px] text-slate-400">No Meter</span>
+                              <span className="text-[11px] text-slate-400">
+                                {t('No Meter', 'मिटर छैन')}
+                              </span>
                             )}
                             {pUrl ? (
                               <button
@@ -1338,19 +1473,24 @@ export default function ProfileSettings() {
                                   openPhotoLightbox([
                                     {
                                       url: pUrl,
-                                      title: `Payment Receipt — ${formatDualMonthLabel(
+                                      title: `${t('Payment Receipt', 'भुक्तानी भौचर')} — ${formatDualMonthLabel(
                                         b.billing_month_label
                                       )}`,
-                                      subtitle: `Room ${b.room_number} • Rs. ${b.total_payable}`,
+                                      subtitle: `${t('Room', 'कोठा')} ${b.room_number} • ${t(
+                                        'Rs.',
+                                        'रु.'
+                                      )} ${b.total_payable}`,
                                     },
                                   ])
                                 }
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px]"
                               >
-                                <CreditCard className="w-3 h-3" /> Receipt
+                                <CreditCard className="w-3 h-3" /> {t('Receipt', 'भौचर')}
                               </button>
                             ) : (
-                              <span className="text-[11px] text-slate-400">No Slip</span>
+                              <span className="text-[11px] text-slate-400">
+                                {t('No Slip', 'भौचर छैन')}
+                              </span>
                             )}
                           </div>
                         </td>
@@ -1438,7 +1578,8 @@ export default function ProfileSettings() {
                   }
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
                 >
-                  <Download className="w-3.5 h-3.5" /> Download
+                  <Download className="w-3.5 h-3.5" />{' '}
+                  {t('Download', 'डाउनलोड')}
                 </button>
                 <button
                   type="button"

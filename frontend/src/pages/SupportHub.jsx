@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import axiosClient, { deleteEntireChat } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
 
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
@@ -37,7 +38,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
   let finalUrl = rawUrl.trim();
 
-  // Always attach /media/ paths to the active backendOrigin
   const mediaIndex = finalUrl.indexOf('/media/');
   if (mediaIndex !== -1) {
     finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
@@ -45,7 +45,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
     finalUrl = `${backendOrigin}${finalUrl}`;
   }
 
-  // Upgrade http:// to https:// whenever running on production (Vercel / Render)
   if (
     finalUrl.startsWith('http://') &&
     !finalUrl.includes('localhost') &&
@@ -64,6 +63,7 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
 export default function SupportHub() {
   const { user, isAdmin } = useAuth();
+  const { t, td } = useLanguage();
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState('CHAT'); // CHAT | COMPLAINTS
@@ -133,7 +133,6 @@ export default function SupportHub() {
 
   const complaints = Array.isArray(rawComplaints) ? rawComplaints : [];
 
-  // Auto-select the first valid contact (for Tenant, this immediately selects Landlord Admin)
   useEffect(() => {
     if (contacts.length > 0) {
       const stillValid = contacts.some((c) => c.id === selectedContact?.id);
@@ -159,7 +158,6 @@ export default function SupportHub() {
         .catch(() => {});
     };
 
-    // Initial load + 4-second background sync
     fetchLatestMessages();
     const syncTimer = setInterval(fetchLatestMessages, 4000);
 
@@ -190,7 +188,6 @@ export default function SupportHub() {
     };
   }, [selectedContact?.id, user?.id, queryClient]);
 
-  // Smooth scroll to bottom ONLY when a new message arrives
   useEffect(() => {
     if (chatMessages.length !== prevMsgCountRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -213,7 +210,12 @@ export default function SupportHub() {
     mutationFn: (userId) => deleteEntireChat(userId),
     onSuccess: (data) => {
       setChatMessages([]);
-      setBannerMsg({ type: 'success', text: data.message });
+      setBannerMsg({
+        type: 'success',
+        text:
+          data.message ||
+          t('Chat history cleared successfully.', 'च्याट इतिहास सफलतापूर्वक हटाइयो।'),
+      });
       queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
     },
   });
@@ -284,7 +286,10 @@ export default function SupportHub() {
       setActiveTab('COMPLAINTS');
       setBannerMsg({
         type: 'success',
-        text: 'Maintenance ticket submitted! Landlord Admin has been notified.',
+        text: t(
+          'Maintenance ticket submitted! Landlord Admin has been notified.',
+          'मर्मत टिकट पेश गरियो! घरधनी एडमिनलाई जानकारी गराइएको छ।'
+        ),
       });
     },
   });
@@ -296,7 +301,10 @@ export default function SupportHub() {
     });
     setBannerMsg({
       type: 'success',
-      text: `Ticket #${complaintId} updated to ${status.replace('_', ' ')}!`,
+      text: t(
+        `Ticket #${complaintId} updated to ${status.replace('_', ' ')}!`,
+        `टिकट #${complaintId} को अवस्था अपडेट गरियो!`
+      ),
     });
     queryClient.invalidateQueries({ queryKey: ['complaintTickets'] });
   };
@@ -317,11 +325,11 @@ export default function SupportHub() {
     return true;
   });
 
-  // Formats chat date divider with AD + Nepali BS (Baishakh/Jestha form)
+  // Formats chat date divider with AD + Nepali BS
   const formatDateBadge = (dateStr) => {
     if (!dateStr) {
       const todayIso = new Date().toISOString().split('T')[0];
-      return `Today • ${formatDualDate(todayIso)}`;
+      return `${t('Today', 'आज')} • ${formatDualDate(todayIso)}`;
     }
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return String(dateStr);
@@ -333,10 +341,10 @@ export default function SupportHub() {
     yesterday.setDate(today.getDate() - 1);
 
     if (d.toDateString() === today.toDateString()) {
-      return `Today • ${isoDate} (${bsDate})`;
+      return `${t('Today', 'आज')} • ${isoDate} (${bsDate})`;
     }
     if (d.toDateString() === yesterday.toDateString()) {
-      return `Yesterday • ${isoDate} (${bsDate})`;
+      return `${t('Yesterday', 'हिजो')} • ${isoDate} (${bsDate})`;
     }
     return formatDualDate(isoDate);
   };
@@ -360,7 +368,7 @@ export default function SupportHub() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-lg sm:text-xl font-extrabold text-slate-900">
-                SmartRent Messenger & Support
+                {t('SmartRent Messenger & Support', 'स्मार्टरेन्ट म्यासेन्जर र सहायता')}
               </h1>
               <span
                 className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
@@ -374,13 +382,21 @@ export default function SupportHub() {
                     wsConnected ? 'text-emerald-500 animate-pulse' : 'text-indigo-500'
                   }`}
                 />
-                {wsConnected ? 'REALTIME LIVE' : '4S AUTO-SYNC'}
+                {wsConnected
+                  ? t('REALTIME LIVE', 'लाइभ रियल-टाइम')
+                  : t('4S AUTO-SYNC', '४-सेकेन्ड अटो-सिंक')}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               {isAdmin
-                ? 'Direct tenant messaging, photo proofs, and maintenance ticket resolution.'
-                : 'Chat directly with your Landlord Admin or report room maintenance issues.'}
+                ? t(
+                    'Direct tenant messaging, photo proofs, and maintenance ticket resolution.',
+                    'भाडावालसँग सिधा संवाद, फोटो प्रमाण, र मर्मत टिकट समाधान कक्ष।'
+                  )
+                : t(
+                    'Chat directly with your Landlord Admin or report room maintenance issues.',
+                    'घरधनी एडमिनसँग सिधा कुराकानी गर्नुहोस् वा कोठाको मर्मत समस्या टिपाउनुहोस्।'
+                  )}
             </p>
           </div>
         </div>
@@ -396,7 +412,7 @@ export default function SupportHub() {
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              Messenger
+              {t('Messenger', 'म्यासेन्जर')}
               {totalUnreadMessages > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px]">
                   {totalUnreadMessages}
@@ -413,7 +429,7 @@ export default function SupportHub() {
               }`}
             >
               <Wrench className="w-3.5 h-3.5" />
-              Tickets ({openComplaintsCount})
+              {t('Tickets', 'मर्मत टिकट')} ({openComplaintsCount})
             </button>
           </div>
 
@@ -421,7 +437,7 @@ export default function SupportHub() {
             onClick={() => setShowNewComplaintModal(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md shadow-rose-600/20 transition"
           >
-            <Plus className="w-4 h-4" /> Report Issue
+            <Plus className="w-4 h-4" /> {t('Report Issue', 'समस्या टिपाउनुहोस्')}
           </button>
         </div>
       </div>
@@ -447,10 +463,16 @@ export default function SupportHub() {
             <div className="p-4 border-b border-slate-100 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                  {isAdmin ? `Tenants Directory (${contacts.length})` : 'Landlord Support Desk'}
+                  {isAdmin
+                    ? t(
+                        `Tenants Directory (${contacts.length})`,
+                        `भाडावाल सूची (${contacts.length})`
+                      )
+                    : t('Landlord Support Desk', 'घरधनी सहायता कक्ष')}
                 </span>
                 <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" /> Online
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />{' '}
+                  {t('Online', 'अनलाइन')}
                 </span>
               </div>
 
@@ -461,7 +483,10 @@ export default function SupportHub() {
                     type="text"
                     value={contactSearch}
                     onChange={(e) => setContactSearch(e.target.value)}
-                    placeholder="Search tenant name, room, or phone..."
+                    placeholder={t(
+                      'Search tenant name, room, or phone...',
+                      'नाम, कोठा वा फोन खोज्नुहोस्...'
+                    )}
                     className="w-full pl-9 pr-4 py-2.5 text-xs rounded-2xl bg-slate-100/80 border border-transparent focus:bg-white focus:border-indigo-500 outline-none transition"
                   />
                 </div>
@@ -472,8 +497,14 @@ export default function SupportHub() {
               {filteredContacts.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">
                   {isAdmin
-                    ? `No tenants matching "${contactSearch}"`
-                    : 'Landlord Admin support channel is ready.'}
+                    ? t(
+                        `No tenants matching "${contactSearch}"`,
+                        `"${contactSearch}" सँग मिल्ने कुनै भाडावाल भेटिएन`
+                      )
+                    : t(
+                        'Landlord Admin support channel is ready.',
+                        'घरधनी एडमिन च्याट तयार छ।'
+                      )}
                 </div>
               ) : (
                 filteredContacts.map((c) => {
@@ -516,7 +547,7 @@ export default function SupportHub() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
                           <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                            {c.full_name || 'Landlord Admin'}
+                            {c.full_name || t('Landlord Admin', 'घरधनी एडमिन')}
                           </h4>
                           {c.last_message_time && (
                             <span className="text-[10px] font-semibold text-slate-400 shrink-0">
@@ -530,11 +561,11 @@ export default function SupportHub() {
 
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <span className="inline-block px-2 py-0.5 rounded-md bg-indigo-100/80 text-indigo-700 text-[10px] font-extrabold">
-                            {c.room_badge}
+                            {td(c.room_badge)}
                           </span>
                           {c.unread_count > 0 && (
                             <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold shadow-xs">
-                              {c.unread_count} new
+                              {c.unread_count} {t('new', 'नयाँ')}
                             </span>
                           )}
                         </div>
@@ -546,7 +577,8 @@ export default function SupportHub() {
                               : 'text-slate-500'
                           }`}
                         >
-                          {c.last_message || 'Tap to start chatting...'}
+                          {td(c.last_message) ||
+                            t('Tap to start chatting...', 'कुराकानी सुरु गर्न थिच्नुहोस्...')}
                         </p>
                       </div>
                     </div>
@@ -597,11 +629,11 @@ export default function SupportHub() {
 
                     <div className="min-w-0">
                       <h3 className="text-sm font-extrabold text-slate-900 truncate">
-                        {selectedContact.full_name || 'Landlord Admin'}
+                        {selectedContact.full_name || t('Landlord Admin', 'घरधनी एडमिन')}
                       </h3>
                       <div className="flex items-center gap-2 text-[11px] text-slate-500">
                         <span className="font-bold text-indigo-600">
-                          {selectedContact.room_badge}
+                          {td(selectedContact.room_badge)}
                         </span>
                         {selectedContact.phone_number && (
                           <>
@@ -620,17 +652,22 @@ export default function SupportHub() {
                         onClick={() => {
                           if (
                             window.confirm(
-                              `Are you sure you want to delete the entire chat history with ${selectedContact.full_name}?`
+                              t(
+                                `Are you sure you want to delete the entire chat history with ${selectedContact.full_name}?`,
+                                `के तपाईं ${selectedContact.full_name} सँगको सम्पूर्ण च्याट इतिहास मेटाउन चाहनुहुन्छ?`
+                              )
                             )
                           ) {
                             deleteChatMutation.mutate(selectedContact.id);
                           }
                         }}
                         className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center gap-1.5"
-                        title="Delete Entire Chat History"
+                        title={t('Delete Entire Chat History', 'सम्पूर्ण च्याट मेटाउनुहोस्')}
                       >
                         <Trash2 className="w-4 h-4" />
-                        <span className="hidden sm:inline text-[11px]">Clear Chat</span>
+                        <span className="hidden sm:inline text-[11px]">
+                          {t('Clear Chat', 'च्याट मेटाउनुहोस्')}
+                        </span>
                       </button>
                     )}
 
@@ -638,10 +675,10 @@ export default function SupportHub() {
                       <a
                         href={`tel:${selectedContact.phone_number}`}
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-extrabold transition"
-                        title="Call directly"
+                        title={t('Call directly', 'सिधै कल गर्नुहोस्')}
                       >
                         <Phone className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Call</span>
+                        <span className="hidden sm:inline">{t('Call', 'कल')}</span>
                       </a>
                     )}
                   </div>
@@ -662,10 +699,16 @@ export default function SupportHub() {
                         <Sparkles className="w-6 h-6" />
                       </div>
                       <p className="text-sm font-extrabold text-slate-800">
-                        No messages with {selectedContact.full_name || 'Landlord Admin'} yet
+                        {t(
+                          `No messages with ${selectedContact.full_name || 'Landlord Admin'} yet`,
+                          `${selectedContact.full_name || 'घरधनी एडमिन'} सँग अहिलेसम्म कुनै सन्देश छैन`
+                        )}
                       </p>
                       <p className="text-xs text-slate-500 max-w-xs mt-1">
-                        Send a message or attach a photo below to start a real-time conversation.
+                        {t(
+                          'Send a message or attach a photo below to start a real-time conversation.',
+                          'तल सन्देश लेखेर वा फोटो जोडेर कुराकानी सुरु गर्नुहोस्।'
+                        )}
                       </p>
                     </div>
                   ) : (
@@ -737,7 +780,7 @@ export default function SupportHub() {
                                         hour: '2-digit',
                                         minute: '2-digit',
                                       })
-                                    : 'Just now'}
+                                    : t('Just now', 'भर्खरै')}
                                 </span>
                                 {isMe && (
                                   <CheckCheck
@@ -776,7 +819,7 @@ export default function SupportHub() {
                             {chatImage.name}
                           </p>
                           <p className="text-[10px] text-indigo-600">
-                            Ready to send photo attachment
+                            {t('Ready to send photo attachment', 'फोटो पठाउन तयार छ')}
                           </p>
                         </div>
                       </div>
@@ -793,7 +836,7 @@ export default function SupportHub() {
                   <div className="flex items-center gap-2">
                     <label
                       className="p-3 rounded-2xl bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 cursor-pointer transition shrink-0"
-                      title="Attach Photo"
+                      title={t('Attach Photo', 'फोटो जोड्नुहोस्')}
                     >
                       <ImageIcon className="w-5 h-5" />
                       <input
@@ -814,7 +857,10 @@ export default function SupportHub() {
                           handleSendMessage(e);
                         }
                       }}
-                      placeholder={`Write a message to ${selectedContact.full_name || 'Landlord Admin'}...`}
+                      placeholder={t(
+                        `Write a message to ${selectedContact.full_name || 'Landlord Admin'}...`,
+                        `${selectedContact.full_name || 'घरधनी एडमिन'} लाई सन्देश लेख्नुहोस्...`
+                      )}
                       className="flex-1 px-4 py-3 text-xs sm:text-sm rounded-2xl bg-slate-100/90 border border-transparent focus:bg-white focus:border-indigo-500 outline-none transition"
                     />
 
@@ -835,24 +881,42 @@ export default function SupportHub() {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-xs p-8">
                 <MessageSquare className="w-10 h-10 text-slate-300 mb-2" />
-                Select a conversation on the left to start messaging
+                {t(
+                  'Select a conversation on the left to start messaging',
+                  'कुराकानी सुरु गर्न बायाँपट्टि सम्पर्क छान्नुहोस्'
+                )}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* TAB 2: TENANT COMPLAINTS & MAINTENANCE TICKETS (WITH DUAL AD/BS DATES & MANAGED SCROLL) */}
+      {/* TAB 2: TENANT COMPLAINTS & MAINTENANCE TICKETS */}
       {activeTab === 'COMPLAINTS' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="inline-flex bg-white p-1 rounded-2xl border border-slate-200">
               {[
-                { key: 'ALL', label: `All Tickets (${complaints.length})` },
-                { key: 'OPEN', label: `Open / In Progress (${openComplaintsCount})` },
+                {
+                  key: 'ALL',
+                  label: t(
+                    `All Tickets (${complaints.length})`,
+                    `सबै टिकट (${complaints.length})`
+                  ),
+                },
+                {
+                  key: 'OPEN',
+                  label: t(
+                    `Open / In Progress (${openComplaintsCount})`,
+                    `खुला / प्रक्रियामा (${openComplaintsCount})`
+                  ),
+                },
                 {
                   key: 'RESOLVED',
-                  label: `Resolved (${complaints.length - openComplaintsCount})`,
+                  label: t(
+                    `Resolved (${complaints.length - openComplaintsCount})`,
+                    `समाधान भएको (${complaints.length - openComplaintsCount})`
+                  ),
                 },
               ].map((f) => (
                 <button
@@ -876,11 +940,13 @@ export default function SupportHub() {
                 <div className="col-span-full bg-white rounded-3xl p-12 text-center border border-slate-200/80 space-y-3">
                   <Wrench className="w-8 h-8 text-slate-300 mx-auto" />
                   <p className="text-sm font-extrabold text-slate-700">
-                    No maintenance tickets found
+                    {t('No maintenance tickets found', 'कुनै मर्मत टिकट फेला परेन')}
                   </p>
                   <p className="text-xs text-slate-400">
-                    Click &ldquo;Report Issue&rdquo; above if you need plumbing, electrical, or room
-                    assistance.
+                    {t(
+                      'Click "Report Issue" above if you need plumbing, electrical, or room assistance.',
+                      'धारा, बिजुली वा कोठा मर्मत आवश्यक परेमा माथिको "समस्या टिपाउनुहोस्" बटन थिच्नुहोस्।'
+                    )}
                   </p>
                 </div>
               ) : (
@@ -898,7 +964,8 @@ export default function SupportHub() {
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <span className="text-[11px] font-extrabold text-indigo-600">
-                            Ticket #{c.id} • Room {c.room_number} ({c.tenant_name})
+                            {t('Ticket', 'टिकट')} #{c.id} • {t('Room', 'कोठा')}{' '}
+                            {c.room_number} ({c.tenant_name})
                           </span>
                           <span
                             className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
@@ -909,13 +976,14 @@ export default function SupportHub() {
                                 : 'bg-slate-100 text-slate-700'
                             }`}
                           >
-                            {c.priority_display}
+                            {td(c.priority_display)}
                           </span>
                         </div>
 
                         {rawTicketDate && (
                           <p className="text-[10px] font-semibold text-slate-400 mb-2">
-                            Reported: {formatDualDate(rawTicketDate)}
+                            {t('Reported:', 'टिपाइएको मिति:')}{' '}
+                            {formatDualDate(rawTicketDate)}
                           </p>
                         )}
 
@@ -941,7 +1009,10 @@ export default function SupportHub() {
                         {c.admin_response && (
                           <div className="rounded-2xl bg-indigo-50/80 border border-indigo-100 p-3.5 text-xs text-indigo-950">
                             <strong className="block text-[10px] uppercase tracking-wider text-indigo-600 mb-1">
-                              Landlord Official Response:
+                              {t(
+                                'Landlord Official Response:',
+                                'घरधनीको आधिकारिक जवाफ:'
+                              )}
                             </strong>
                             {c.admin_response}
                           </div>
@@ -957,7 +1028,10 @@ export default function SupportHub() {
                               onChange={(e) =>
                                 setReplyTexts({ ...replyTexts, [c.id]: e.target.value })
                               }
-                              placeholder="Write official response..."
+                              placeholder={t(
+                                'Write official response...',
+                                'आधिकारिक जवाफ लेख्नुहोस्...'
+                              )}
                               className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white outline-none focus:border-indigo-600"
                             />
                             <button
@@ -971,7 +1045,7 @@ export default function SupportHub() {
                               }
                               className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-extrabold"
                             >
-                              Reply
+                              {t('Reply', 'जवाफ')}
                             </button>
                           </div>
                         )}
@@ -991,7 +1065,7 @@ export default function SupportHub() {
                             ) : (
                               <Clock className="w-3.5 h-3.5" />
                             )}
-                            {c.status_display}
+                            {td(c.status_display)}
                           </span>
 
                           {isAdmin && c.status !== 'RESOLVED' && (
@@ -1003,12 +1077,15 @@ export default function SupportHub() {
                                   'RESOLVED',
                                   replyTexts[c.id] ||
                                     c.admin_response ||
-                                    'Issue resolved by Landlord.'
+                                    t(
+                                      'Issue resolved by Landlord.',
+                                      'घरधनीद्वारा समस्या समाधान गरियो।'
+                                    )
                                 )
                               }
                               className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
                             >
-                              ✓ Mark Resolved
+                              {t('✓ Mark Resolved', '✓ समाधान भएको चिन्ह लगाउनुहोस्')}
                             </button>
                           )}
                         </div>
@@ -1046,7 +1123,8 @@ export default function SupportHub() {
           <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-rose-600" /> Report Maintenance Issue
+                <AlertTriangle className="w-5 h-5 text-rose-600" />{' '}
+                {t('Report Maintenance Issue', 'मर्मत समस्या टिपाउनुहोस्')}
               </h3>
               <button
                 onClick={() => setShowNewComplaintModal(false)}
@@ -1056,7 +1134,10 @@ export default function SupportHub() {
               </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              Report plumbing, electrical, sub-meter, or house cleanliness issues directly to Admin.
+              {t(
+                'Report plumbing, electrical, sub-meter, or house cleanliness issues directly to Admin.',
+                'धारा, बिजुली, सब-मिटर वा सरसफाइ सम्बन्धी समस्या सिधै एडमिनलाई टिपाउनुहोस्।'
+              )}
             </p>
 
             <form
@@ -1073,50 +1154,56 @@ export default function SupportHub() {
             >
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                  ISSUE SUBJECT
+                  {t('ISSUE SUBJECT', 'समस्याको विषय')}
                 </label>
                 <input
                   type="text"
                   required
                   value={complaintTitle}
                   onChange={(e) => setComplaintTitle(e.target.value)}
-                  placeholder="e.g. Bathroom tap leaking / Corridor light issue"
+                  placeholder={t(
+                    'e.g. Bathroom tap leaking / Corridor light issue',
+                    'जस्तै: बाथरुमको धारा चुहिएको / प्यासेजको बत्ती बिग्रिएको'
+                  )}
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:border-indigo-600"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                  DETAILED DESCRIPTION
+                  {t('DETAILED DESCRIPTION', 'विस्तृत विवरण')}
                 </label>
                 <textarea
                   required
                   rows={3}
                   value={complaintDescription}
                   onChange={(e) => setComplaintDescription(e.target.value)}
-                  placeholder="Describe the problem clearly so Admin can resolve it..."
+                  placeholder={t(
+                    'Describe the problem clearly so Admin can resolve it...',
+                    'समस्या स्पष्ट रूपमा लेख्नुहोस् ताकि एडमिनले छिट्टै समाधान गर्न सकोस्...'
+                  )}
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:border-indigo-600"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                  URGENCY LEVEL
+                  {t('URGENCY LEVEL', 'प्राथमिकता स्तर')}
                 </label>
                 <select
                   value={complaintPriority}
                   onChange={(e) => setComplaintPriority(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:border-indigo-600"
                 >
-                  <option value="LOW">Normal / Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">Urgent / High Priority</option>
+                  <option value="LOW">{t('Normal / Low', 'सामान्य')}</option>
+                  <option value="MEDIUM">{t('Medium', 'मध्यम')}</option>
+                  <option value="HIGH">{t('Urgent / High Priority', 'अति जरुरी')}</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                  PHOTO PROOF (OPTIONAL)
+                  {t('PHOTO PROOF (OPTIONAL)', 'फोटो प्रमाण (ऐच्छिक)')}
                 </label>
                 <input
                   type="file"
@@ -1143,14 +1230,16 @@ export default function SupportHub() {
                   onClick={() => setShowNewComplaintModal(false)}
                   className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   disabled={complaintMutation.isPending}
                   className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md"
                 >
-                  {complaintMutation.isPending ? 'Submitting...' : 'Submit Ticket'}
+                  {complaintMutation.isPending
+                    ? t('Submitting...', 'पठाउँदै...')
+                    : t('Submit Ticket', 'टिकट पेश गर्नुहोस्')}
                 </button>
               </div>
             </form>

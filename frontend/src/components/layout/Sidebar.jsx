@@ -9,9 +9,11 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 
 export default function Sidebar() {
   const { user, isAdmin } = useAuth();
+  const { t } = useLanguage();
   const location = useLocation();
 
   // Only show Sidebar when user is logged in and not on the public landing page
@@ -21,31 +23,31 @@ export default function Sidebar() {
 
   const menuLinks = [
     {
-      label: 'Public Showcase',
+      label: t('Public Showcase', 'गृहपृष्ठ'),
       path: '/',
       icon: Home,
     },
     {
-      label: 'Tenant Dashboard',
+      label: t('Tenant Dashboard', 'भाडावाल ड्यासबोर्ड'),
       path: '/tenant',
       icon: LayoutDashboard,
     },
     ...(isAdmin
       ? [
           {
-            label: 'Admin Command Deck',
+            label: t('Admin Command Deck', 'एडमिन कमाण्ड सेन्टर'),
             path: '/admin-deck',
             icon: ShieldAlert,
           },
         ]
       : []),
     {
-      label: 'Messenger & Support',
+      label: t('Messenger & Support', 'म्यासेन्जर र सहायता'),
       path: '/support',
       icon: MessageSquare,
     },
     {
-      label: 'Profile & Security',
+      label: t('Profile & Security', 'प्रोफाइल र सुरक्षा'),
       path: '/profile',
       icon: UserCheck,
     },
@@ -55,7 +57,7 @@ export default function Sidebar() {
     <aside className="hidden lg:flex lg:flex-col lg:w-64 shrink-0 bg-white border-r border-slate-200/80 min-h-[calc(100vh-4rem)] p-4 justify-between">
       <div className="space-y-1.5">
         <div className="px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-          Navigation Menu
+          {t('Navigation Menu', 'नेभिगेसन मेनु')}
         </div>
         {menuLinks.map((item) => {
           const Icon = item.icon;
@@ -80,10 +82,13 @@ export default function Sidebar() {
       <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 space-y-1.5">
         <div className="flex items-center gap-1.5 text-indigo-700 text-xs font-extrabold">
           <Sparkles className="w-4 h-4" />
-          <span>4s Live Auto-Sync</span>
+          <span>{t('4s Live Auto-Sync', '४-सेकेन्ड लाइभ सिंक')}</span>
         </div>
         <p className="text-[11px] text-slate-600 leading-relaxed">
-          All bills, meter readings, and messages synchronize automatically every 4 seconds.
+          {t(
+            'All bills, meter readings, and messages synchronize automatically every 4 seconds.',
+            'सबै बिल, मिटर रिडिङ र सन्देशहरू प्रत्येक ४ सेकेन्डमा स्वतः अद्यावधिक हुन्छन्।'
+          )}
         </p>
       </div>
     </aside>

@@ -29,7 +29,6 @@ import {
   Home,
   FileText,
   CheckCircle2,
-  Clock,
   CreditCard,
   Camera,
   Loader2,
@@ -69,6 +68,7 @@ import axiosClient, {
   downloadFileFromUrl,
   auditKYC,
 } from '../api/axiosClient';
+import { useLanguage } from '../context/LanguageContext';
 import {
   formatDualDate,
   formatDualMonthLabel,
@@ -79,10 +79,22 @@ const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 const MAX_EVIDENCE_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const FINE_REASON_PRESETS = [
-  'Unclean surroundings / corridor dirt violation',
-  'Broken room fixture / property damage',
-  'Late night noise / discipline rule violation',
-  'Improper waste disposal / sanitation fine',
+  {
+    en: 'Unclean surroundings / corridor dirt violation',
+    ne: 'वरिपरि वा प्यासेजमा फोहोर गरेको जरिवाना',
+  },
+  {
+    en: 'Broken room fixture / property damage',
+    ne: 'कोठाको सामान टुटफुट वा क्षति पुर्याएको',
+  },
+  {
+    en: 'Late night noise / discipline rule violation',
+    ne: 'राति होहल्ला वा अनुशासन नियम उल्लंघन',
+  },
+  {
+    en: 'Improper waste disposal / sanitation fine',
+    ne: 'जथाभावी फोहोर फालेको / सरसफाइ नियम उल्लंघन',
+  },
 ];
 
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
@@ -124,6 +136,7 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
 export default function AdminCommandCenter() {
   const queryClient = useQueryClient();
+  const { isNepali, t, td } = useLanguage();
 
   const [activeAdminTab, setActiveAdminTab] = useState('OVERVIEW'); // OVERVIEW | USERS | ADMINS
   const [selectedUserId, setSelectedUserId] = useState(null);
@@ -143,7 +156,7 @@ export default function AdminCommandCenter() {
   // Fullscreen Photo Lightbox States
   const [lightboxState, setLightboxState] = useState({
     isOpen: false,
-    items: [], // [{ url, title, subtitle }]
+    items: [],
     currentIndex: 0,
     zoom: 1,
   });
@@ -480,7 +493,10 @@ export default function AdminCommandCenter() {
     for (const file of files) {
       if (file.size > MAX_EVIDENCE_FILE_SIZE) {
         setFineModalError(
-          `"${file.name}" exceeds the 5 MB limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`
+          t(
+            `"${file.name}" exceeds the 5 MB limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`,
+            `"${file.name}" ५ MB सीमाभन्दा ठूलो छ।`
+          )
         );
         continue;
       }
@@ -535,7 +551,7 @@ export default function AdminCommandCenter() {
       items.push({
         key: 'AVATAR',
         url: avatarUrl,
-        title: `${u.full_name} — Profile Avatar`,
+        title: `${u.full_name} — ${t('Profile Avatar', 'प्रोफाइल फोटो')}`,
         subtitle: u.email,
       });
     }
@@ -543,7 +559,7 @@ export default function AdminCommandCenter() {
       items.push({
         key: 'COVER',
         url: coverUrl,
-        title: `${u.full_name} — Cover Banner`,
+        title: `${u.full_name} — ${t('Cover Banner', 'कभर ब्यानर')}`,
         subtitle: u.email,
       });
     }
@@ -551,16 +567,16 @@ export default function AdminCommandCenter() {
       items.push({
         key: 'CIT_FRONT',
         url: citFrontUrl,
-        title: `${u.full_name} — Citizenship ID (Front Side)`,
-        subtitle: `Citizenship No: ${u.citizenship_number || 'N/A'}`,
+        title: `${u.full_name} — ${t('Citizenship ID (Front)', 'नागरिकता (अगाडि)')}`,
+        subtitle: `${t('Citizenship No:', 'नागरिकता नं:')} ${u.citizenship_number || 'N/A'}`,
       });
     }
     if (citBackUrl) {
       items.push({
         key: 'CIT_BACK',
         url: citBackUrl,
-        title: `${u.full_name} — Citizenship ID (Back Side)`,
-        subtitle: `Citizenship No: ${u.citizenship_number || 'N/A'}`,
+        title: `${u.full_name} — ${t('Citizenship ID (Back)', 'नागरिकता (पछाडि)')}`,
+        subtitle: `${t('Citizenship No:', 'नागरिकता नं:')} ${u.citizenship_number || 'N/A'}`,
       });
     }
     if (Array.isArray(u.recent_bills)) {
@@ -571,16 +587,25 @@ export default function AdminCommandCenter() {
           items.push({
             key: `BILL_METER_${b.id}`,
             url: mUrl,
-            title: `Meter Photo Proof — ${formatDualMonthLabel(b.billing_month_label)}`,
-            subtitle: `Room ${b.room_number} • ${b.units_consumed} units • Rs. ${b.total_payable}`,
+            title: `${t('Meter Photo Proof', 'मिटर फोटो प्रमाण')} — ${formatDualMonthLabel(
+              b.billing_month_label
+            )}`,
+            subtitle: `${t('Room', 'कोठा')} ${b.room_number} • ${b.units_consumed} ${t(
+              'units',
+              'युनिट'
+            )} • ${t('Rs.', 'रु.')} ${b.total_payable}`,
           });
         }
         if (pUrl) {
           items.push({
             key: `BILL_PAY_${b.id}`,
             url: pUrl,
-            title: `Payment Receipt — ${formatDualMonthLabel(b.billing_month_label)}`,
-            subtitle: `Room ${b.room_number} • Ref: ${b.transaction_reference || 'N/A'} • Rs. ${b.total_payable}`,
+            title: `${t('Payment Receipt', 'भुक्तानी भौचर')} — ${formatDualMonthLabel(
+              b.billing_month_label
+            )}`,
+            subtitle: `${t('Room', 'कोठा')} ${b.room_number} • Ref: ${
+              b.transaction_reference || 'N/A'
+            } • ${t('Rs.', 'रु.')} ${b.total_payable}`,
           });
         }
       });
@@ -596,10 +621,13 @@ export default function AdminCommandCenter() {
             items.push({
               key: `BILL_FINE_${b.id}_${evIdx}`,
               url: safeEv,
-              title: `Fine Evidence Photo #${evIdx + 1} — ${formatDualMonthLabel(
-                b.billing_month_label
-              )}`,
-              subtitle: `Fine: Rs. ${b.damage_fine_amount} • Reason: ${b.damage_fine_reason || 'Violation'}`,
+              title: `${t('Fine Evidence Photo', 'जरिवाना प्रमाण फोटो')} #${
+                evIdx + 1
+              } — ${formatDualMonthLabel(b.billing_month_label)}`,
+              subtitle: `${t('Fine: Rs.', 'जरिवाना: रु.')} ${b.damage_fine_amount} • ${t(
+                'Reason:',
+                'कारण:'
+              )} ${b.damage_fine_reason || 'Violation'}`,
             });
           }
         });
@@ -622,7 +650,6 @@ export default function AdminCommandCenter() {
     queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
   };
 
-  // Mutation: Edit Room Initial / Current Sub-Meter Reading
   const updateRoomMeterMutation = useMutation({
     mutationFn: async ({ roomId, newMeter }) =>
       (
@@ -633,7 +660,12 @@ export default function AdminCommandCenter() {
     onSuccess: (data) => {
       setBannerMsg({
         type: 'success',
-        text: data.message || 'Sub-meter reading updated successfully!',
+        text:
+          data.message ||
+          t(
+            'Sub-meter reading updated successfully!',
+            'सब-मिटर रिडिङ सफलतापूर्वक अपडेट गरियो!'
+          ),
       });
       setEditMeterRoom(null);
       setEditMeterValue('');
@@ -645,7 +677,10 @@ export default function AdminCommandCenter() {
         text:
           err.response?.data?.error ||
           err.response?.data?.detail ||
-          'Could not update sub-meter reading.',
+          t(
+            'Could not update sub-meter reading.',
+            'सब-मिटर रिडिङ अपडेट गर्न सकिएन।'
+          ),
       });
     },
   });
@@ -653,11 +688,20 @@ export default function AdminCommandCenter() {
   const kycAuditMutation = useMutation({
     mutationFn: ({ kycId, action, notes }) => auditKYC(kycId, action, notes),
     onSuccess: (data) => {
-      setBannerMsg({ type: 'success', text: data.message || 'KYC status updated!' });
+      setBannerMsg({
+        type: 'success',
+        text: data.message || t('KYC status updated!', 'केवाईसी अवस्था अपडेट गरियो!'),
+      });
       refreshAllAdminData();
     },
     onError: () => {
-      setBannerMsg({ type: 'error', text: 'Could not update KYC verification status.' });
+      setBannerMsg({
+        type: 'error',
+        text: t(
+          'Could not update KYC verification status.',
+          'केवाईसी अवस्था अपडेट गर्न सकिएन।'
+        ),
+      });
     },
   });
 
@@ -673,7 +717,12 @@ export default function AdminCommandCenter() {
     onError: (err) => {
       setBannerMsg({
         type: 'error',
-        text: err.response?.data?.error || 'Failed to upload Payment QR Code.',
+        text:
+          err.response?.data?.error ||
+          t(
+            'Failed to upload Payment QR Code.',
+            'भुक्तानी QR कोड अपलोड गर्न सकिएन।'
+          ),
       });
     },
   });
@@ -713,7 +762,10 @@ export default function AdminCommandCenter() {
         text:
           err.response?.data?.error ||
           err.response?.data?.detail ||
-          'Could not process move-out request.',
+          t(
+            'Could not process move-out request.',
+            'कोठा छोड्ने अनुरोध प्रक्रिया गर्न सकिएन।'
+          ),
       });
     },
   });
@@ -739,7 +791,9 @@ export default function AdminCommandCenter() {
     onError: (err) => {
       setBannerMsg({
         type: 'error',
-        text: err.response?.data?.error || 'Failed to record cash payment.',
+        text:
+          err.response?.data?.error ||
+          t('Failed to record cash payment.', 'नगद भुक्तानी रेकर्ड गर्न सकिएन।'),
       });
     },
   });
@@ -781,7 +835,7 @@ export default function AdminCommandCenter() {
       const msg =
         err.response?.data?.error ||
         err.response?.data?.detail ||
-        'Could not apply fine. Please make sure backend views.py and urls.py are updated.';
+        t('Could not apply fine.', 'जरिवाना लागू गर्न सकिएन।');
       setFineModalError(msg);
       setBannerMsg({ type: 'error', text: msg });
     },
@@ -792,15 +846,30 @@ export default function AdminCommandCenter() {
     setFineModalError('');
 
     if (!fineTenantId && !fineBillId) {
-      setFineModalError('Please select a Tenant (or a specific Bill) to apply the fine.');
+      setFineModalError(
+        t(
+          'Please select a Tenant (or a specific Bill) to apply the fine.',
+          'कृपया जरिवाना लागू गर्न भाडावाल वा बिल छान्नुहोस्।'
+        )
+      );
       return;
     }
     if (!fineAmount || Number(fineAmount) <= 0) {
-      setFineModalError('Please enter a valid fine amount greater than Rs. 0.');
+      setFineModalError(
+        t(
+          'Please enter a valid fine amount greater than Rs. 0.',
+          'कृपया रु. ० भन्दा बढी जरिवाना रकम लेख्नुहोस्।'
+        )
+      );
       return;
     }
     if (!fineReason.trim()) {
-      setFineModalError('Please enter the violation or damage reason.');
+      setFineModalError(
+        t(
+          'Please enter the violation or damage reason.',
+          'कृपया जरिवानाको कारण उल्लेख गर्नुहोस्।'
+        )
+      );
       return;
     }
 
@@ -823,7 +892,14 @@ export default function AdminCommandCenter() {
 
   const handleUndoFine = (billId) => {
     if (!billId) return;
-    if (window.confirm('Are you sure you want to undo and remove this fine from the tenant?')) {
+    if (
+      window.confirm(
+        t(
+          'Are you sure you want to undo and remove this fine from the tenant?',
+          'के तपाईं यो जरिवाना हटाउन चाहनुहुन्छ?'
+        )
+      )
+    ) {
       const fd = new FormData();
       fd.append('bill_id', String(billId));
       fd.append('fine_mode', 'UNDO');
@@ -842,7 +918,10 @@ export default function AdminCommandCenter() {
         })
       ).data,
     onSuccess: () => {
-      setBannerMsg({ type: 'success', text: 'Expense recorded!' });
+      setBannerMsg({
+        type: 'success',
+        text: t('Expense recorded!', 'घर खर्च सफलतापूर्वक रेकर्ड गरियो!'),
+      });
       refreshAllAdminData();
       setExpenseTitle('');
       setExpenseAmount('');
@@ -859,7 +938,13 @@ export default function AdminCommandCenter() {
   const createNoticeMutation = useMutation({
     mutationFn: createNotice,
     onSuccess: () => {
-      setBannerMsg({ type: 'success', text: 'Notice published to all tenants!' });
+      setBannerMsg({
+        type: 'success',
+        text: t(
+          'Notice published to all tenants!',
+          'सबै भाडावालहरूका लागि सूचना प्रकाशित गरियो!'
+        ),
+      });
       refreshAllAdminData();
       setNoticeTitle('');
       setNoticeContent('');
@@ -869,7 +954,10 @@ export default function AdminCommandCenter() {
   const deleteNoticeMutation = useMutation({
     mutationFn: deleteNotice,
     onSuccess: () => {
-      setBannerMsg({ type: 'success', text: 'Notice deleted.' });
+      setBannerMsg({
+        type: 'success',
+        text: t('Notice deleted.', 'सूचना हटाइयो।'),
+      });
       refreshAllAdminData();
     },
   });
@@ -889,7 +977,10 @@ export default function AdminCommandCenter() {
         text:
           err.response?.data?.error ||
           err.response?.data?.detail ||
-          'Could not complete tenant action.',
+          t(
+            'Could not complete tenant action.',
+            'भाडावाल सम्बन्धी कार्य पूरा गर्न सकिएन।'
+          ),
       });
     },
   });
@@ -909,7 +1000,9 @@ export default function AdminCommandCenter() {
     onError: (err) => {
       setBannerMsg({
         type: 'error',
-        text: err.response?.data?.error || 'Failed to update admin permissions.',
+        text:
+          err.response?.data?.error ||
+          t('Failed to update admin permissions.', 'एडमिन अनुमति अपडेट गर्न सकिएन।'),
       });
     },
   });
@@ -927,7 +1020,10 @@ export default function AdminCommandCenter() {
       const msg =
         err.response?.data?.error ||
         err.response?.data?.detail ||
-        'Backend reset endpoint failed. Please check that Django server reloaded.';
+        t(
+          'Backend reset endpoint failed.',
+          'डाटाबेस रिसेट गर्न सकिएन।'
+        );
       setResetModalError(msg);
       setBannerMsg({ type: 'error', text: msg });
     },
@@ -998,14 +1094,16 @@ export default function AdminCommandCenter() {
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-xs font-bold">
-              <ShieldAlert className="w-3.5 h-3.5" /> LANDLORD COMMAND DECK
+              <ShieldAlert className="w-3.5 h-3.5" />{' '}
+              {t('LANDLORD COMMAND DECK', 'घरधनी कमाण्ड सेन्टर')}
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/20 text-emerald-200 text-[11px] font-extrabold border border-emerald-400/30">
-              <Radio className="w-3 h-3 text-emerald-300 animate-pulse" /> LIVE 4S AUTO-SYNC
+              <Radio className="w-3 h-3 text-emerald-300 animate-pulse" />{' '}
+              {t('LIVE 4S AUTO-SYNC', 'लाइभ ४-सेकेन्ड अटो-सिंक')}
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Executive Command Center
+            {t('Executive Command Center', 'प्रमुख व्यवस्थापन तथा नियन्त्रण कक्ष')}
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -1014,7 +1112,8 @@ export default function AdminCommandCenter() {
             onClick={() => setShowQRModal(true)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-xs font-extrabold shadow-sm transition"
           >
-            <QrCode className="w-3.5 h-3.5" /> Payment QR Setup
+            <QrCode className="w-3.5 h-3.5" />{' '}
+            {t('Payment QR Setup', 'भुक्तानी QR सेटअप')}
           </button>
           <button
             type="button"
@@ -1025,12 +1124,16 @@ export default function AdminCommandCenter() {
                   refreshAllAdminData();
                 })
                 .catch(() => {
-                  setBannerMsg({ type: 'error', text: 'Bulk generate endpoint error.' });
+                  setBannerMsg({
+                    type: 'error',
+                    text: t('Bulk generate endpoint error.', 'बिल तयार गर्न समस्या भयो।'),
+                  });
                 });
             }}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition"
           >
-            <Zap className="w-3.5 h-3.5" /> Auto-Generate Bills
+            <Zap className="w-3.5 h-3.5" />{' '}
+            {t('Auto-Generate Bills', 'स्वचालित बिल तयार')}
           </button>
           <button
             type="button"
@@ -1038,21 +1141,23 @@ export default function AdminCommandCenter() {
             disabled={reminderMutation.isPending}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold border border-indigo-400 transition"
           >
-            <BellRing className="w-3.5 h-3.5" /> Send Alerts
+            <BellRing className="w-3.5 h-3.5" />{' '}
+            {t('Send Alerts', 'स्मरण इमेल पठाउनुहोस्')}
           </button>
           <button
             type="button"
             onClick={() => openFineModalForUser(null, null)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-sm transition"
           >
-            <AlertTriangle className="w-3.5 h-3.5" /> + Apply Fine
+            <AlertTriangle className="w-3.5 h-3.5" />{' '}
+            {t('+ Apply Fine', '+ जरिवाना लगाउनुहोस्')}
           </button>
           <button
             type="button"
             onClick={() => setShowCashModal(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white text-indigo-600 hover:bg-indigo-50 text-xs font-bold shadow-md transition"
           >
-            + Cash Override
+            {t('+ Cash Override', '+ नगद भुक्तानी')}
           </button>
           <button
             type="button"
@@ -1062,9 +1167,13 @@ export default function AdminCommandCenter() {
               setResetStep(1);
             }}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-950/90 hover:bg-rose-900 text-rose-100 border border-rose-400/40 text-xs font-extrabold shadow-sm transition"
-            title="Factory Reset Database (Keeps Admin)"
+            title={t(
+              'Factory Reset Database (Keeps Admin)',
+              'डाटाबेस रिसेट गर्नुहोस् (एडमिन सुरक्षित रहनेछ)'
+            )}
           >
-            <RotateCcw className="w-3.5 h-3.5" /> Reset Database
+            <RotateCcw className="w-3.5 h-3.5" />{' '}
+            {t('Reset Database', 'डाटाबेस रिसेट')}
           </button>
         </div>
       </div>
@@ -1087,20 +1196,35 @@ export default function AdminCommandCenter() {
       {/* ADMIN TAB SWITCHER */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
         {[
-          { key: 'OVERVIEW', label: '📊 Executive Command Overview' },
-          { key: 'USERS', label: `👥 Tenants Directory (${tenantUsers.length})` },
-          { key: 'ADMINS', label: `🛡️ Admin Team Management (${adminTeamUsers.length})` },
-        ].map((t) => (
+          {
+            key: 'OVERVIEW',
+            label: t('📊 Executive Command Overview', '📊 प्रमुख सिंहावलोकन तथा नियन्त्रण'),
+          },
+          {
+            key: 'USERS',
+            label: t(
+              `👥 Tenants Directory (${tenantUsers.length})`,
+              `👥 भाडावाल निर्देशिका (${tenantUsers.length})`
+            ),
+          },
+          {
+            key: 'ADMINS',
+            label: t(
+              `🛡️ Admin Team Management (${adminTeamUsers.length})`,
+              `🛡️ एडमिन टोली व्यवस्थापन (${adminTeamUsers.length})`
+            ),
+          },
+        ].map((tabItem) => (
           <button
-            key={t.key}
-            onClick={() => setActiveAdminTab(t.key)}
+            key={tabItem.key}
+            onClick={() => setActiveAdminTab(tabItem.key)}
             className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-extrabold transition ${
-              activeAdminTab === t.key
+              activeAdminTab === tabItem.key
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
           >
-            {t.label}
+            {tabItem.label}
           </button>
         ))}
       </div>
@@ -1111,10 +1235,16 @@ export default function AdminCommandCenter() {
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-slate-900">
-                Registered Users & Tenants Directory
+                {t(
+                  'Registered Users & Tenants Directory',
+                  'दर्ता गरिएका प्रयोगकर्ता र भाडावाल निर्देशिका'
+                )}
               </h3>
               <p className="text-xs text-slate-500">
-                Inspect full tenant profiles, fullscreen photos, KYC citizenship IDs, assigned rooms, or permanently delete departed tenants.
+                {t(
+                  'Inspect full tenant profiles, fullscreen photos, KYC citizenship IDs, assigned rooms, or permanently delete departed tenants.',
+                  'भाडावालको पूरा विवरण, फोटो, नागरिकता (KYC), तोकिएको कोठा हेर्नुहोस् वा कोठा छोडिसकेका भाडावालको डाटा हटाउनुहोस्।'
+                )}
               </p>
             </div>
             {tenantUsers.length > 0 && (
@@ -1127,7 +1257,8 @@ export default function AdminCommandCenter() {
                 }}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition self-start lg:self-auto"
               >
-                <RotateCcw className="w-3.5 h-3.5" /> Wipe All Tenants & Reset DB
+                <RotateCcw className="w-3.5 h-3.5" />{' '}
+                {t('Wipe All Tenants & Reset DB', 'सबै भाडावाल हटाई डाटाबेस रिसेट गर्नुहोस्')}
               </button>
             )}
           </div>
@@ -1137,14 +1268,34 @@ export default function AdminCommandCenter() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
               <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
                 {[
-                  { key: 'ALL', label: `All (${tenantUsers.length})` },
-                  { key: 'ASSIGNED', label: `Assigned Room (${assignedTenantsCount})` },
-                  { key: 'UNASSIGNED', label: `Unassigned (${unassignedTenantsCount})` },
+                  {
+                    key: 'ALL',
+                    label: t(`All (${tenantUsers.length})`, `सबै (${tenantUsers.length})`),
+                  },
+                  {
+                    key: 'ASSIGNED',
+                    label: t(
+                      `Assigned Room (${assignedTenantsCount})`,
+                      `कोठा तोकिएको (${assignedTenantsCount})`
+                    ),
+                  },
+                  {
+                    key: 'UNASSIGNED',
+                    label: t(
+                      `Unassigned (${unassignedTenantsCount})`,
+                      `कोठा नतोकिएको (${unassignedTenantsCount})`
+                    ),
+                  },
                   {
                     key: 'KYC_VERIFIED',
-                    label: `KYC Verified (${
-                      tenantUsers.filter((u) => u.kyc_status === 'VERIFIED').length
-                    })`,
+                    label: t(
+                      `KYC Verified (${
+                        tenantUsers.filter((u) => u.kyc_status === 'VERIFIED').length
+                      })`,
+                      `केवाईसी प्रमाणित (${
+                        tenantUsers.filter((u) => u.kyc_status === 'VERIFIED').length
+                      })`
+                    ),
                   },
                 ].map((f) => (
                   <button
@@ -1168,7 +1319,10 @@ export default function AdminCommandCenter() {
                   type="text"
                   value={tenantSearchQuery}
                   onChange={(e) => setTenantSearchQuery(e.target.value)}
-                  placeholder="Search name, room, phone..."
+                  placeholder={t(
+                    'Search name, room, phone...',
+                    'नाम, कोठा वा फोन खोज्नुहोस्...'
+                  )}
                   className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
                 />
                 {tenantSearchQuery && (
@@ -1187,10 +1341,13 @@ export default function AdminCommandCenter() {
           {filteredTenantUsers.length === 0 ? (
             <div className="py-12 text-center rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
               <p className="text-sm font-extrabold text-slate-700">
-                No tenants match the current filter
+                {t('No tenants match the current filter', 'कुनै भाडावाल फेला परेन')}
               </p>
               <p className="text-xs text-slate-400">
-                Try switching the filter tab or clearing your search query.
+                {t(
+                  'Try switching the filter tab or clearing your search query.',
+                  'कृपया अर्को फिल्टर छान्नुहोस् वा खोज शब्द हटाउनुहोस्।'
+                )}
               </p>
             </div>
           ) : (
@@ -1207,7 +1364,6 @@ export default function AdminCommandCenter() {
                       className="rounded-3xl border border-slate-200/90 bg-white hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
                     >
                       <div>
-                        {/* Mini Cover Banner on Card */}
                         <div
                           onClick={() => setSelectedUserId(u.id)}
                           className="h-24 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative cursor-pointer overflow-hidden"
@@ -1221,21 +1377,19 @@ export default function AdminCommandCenter() {
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 to-transparent" />
 
-                          {/* Top Right Room / Status Pill */}
                           <div className="absolute top-3 right-3 flex items-center gap-1.5">
                             {u.room_number ? (
                               <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold shadow-sm">
-                                Room {u.room_number}
+                                {t('Room', 'कोठा')} {u.room_number}
                               </span>
                             ) : (
                               <span className="px-2.5 py-1 rounded-full bg-slate-900/60 backdrop-blur-xs text-white text-[10px] font-bold">
-                                No Room
+                                {t('No Room', 'कोठा छैन')}
                               </span>
                             )}
                           </div>
                         </div>
 
-                        {/* Avatar + Identity */}
                         <div className="px-5 pb-4">
                           <div className="flex items-end justify-between -mt-9 mb-3 relative z-10">
                             <div
@@ -1247,7 +1401,6 @@ export default function AdminCommandCenter() {
                                 }
                               }}
                               className="w-16 h-16 rounded-2xl bg-white p-1 shadow-md border border-slate-200 cursor-pointer relative group/avatar"
-                              title={avatarUrl ? 'Click to view photo fullscreen' : 'View Profile'}
                             >
                               {avatarUrl ? (
                                 <>
@@ -1276,7 +1429,7 @@ export default function AdminCommandCenter() {
                                   : 'bg-slate-100 text-slate-600'
                               }`}
                             >
-                              KYC: {u.kyc_status}
+                              KYC: {td(u.kyc_status)}
                             </span>
                           </div>
 
@@ -1290,56 +1443,59 @@ export default function AdminCommandCenter() {
                             </p>
                           )}
 
-                          {/* Quick Financial & Room Summary Strip */}
                           <div className="grid grid-cols-2 gap-2 mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
                             <div>
                               <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                                Pending Dues
+                                {t('Pending Dues', 'तिर्न बाँकी')}
                               </span>
                               {u.pending_bills_count > 0 ? (
                                 <span className="font-black text-rose-600">
-                                  Rs. {Number(u.total_pending_amount || 0).toLocaleString()} (
+                                  {t('Rs.', 'रु.')}{' '}
+                                  {Number(u.total_pending_amount || 0).toLocaleString()} (
                                   {u.pending_bills_count})
                                 </span>
                               ) : (
-                                <span className="font-extrabold text-emerald-600">All Clear ✓</span>
+                                <span className="font-extrabold text-emerald-600">
+                                  {t('All Clear ✓', 'चुक्ता छ ✓')}
+                                </span>
                               )}
                             </div>
                             <div>
                               <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                                Uploaded Photos
+                                {t('Uploaded Photos', 'अपलोड फोटो')}
                               </span>
                               <span className="font-extrabold text-indigo-600">
-                                {galleryItems.length} Photo(s)
+                                {galleryItems.length} {t('Photo(s)', 'फोटो')}
                               </span>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Action Footer */}
                       <div className="px-5 py-3.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between gap-1.5">
                         <button
                           type="button"
                           onClick={() => setSelectedUserId(u.id)}
                           className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center justify-center gap-1.5"
                         >
-                          <Eye className="w-3.5 h-3.5" /> Dossier
+                          <Eye className="w-3.5 h-3.5" />{' '}
+                          {t('Dossier', 'पूर्ण विवरण')}
                         </button>
                         <button
                           type="button"
                           onClick={() => openFineModalForUser(u, null)}
                           className="py-2.5 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition inline-flex items-center gap-1"
-                          title="Apply Fine to Tenant"
+                          title={t('Apply Fine to Tenant', 'जरिवाना लगाउनुहोस्')}
                         >
-                          <AlertTriangle className="w-3.5 h-3.5" /> Fine
+                          <AlertTriangle className="w-3.5 h-3.5" />{' '}
+                          {t('Fine', 'जरिवाना')}
                         </button>
                         {galleryItems.length > 0 && (
                           <button
                             type="button"
                             onClick={() => openPhotoLightbox(galleryItems, 0)}
                             className="py-2.5 px-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
-                            title="Open Photo Viewer"
+                            title={t('Open Photo Viewer', 'फोटो हेर्नुहोस्')}
                           >
                             <Camera className="w-3.5 h-3.5" />
                           </button>
@@ -1350,23 +1506,29 @@ export default function AdminCommandCenter() {
                             onClick={() => {
                               if (
                                 window.confirm(
-                                  `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`
+                                  t(
+                                    `Are you sure you want to ask ${u.full_name} to leave / vacate Room ${u.room_number}?`,
+                                    `के तपाईं ${u.full_name} को कोठा ${u.room_number} खाली गराउन चाहनुहुन्छ?`
+                                  )
                                 )
                               ) {
                                 evictMutation.mutate({ userId: u.id, actionType: 'VACATE' });
                               }
                             }}
                             className="py-2.5 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-extrabold transition"
-                            title="Vacate Room (Keeps User Account)"
+                            title={t('Vacate Room', 'कोठा खाली गराउनुहोस्')}
                           >
-                            Vacate
+                            {t('Vacate', 'खाली')}
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => setUserToDelete(u)}
                           className="py-2.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
-                          title="Permanently Delete Tenant & All Data"
+                          title={t(
+                            'Permanently Delete Tenant & All Data',
+                            'भाडावाल र सम्पूर्ण डाटा स्थायी रूपमा मेटाउनुहोस्'
+                          )}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1386,10 +1548,16 @@ export default function AdminCommandCenter() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-slate-900">
-                Landlord & Administrator Team
+                {t(
+                  'Landlord & Administrator Team',
+                  'घरधनी र प्रशासक (Admin) टोली'
+                )}
               </h3>
               <p className="text-xs text-slate-500">
-                Manage who has executive command access to the SmartRent property portal.
+                {t(
+                  'Manage who has executive command access to the SmartRent property portal.',
+                  'स्मार्टरेन्ट पोर्टलमा कसलाई प्रमुख एडमिन अधिकार दिने भनी व्यवस्थापन गर्नुहोस्।'
+                )}
               </p>
             </div>
             <button
@@ -1400,7 +1568,7 @@ export default function AdminCommandCenter() {
               }}
               className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition"
             >
-              + Add New Administrator
+              {t('+ Add New Administrator', '+ नयाँ एडमिन थप्नुहोस्')}
             </button>
           </div>
 
@@ -1440,7 +1608,7 @@ export default function AdminCommandCenter() {
                       </h4>
                       <p className="text-xs text-slate-500 truncate">{adm.email}</p>
                       <span className="inline-block mt-1 px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-extrabold uppercase">
-                        Landlord Admin
+                        {t('Landlord Admin', 'घरधनी एडमिन')}
                       </span>
                     </div>
                   </div>
@@ -1450,7 +1618,7 @@ export default function AdminCommandCenter() {
                       type="button"
                       onClick={() => setSelectedUserId(adm.id)}
                       className="p-2 rounded-xl bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition"
-                      title="View Admin Profile"
+                      title={t('View Admin Profile', 'एडमिन प्रोफाइल हेर्नुहोस्')}
                     >
                       <Eye className="w-4 h-4" />
                     </button>
@@ -1460,14 +1628,17 @@ export default function AdminCommandCenter() {
                         onClick={() => {
                           if (
                             window.confirm(
-                              `Are you sure you want to revoke admin privileges from ${adm.full_name}?`
+                              t(
+                                `Are you sure you want to revoke admin privileges from ${adm.full_name}?`,
+                                `के तपाईं ${adm.full_name} को एडमिन अधिकार हटाउन चाहनुहुन्छ?`
+                              )
                             )
                           ) {
                             manageAdminMutation.mutate({ action: 'REMOVE', user_id: adm.id });
                           }
                         }}
                         className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition"
-                        title="Remove Admin Access"
+                        title={t('Remove Admin Access', 'एडमिन अधिकार हटाउनुहोस्')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1488,20 +1659,20 @@ export default function AdminCommandCenter() {
             <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  TOTAL REVENUE
+                  {t('TOTAL REVENUE', 'कुल आम्दानी')}
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
                   <DollarSign className="w-4 h-4" />
                 </div>
               </div>
               <p className="text-2xl font-extrabold text-slate-900">
-                Rs. {Number(kpis.total_revenue).toLocaleString()}
+                {t('Rs.', 'रु.')} {Number(kpis.total_revenue).toLocaleString()}
               </p>
             </div>
             <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  BOOKINGS & MOVE-OUTS
+                  {t('BOOKINGS & MOVE-OUTS', 'बुकिङ र कोठा छोड्ने')}
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
                   <CalendarCheck className="w-4 h-4" />
@@ -1509,11 +1680,11 @@ export default function AdminCommandCenter() {
               </div>
               <div className="flex items-baseline justify-between gap-2">
                 <p className="text-2xl font-extrabold text-slate-900">
-                  {pendingReservations.length} Bookings
+                  {pendingReservations.length} {t('Bookings', 'बुकिङ')}
                 </p>
                 {pendingMoveOuts.length > 0 && (
                   <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-extrabold">
-                    {pendingMoveOuts.length} Move-Out
+                    {pendingMoveOuts.length} {t('Move-Out', 'छोड्ने')}
                   </span>
                 )}
               </div>
@@ -1521,27 +1692,27 @@ export default function AdminCommandCenter() {
             <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  OCCUPANCY
+                  {t('OCCUPANCY', 'कोठा बसोबास')}
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
                   <Building className="w-4 h-4" />
                 </div>
               </div>
               <p className="text-2xl font-extrabold text-slate-900">
-                {kpis.occupied_rooms} / {kpis.total_rooms} Rooms
+                {kpis.occupied_rooms} / {kpis.total_rooms} {t('Rooms', 'कोठाहरू')}
               </p>
             </div>
             <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  NET PROFIT
+                  {t('NET PROFIT', 'खुद नाफा')}
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
                   <Zap className="w-4 h-4" />
                 </div>
               </div>
               <p className="text-2xl font-extrabold text-indigo-600">
-                Rs. {Number(kpis.net_profit).toLocaleString()}
+                {t('Rs.', 'रु.')} {Number(kpis.net_profit).toLocaleString()}
               </p>
             </div>
           </div>
@@ -1550,52 +1721,61 @@ export default function AdminCommandCenter() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2 mb-1">
-                <Megaphone className="w-5 h-5 text-indigo-600" /> Broadcast House Notice
+                <Megaphone className="w-5 h-5 text-indigo-600" />{' '}
+                {t('Broadcast House Notice', 'घरको आधिकारिक सूचना प्रकाशन गर्नुहोस्')}
               </h3>
               <p className="text-xs text-slate-500 mb-5">
-                Publish announcements, maintenance schedules, or urgent alerts directly to all tenants'
-                dashboards.
+                {t(
+                  "Publish announcements, maintenance schedules, or urgent alerts directly to all tenants' dashboards and emails.",
+                  'सबै भाडावालहरूको ड्यासबोर्ड र इमेलमा सिधै सूचना, मर्मत तालिका वा जरुरी जानकारी पठाउनुहोस्।'
+                )}
               </p>
               <form onSubmit={handlePostNotice} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="sm:col-span-2">
                     <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                      NOTICE TITLE
+                      {t('NOTICE TITLE', 'सूचनाको शीर्षक')}
                     </label>
                     <input
                       type="text"
                       required
                       value={noticeTitle}
                       onChange={(e) => setNoticeTitle(e.target.value)}
-                      placeholder="e.g., Water Tank Cleaning This Sunday"
+                      placeholder={t(
+                        'e.g., Water Tank Cleaning This Sunday',
+                        'जस्तै: यो आइतबार पानी ट्यांकी सफा गरिने'
+                      )}
                       className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                      CATEGORY
+                      {t('CATEGORY', 'प्रकार')}
                     </label>
                     <select
                       value={noticeCategory}
                       onChange={(e) => setNoticeCategory(e.target.value)}
                       className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
                     >
-                      <option value="GENERAL">General Notice</option>
-                      <option value="MAINTENANCE">Maintenance</option>
-                      <option value="URGENT">Urgent Alert</option>
+                      <option value="GENERAL">{t('General Notice', 'सामान्य सूचना')}</option>
+                      <option value="MAINTENANCE">{t('Maintenance', 'मर्मत सम्भार')}</option>
+                      <option value="URGENT">{t('Urgent Alert', 'जरुरी सूचना')}</option>
                     </select>
                   </div>
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                    NOTICE CONTENT
+                    {t('NOTICE CONTENT', 'सूचनाको विस्तृत विवरण')}
                   </label>
                   <textarea
                     required
                     rows="3"
                     value={noticeContent}
                     onChange={(e) => setNoticeContent(e.target.value)}
-                    placeholder="Details of the announcement..."
+                    placeholder={t(
+                      'Details of the announcement...',
+                      'सूचनाको पूरा विवरण लेख्नुहोस्...'
+                    )}
                     className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
                   />
                 </div>
@@ -1604,15 +1784,21 @@ export default function AdminCommandCenter() {
                   disabled={createNoticeMutation.isPending}
                   className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition"
                 >
-                  {createNoticeMutation.isPending ? 'Publishing...' : 'Publish Notice to Tenants'}
+                  {createNoticeMutation.isPending
+                    ? t('Publishing...', 'प्रकाशन हुँदैछ...')
+                    : t('Publish Notice to Tenants', 'भाडावालहरूलाई सूचना पठाउनुहोस्')}
                 </button>
               </form>
             </div>
 
             <div className="lg:col-span-4 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 overflow-y-auto max-h-[350px]">
-              <h3 className="text-sm font-extrabold text-slate-900 mb-4">Active Broadcasts</h3>
+              <h3 className="text-sm font-extrabold text-slate-900 mb-4">
+                {t('Active Broadcasts', 'प्रकाशित सक्रिय सूचनाहरू')}
+              </h3>
               {notices.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-4">No active notices.</p>
+                <p className="text-xs text-slate-400 text-center py-4">
+                  {t('No active notices.', 'कुनै सक्रिय सूचना छैन।')}
+                </p>
               ) : (
                 <div className="space-y-3">
                   {notices.map((n) => (
@@ -1626,13 +1812,13 @@ export default function AdminCommandCenter() {
                             n.category === 'URGENT' ? 'text-rose-600' : 'text-indigo-600'
                           }`}
                         >
-                          {n.category_display || n.category}
+                          {td(n.category_display || n.category)}
                         </span>
                         <button
                           type="button"
                           onClick={() => deleteNoticeMutation.mutate(n.id)}
                           className="text-slate-400 hover:text-rose-600 transition"
-                          title="Delete Notice"
+                          title={t('Delete Notice', 'सूचना हटाउनुहोस्')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1646,26 +1832,38 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* ROOM RESERVATION & VISIT BOOKING QUEUE (WITH MANAGED FILTER TABS & DUAL AD/BS DATES) */}
+          {/* ROOM RESERVATION & VISIT BOOKING QUEUE */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                Room Reservations & Visit Requests
+                {t('Room Reservations & Visit Requests', 'कोठा बुकिङ र अवलोकन अनुरोधहरू')}
                 {pendingReservations.length > 0 && (
                   <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
-                    {pendingReservations.length} Pending
+                    {pendingReservations.length} {t('Pending', 'बाँकी')}
                   </span>
                 )}
               </h3>
 
               <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
                 {[
-                  { key: 'PENDING', label: `Pending (${pendingReservations.length})` },
+                  {
+                    key: 'PENDING',
+                    label: t(
+                      `Pending (${pendingReservations.length})`,
+                      `प्रतीक्षामा (${pendingReservations.length})`
+                    ),
+                  },
                   {
                     key: 'APPROVED',
-                    label: `Approved & Assigned (${approvedReservations.length})`,
+                    label: t(
+                      `Approved & Assigned (${approvedReservations.length})`,
+                      `स्वीकृत र तोकिएको (${approvedReservations.length})`
+                    ),
                   },
-                  { key: 'ALL', label: `All (${reservations.length})` },
+                  {
+                    key: 'ALL',
+                    label: t(`All (${reservations.length})`, `सबै (${reservations.length})`),
+                  },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -1685,8 +1883,10 @@ export default function AdminCommandCenter() {
 
             {displayedReservations.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
-                No {reservationFilter === 'PENDING' ? 'pending ' : reservationFilter === 'APPROVED' ? 'approved & assigned ' : ''}
-                room reservations to display.
+                {t(
+                  'No room reservations to display in this tab.',
+                  'यस ट्याबमा कुनै कोठा बुकिङ अनुरोध छैन।'
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1706,7 +1906,8 @@ export default function AdminCommandCenter() {
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-slate-900 text-xs truncate pr-2">
-                          Room {res.room_number} • {res.user_full_name || res.user_email}
+                          {t('Room', 'कोठा')} {res.room_number} •{' '}
+                          {res.user_full_name || res.user_email}
                         </span>
                         <span
                           className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
@@ -1717,11 +1918,12 @@ export default function AdminCommandCenter() {
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
-                          {res.status_display}
+                          {td(res.status_display)}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        Move-in: {formatDualDate(res.expected_move_in_date)}
+                        {t('Move-in:', 'सर्ने मिति:')}{' '}
+                        {formatDualDate(res.expected_move_in_date)}
                       </p>
                     </div>
                   ))}
@@ -1732,11 +1934,13 @@ export default function AdminCommandCenter() {
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
                       <div>
                         <h4 className="text-sm font-extrabold text-slate-900">
-                          Room {activeReviewReservation.room_number} —{' '}
-                          {activeReviewReservation.user_full_name || activeReviewReservation.user_email}
+                          {t('Room', 'कोठा')} {activeReviewReservation.room_number} —{' '}
+                          {activeReviewReservation.user_full_name ||
+                            activeReviewReservation.user_email}
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                          Expected Move-In: {formatDualDate(activeReviewReservation.expected_move_in_date)}
+                          {t('Expected Move-In:', 'सर्ने मिति:')}{' '}
+                          {formatDualDate(activeReviewReservation.expected_move_in_date)}
                           {activeReviewReservation.phone_number
                             ? ` • 📞 ${activeReviewReservation.phone_number}`
                             : ''}
@@ -1751,7 +1955,7 @@ export default function AdminCommandCenter() {
                             : 'bg-rose-100 text-rose-700'
                         }`}
                       >
-                        {activeReviewReservation.status_display}
+                        {td(activeReviewReservation.status_display)}
                       </span>
                     </div>
 
@@ -1762,7 +1966,10 @@ export default function AdminCommandCenter() {
                           step="0.01"
                           value={startingMeterOverride}
                           onChange={(e) => setStartingMeterOverride(e.target.value)}
-                          placeholder="Initial Sub-Meter Reading"
+                          placeholder={t(
+                            'Initial Sub-Meter Reading',
+                            'सुरुवाती सब-मिटर रिडिङ'
+                          )}
                           className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-slate-200"
                         />
                         <div className="flex gap-3">
@@ -1771,12 +1978,15 @@ export default function AdminCommandCenter() {
                             onClick={() =>
                               reservationActionMutation.mutate({
                                 id: activeReviewReservation.id,
-                                payload: { action: 'REJECT', admin_remarks: 'Rejected by Landlord' },
+                                payload: {
+                                  action: 'REJECT',
+                                  admin_remarks: 'Rejected by Landlord',
+                                },
                               })
                             }
                             className="flex-1 py-2.5 rounded-xl bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200"
                           >
-                            Reject
+                            {t('Reject', 'अस्वीकार गर्नुहोस्')}
                           </button>
                           <button
                             type="button"
@@ -1794,7 +2004,7 @@ export default function AdminCommandCenter() {
                             }
                             className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
                           >
-                            Approve & Assign
+                            {t('Approve & Assign', 'स्वीकृत गरी कोठा तोक्नुहोस्')}
                           </button>
                         </div>
                       </div>
@@ -1811,12 +2021,17 @@ export default function AdminCommandCenter() {
                           <div>
                             <p className="font-extrabold text-slate-900">
                               {activeReviewReservation.status === 'APPROVED'
-                                ? `Approved & Assigned to Room ${activeReviewReservation.room_number}`
-                                : `Request ${activeReviewReservation.status_display}`}
+                                ? t(
+                                    `Approved & Assigned to Room ${activeReviewReservation.room_number}`,
+                                    `स्वीकृत भई कोठा ${activeReviewReservation.room_number} मा तोकिएको छ`
+                                  )
+                                : `${t('Request', 'अनुरोध')} ${td(
+                                    activeReviewReservation.status_display
+                                  )}`}
                             </p>
                             <p className="text-[11px] text-slate-500">
                               {activeReviewReservation.admin_remarks ||
-                                'Processed by Landlord Admin'}
+                                t('Processed by Landlord Admin', 'घरधनी एडमिनद्वारा सम्पन्न')}
                             </p>
                           </div>
                         </div>
@@ -1826,7 +2041,7 @@ export default function AdminCommandCenter() {
                             onClick={() => setSelectedUserId(activeReviewReservation.user)}
                             className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px] shrink-0"
                           >
-                            Inspect Tenant
+                            {t('Inspect Tenant', 'भाडावाल हेर्नुहोस्')}
                           </button>
                         )}
                       </div>
@@ -1837,26 +2052,35 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE (WITH DUAL AD/BS DATES) */}
+          {/* TENANT MOVE-OUT & FINAL SETTLEMENT QUEUE */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                 <LogOut className="w-5 h-5 text-rose-600" />
-                Tenant Move-Out & Final Settlement Queue
+                {t(
+                  'Tenant Move-Out & Final Settlement Queue',
+                  'कोठा छोड्ने र अन्तिम हिसाब फरफारक सूची'
+                )}
                 {pendingMoveOuts.length > 0 && (
                   <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-xs font-extrabold">
-                    {pendingMoveOuts.length} Pending
+                    {pendingMoveOuts.length} {t('Pending', 'बाँकी')}
                   </span>
                 )}
               </h3>
               <span className="text-xs text-slate-500">
-                Verify final sub-meter reading to generate settlement bill & vacate room
+                {t(
+                  'Verify final sub-meter reading to generate settlement bill & vacate room',
+                  'अन्तिम सब-मिटर रिडिङ जाँच गरी हिसाब फरफारक र कोठा खाली गर्नुहोस्'
+                )}
               </span>
             </div>
 
             {pendingMoveOuts.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-xs">
-                No pending move-out requests from tenants right now.
+                {t(
+                  'No pending move-out requests from tenants right now.',
+                  'अहिले कोठा छोड्ने कुनै अनुरोध बाँकी छैन।'
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1866,9 +2090,7 @@ export default function AdminCommandCenter() {
                       key={mo.id}
                       onClick={() => {
                         setSelectedMoveOut(mo);
-                        setFinalMeterOverride(
-                          String(mo.current_meter_reading ?? '')
-                        );
+                        setFinalMeterOverride(String(mo.current_meter_reading ?? ''));
                       }}
                       className={`p-4 rounded-2xl border cursor-pointer transition ${
                         activeReviewMoveOut?.id === mo.id
@@ -1878,18 +2100,19 @@ export default function AdminCommandCenter() {
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-slate-900 text-xs">
-                          Room {mo.room_number} • {mo.tenant_name}
+                          {t('Room', 'कोठा')} {mo.room_number} • {mo.tenant_name}
                         </span>
                         <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800">
-                          {mo.status_display || 'Pending Move-Out'}
+                          {td(mo.status_display || 'Pending')}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-600 font-semibold">
-                        Planned Departure: {formatDualDate(mo.requested_date)}
+                        {t('Planned Departure:', 'छोड्ने मिति:')}{' '}
+                        {formatDualDate(mo.requested_date)}
                       </p>
                       {mo.reason && (
                         <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                          Reason: {mo.reason}
+                          {t('Reason:', 'कारण:')} {mo.reason}
                         </p>
                       )}
                     </div>
@@ -1901,35 +2124,38 @@ export default function AdminCommandCenter() {
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200/60 pb-3">
                       <div>
                         <h4 className="text-sm font-extrabold text-slate-900">
-                          Room {activeReviewMoveOut.room_number} — {activeReviewMoveOut.tenant_name}
+                          {t('Room', 'कोठा')} {activeReviewMoveOut.room_number} —{' '}
+                          {activeReviewMoveOut.tenant_name}
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                          Email: {activeReviewMoveOut.tenant_email}
+                          {activeReviewMoveOut.tenant_email}
                           {activeReviewMoveOut.tenant_phone
                             ? ` • 📞 ${activeReviewMoveOut.tenant_phone}`
                             : ''}
                         </p>
                       </div>
                       <span className="px-2.5 py-1 rounded-lg bg-white text-rose-700 font-extrabold text-xs border border-rose-200">
-                        Departure: {formatDualDate(activeReviewMoveOut.requested_date)}
+                        {t('Departure:', 'छोड्ने मिति:')}{' '}
+                        {formatDualDate(activeReviewMoveOut.requested_date)}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                       <div className="p-3 rounded-xl bg-white border border-slate-200">
                         <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          Previous Sub-Meter Reading
+                          {t('Previous Sub-Meter Reading', 'अघिल्लो सब-मिटर रिडिङ')}
                         </span>
                         <strong className="text-sm text-indigo-600">
-                          {activeReviewMoveOut.current_meter_reading ?? 0} units
+                          {activeReviewMoveOut.current_meter_reading ?? 0}{' '}
+                          {t('units', 'युनिट')}
                         </strong>
                       </div>
                       <div className="p-3 rounded-xl bg-white border border-slate-200">
                         <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          Tenant Reason
+                          {t('Tenant Reason', 'भाडावालको कारण')}
                         </span>
                         <strong className="text-slate-800">
-                          {activeReviewMoveOut.reason || 'Not specified'}
+                          {activeReviewMoveOut.reason || t('Not specified', 'उल्लेख छैन')}
                         </strong>
                       </div>
                     </div>
@@ -1937,7 +2163,7 @@ export default function AdminCommandCenter() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
-                          Final Sub-Meter Reading (Units) *
+                          {t('Final Sub-Meter Reading (Units) *', 'अन्तिम सब-मिटर रिडिङ (युनिट) *')}
                         </label>
                         <input
                           type="number"
@@ -1949,19 +2175,21 @@ export default function AdminCommandCenter() {
                               : String(activeReviewMoveOut.current_meter_reading ?? 0)
                           }
                           onChange={(e) => setFinalMeterOverride(e.target.value)}
-                          placeholder="Enter final sub-meter reading"
                           className="w-full px-3 py-2.5 text-xs font-bold rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
                         />
                       </div>
                       <div>
                         <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">
-                          Admin Settlement Remarks (Optional)
+                          {t('Admin Settlement Remarks', 'फरफारक कैफियत (ऐच्छिक)')}
                         </label>
                         <input
                           type="text"
                           value={moveOutRemarks}
                           onChange={(e) => setMoveOutRemarks(e.target.value)}
-                          placeholder="e.g. Keys returned & deposit settled"
+                          placeholder={t(
+                            'e.g. Keys returned & deposit settled',
+                            'जस्तै: साँचो बुझियो र हिसाब फरफारक भयो'
+                          )}
                           className="w-full px-3 py-2.5 text-xs rounded-xl bg-white border border-slate-200 outline-none focus:border-rose-500"
                         />
                       </div>
@@ -1983,7 +2211,7 @@ export default function AdminCommandCenter() {
                         }
                         className="flex-1 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200 transition"
                       >
-                        Reject Request
+                        {t('Reject Request', 'अस्वीकार गर्नुहोस्')}
                       </button>
                       <button
                         type="button"
@@ -2005,8 +2233,11 @@ export default function AdminCommandCenter() {
                         className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-sm transition"
                       >
                         {moveOutActionMutation.isPending
-                          ? 'Processing...'
-                          : 'Approve, Generate Final Bill & Vacate'}
+                          ? t('Processing...', 'प्रक्रियामा...')
+                          : t(
+                              'Approve, Settle & Vacate',
+                              'स्वीकृत गरी हिसाब मिलान र कोठा खाली गर्नुहोस्'
+                            )}
                       </button>
                     </div>
                   </div>
@@ -2015,23 +2246,41 @@ export default function AdminCommandCenter() {
             )}
           </div>
 
-          {/* UNIT TELEMETRY MATRIX (WITH EDIT SUB-METER BUTTON ON EVERY ROOM CARD) */}
+          {/* UNIT TELEMETRY MATRIX */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900">
-                  Unit Telemetry & Occupancy Matrix
+                  {t(
+                    'Unit Telemetry & Occupancy Matrix',
+                    'कोठा सब-मिटर र बसोबास विवरण'
+                  )}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Click &ldquo;Edit Meter&rdquo; on any room card to set or adjust its initial/current sub-meter reading
+                  {t(
+                    'Click "Edit Meter" on any room card to set or adjust its initial/current sub-meter reading',
+                    'कुनै पनि कोठाको सुरुवाती वा हालको सब-मिटर रिडिङ सच्याउन "मिटर सच्याउनुहोस्" मा थिच्नुहोस्'
+                  )}
                 </p>
               </div>
 
               <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
                 {[
-                  { key: 'ALL', label: `All Units (${roomsList.length})` },
-                  { key: 'OCCUPIED', label: `Assigned / Occupied (${occupiedRoomsCount})` },
-                  { key: 'VACANT', label: `Vacant (${vacantRoomsCount})` },
+                  {
+                    key: 'ALL',
+                    label: t(`All Units (${roomsList.length})`, `सबै कोठा (${roomsList.length})`),
+                  },
+                  {
+                    key: 'OCCUPIED',
+                    label: t(
+                      `Assigned / Occupied (${occupiedRoomsCount})`,
+                      `बसोबास भएको (${occupiedRoomsCount})`
+                    ),
+                  },
+                  {
+                    key: 'VACANT',
+                    label: t(`Vacant (${vacantRoomsCount})`, `खाली कोठा (${vacantRoomsCount})`),
+                  },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -2064,7 +2313,7 @@ export default function AdminCommandCenter() {
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="text-sm font-extrabold text-slate-900">
-                            Room {room.room_number}
+                            {t('Room', 'कोठा')} {room.room_number}
                           </h4>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -2073,32 +2322,36 @@ export default function AdminCommandCenter() {
                                 : 'bg-slate-200 text-slate-700'
                             }`}
                           >
-                            {occupied ? 'Occupied' : 'Vacant'}
+                            {occupied
+                              ? t('Occupied', 'बसोबास छ')
+                              : t('Vacant', 'खाली छ')}
                           </span>
                         </div>
                         <p className="text-xs font-bold text-slate-800 mb-2">
-                          {occupied && tenant ? tenant.full_name : 'Available'}
+                          {occupied && tenant
+                            ? tenant.full_name
+                            : t('Available', 'उपलब्ध')}
                         </p>
                         <div className="space-y-1.5 text-[11px] text-slate-500 mb-4">
                           <div className="flex items-center justify-between bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-200/70">
                             <span>
-                              Sub-Meter:{' '}
+                              {t('Sub-Meter:', 'सब-मिटर:')}{' '}
                               <strong className="text-slate-900">
-                                {room.current_meter_reading} units
+                                {room.current_meter_reading} {t('units', 'युनिट')}
                               </strong>
                             </span>
                             <button
                               type="button"
                               onClick={() => openEditMeterModal(room)}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 font-extrabold text-[10px] shadow-2xs transition"
-                              title={`Edit Room ${room.room_number} Sub-Meter Reading`}
                             >
-                              <Edit3 className="w-3 h-3" /> Edit Meter
+                              <Edit3 className="w-3 h-3" />{' '}
+                              {t('Edit Meter', 'मिटर सच्याउनुहोस्')}
                             </button>
                           </div>
                           {occupied && tenant && (
                             <p className="pt-0.5">
-                              Next Due:{' '}
+                              {t('Next Due:', 'अर्को मिति:')}{' '}
                               <strong>{formatDualDate(tenant.next_due_date)}</strong>
                             </p>
                           )}
@@ -2111,14 +2364,21 @@ export default function AdminCommandCenter() {
                             onClick={() => setSelectedUserId(tenant.tenant_id)}
                             className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold"
                           >
-                            Inspect Tenant
+                            {t('Inspect Tenant', 'भाडावाल हेर्नुहोस्')}
                           </button>
                         )}
                         {occupied ? (
                           <button
                             type="button"
                             onClick={() => {
-                              if (window.confirm(`Mark Room ${room.room_number} as vacant?`)) {
+                              if (
+                                window.confirm(
+                                  t(
+                                    `Mark Room ${room.room_number} as vacant?`,
+                                    `कोठा ${room.room_number} लाई खाली चिन्ह लगाउने हो?`
+                                  )
+                                )
+                              ) {
                                 axiosClient.post(`/rooms/${room.id}/vacate/`).then(() => {
                                   refreshAllAdminData();
                                 });
@@ -2126,7 +2386,7 @@ export default function AdminCommandCenter() {
                             }}
                             className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold ml-auto"
                           >
-                            Vacate Room
+                            {t('Vacate Room', 'कोठा खाली गर्नुहोस्')}
                           </button>
                         ) : (
                           <button
@@ -2137,7 +2397,8 @@ export default function AdminCommandCenter() {
                             }}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold ml-auto"
                           >
-                            <UserPlus className="w-3.5 h-3.5" /> Assign Tenant
+                            <UserPlus className="w-3.5 h-3.5" />{' '}
+                            {t('Assign Tenant', 'भाडावाल तोक्नुहोस्')}
                           </button>
                         )}
                       </div>
@@ -2148,14 +2409,14 @@ export default function AdminCommandCenter() {
             </div>
           </div>
 
-          {/* REMITTANCE & METER AUDIT CLEARING QUEUE (WITH MANAGED FILTER TABS & DUAL AD/BS DATES) */}
+          {/* REMITTANCE & METER AUDIT CLEARING QUEUE */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                Remittance & Meter Audit Clearing
+                {t('Remittance & Meter Audit Clearing', 'भुक्तानी र सब-मिटर प्रमाणीकरण कक्ष')}
                 {pendingQueue.length > 0 && (
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                    {pendingQueue.length} Pending Audit
+                    {pendingQueue.length} {t('Pending Audit', 'प्रमाणीकरण बाँकी')}
                   </span>
                 )}
               </h3>
@@ -2164,13 +2425,22 @@ export default function AdminCommandCenter() {
                 {[
                   {
                     key: 'OPEN',
-                    label: `Open / Pending (${unpaidOrPendingBills.length})`,
+                    label: t(
+                      `Open / Pending (${unpaidOrPendingBills.length})`,
+                      `बाँकी / प्रतीक्षामा (${unpaidOrPendingBills.length})`
+                    ),
                   },
                   {
                     key: 'APPROVED',
-                    label: `Approved & Paid (${approvedOrPaidBills.length})`,
+                    label: t(
+                      `Approved & Paid (${approvedOrPaidBills.length})`,
+                      `स्वीकृत र चुक्ता (${approvedOrPaidBills.length})`
+                    ),
                   },
-                  { key: 'ALL', label: `All (${bills.length})` },
+                  {
+                    key: 'ALL',
+                    label: t(`All (${bills.length})`, `सबै (${bills.length})`),
+                  },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -2190,8 +2460,7 @@ export default function AdminCommandCenter() {
 
             {displayedBillsQueue.length === 0 ? (
               <div className="py-10 text-center text-slate-400 text-xs bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
-                No {billQueueFilter === 'OPEN' ? 'open or pending ' : billQueueFilter === 'APPROVED' ? 'approved ' : ''}
-                bills in this view.
+                {t('No bills in this view.', 'यस दृश्यमा कुनै बिल छैन।')}
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -2210,7 +2479,7 @@ export default function AdminCommandCenter() {
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-bold text-slate-900 text-xs truncate pr-2">
-                            Room {b.room_number} • {b.tenant_name}
+                            {t('Room', 'कोठा')} {b.room_number} • {b.tenant_name}
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
@@ -2221,17 +2490,18 @@ export default function AdminCommandCenter() {
                                 : 'bg-slate-100 text-slate-600'
                             }`}
                           >
-                            {b.status_display}
+                            {td(b.status_display)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-slate-500">
                           <span>
-                            {formatDualMonthLabel(b.billing_month_label)} • Rs.{' '}
-                            {Number(b.total_payable).toLocaleString()}
+                            {formatDualMonthLabel(b.billing_month_label)} •{' '}
+                            {t('Rs.', 'रु.')} {Number(b.total_payable).toLocaleString()}
                           </span>
                           {Number(b.damage_fine_amount || 0) > 0 && !isSettled && (
                             <span className="text-rose-600 font-bold">
-                              Fine: Rs. {Number(b.damage_fine_amount).toLocaleString()}
+                              {t('Fine: Rs.', 'जरिवाना: रु.')}{' '}
+                              {Number(b.damage_fine_amount).toLocaleString()}
                             </span>
                           )}
                         </div>
@@ -2245,18 +2515,23 @@ export default function AdminCommandCenter() {
                     <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
                       <div>
                         <h4 className="text-sm font-extrabold text-slate-900">
-                          Room {activeAuditBill.room_number} — {activeAuditBill.tenant_name}
+                          {t('Room', 'कोठा')} {activeAuditBill.room_number} —{' '}
+                          {activeAuditBill.tenant_name}
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                          Cycle: {formatDualMonthLabel(activeAuditBill.billing_month_label)}
+                          {t('Cycle:', 'बिलिङ चक्र:')}{' '}
+                          {formatDualMonthLabel(activeAuditBill.billing_month_label)}
                           {activeAuditBill.due_date
-                            ? ` • Due: ${formatDualDate(activeAuditBill.due_date)}`
+                            ? ` • ${t('Due:', 'तिर्नुपर्ने:')} ${formatDualDate(
+                                activeAuditBill.due_date
+                              )}`
                             : ''}
                         </p>
                       </div>
                       <div className="text-right">
                         <span className="text-sm font-extrabold text-indigo-600 block">
-                          Total: Rs. {Number(activeAuditBill.total_payable).toLocaleString()}
+                          {t('Total: Rs.', 'जम्मा: रु.')}{' '}
+                          {Number(activeAuditBill.total_payable).toLocaleString()}
                         </span>
                         {!['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) && (
                           <button
@@ -2264,7 +2539,7 @@ export default function AdminCommandCenter() {
                             onClick={() => openFineModalForUser(null, activeAuditBill)}
                             className="text-[11px] font-extrabold text-rose-600 hover:underline"
                           >
-                            + Add / Edit Fine
+                            {t('+ Add / Edit Fine', '+ जरिवाना थप्नुहोस् / सच्याउनुहोस्')}
                           </button>
                         )}
                       </div>
@@ -2275,7 +2550,7 @@ export default function AdminCommandCenter() {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="font-extrabold text-rose-800 flex items-center gap-1.5">
                             <AlertTriangle className="w-4 h-4 text-rose-600" />
-                            Applied Fine: Rs.{' '}
+                            {t('Applied Fine: Rs.', 'लगाइएको जरिवाना: रु.')}{' '}
                             {Number(activeAuditBill.damage_fine_amount).toLocaleString()}
                           </span>
                           <div className="flex items-center gap-2">
@@ -2291,13 +2566,14 @@ export default function AdminCommandCenter() {
                                 disabled={applyFineMutation.isPending}
                                 className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition text-[10px] font-extrabold shadow-xs"
                               >
-                                Undo Fine
+                                {t('Undo Fine', 'जरिवाना हटाउनुहोस्')}
                               </button>
                             )}
                           </div>
                         </div>
                         <p className="text-rose-700 font-medium">
-                          Reason: {activeAuditBill.damage_fine_reason || 'Rule / damage violation'}
+                          {t('Reason:', 'कारण:')}{' '}
+                          {activeAuditBill.damage_fine_reason || 'Rule / damage violation'}
                         </p>
                         {Array.isArray(activeAuditBill.fine_evidence_urls) &&
                           activeAuditBill.fine_evidence_urls.length > 0 && (
@@ -2313,7 +2589,9 @@ export default function AdminCommandCenter() {
                                       openPhotoLightbox(
                                         activeAuditBill.fine_evidence_urls.map((u, i) => ({
                                           url: getSafeMediaUrl(u),
-                                          title: `Fine Evidence #${i + 1} — Room ${activeAuditBill.room_number}`,
+                                          title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
+                                            i + 1
+                                          } — ${t('Room', 'कोठा')} ${activeAuditBill.room_number}`,
                                           subtitle: activeAuditBill.damage_fine_reason,
                                         })),
                                         idx
@@ -2331,7 +2609,7 @@ export default function AdminCommandCenter() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                          Zone 1: Sub-Meter
+                          {t('Zone 1: Sub-Meter', 'क्षेत्र १: सब-मिटर फोटो')}
                         </p>
                         <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
                           {activeAuditBill.meter_photo_url ? (
@@ -2342,7 +2620,9 @@ export default function AdminCommandCenter() {
                                 openPhotoLightbox([
                                   {
                                     url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
-                                    title: `Room ${activeAuditBill.room_number} — Meter Photo`,
+                                    title: `${t('Room', 'कोठा')} ${
+                                      activeAuditBill.room_number
+                                    } — ${t('Meter Photo', 'मिटर फोटो')}`,
                                     subtitle: formatDualMonthLabel(
                                       activeAuditBill.billing_month_label
                                     ),
@@ -2353,14 +2633,14 @@ export default function AdminCommandCenter() {
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                              No Meter Photo
+                              {t('No Meter Photo', 'मिटर फोटो छैन')}
                             </div>
                           )}
                         </div>
                       </div>
                       <div>
                         <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                          Zone 2: Payment Receipt
+                          {t('Zone 2: Payment Receipt', 'क्षेत्र २: भुक्तानी भौचर')}
                         </p>
                         <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
                           {activeAuditBill.payment_screenshot_url ? (
@@ -2371,7 +2651,9 @@ export default function AdminCommandCenter() {
                                 openPhotoLightbox([
                                   {
                                     url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
-                                    title: `Room ${activeAuditBill.room_number} — Payment Screenshot`,
+                                    title: `${t('Room', 'कोठा')} ${
+                                      activeAuditBill.room_number
+                                    } — ${t('Payment Screenshot', 'भुक्तानी भौचर')}`,
                                     subtitle: formatDualMonthLabel(
                                       activeAuditBill.billing_month_label
                                     ),
@@ -2382,7 +2664,7 @@ export default function AdminCommandCenter() {
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                              No Payment Slip
+                              {t('No Payment Slip', 'भुक्तानी भौचर छैन')}
                             </div>
                           )}
                         </div>
@@ -2393,10 +2675,11 @@ export default function AdminCommandCenter() {
                       <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold flex items-center justify-between">
                         <span className="flex items-center gap-2">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          Payment Verified & Settled ({activeAuditBill.status_display})
+                          {t('Payment Verified & Settled', 'भुक्तानी प्रमाणित र चुक्ता भयो')} (
+                          {td(activeAuditBill.status_display)})
                         </span>
                         <span className="text-[11px] text-emerald-700 font-semibold">
-                          Ref: {activeAuditBill.transaction_reference || 'Verified'}
+                          Ref: {activeAuditBill.transaction_reference || t('Verified', 'प्रमाणित')}
                         </span>
                       </div>
                     ) : (
@@ -2405,7 +2688,7 @@ export default function AdminCommandCenter() {
                           type="text"
                           value={adminRemarks}
                           onChange={(e) => setAdminRemarks(e.target.value)}
-                          placeholder="Remarks..."
+                          placeholder={t('Remarks...', 'कैफियत लेख्नुहोस्...')}
                           className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
                         />
                         <div className="flex items-center gap-3 pt-2">
@@ -2420,7 +2703,7 @@ export default function AdminCommandCenter() {
                             }
                             className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
                           >
-                            Reject
+                            {t('Reject', 'अस्वीकार गर्नुहोस्')}
                           </button>
                           <button
                             type="button"
@@ -2433,7 +2716,7 @@ export default function AdminCommandCenter() {
                             }
                             className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
                           >
-                            Approve
+                            {t('Approve', 'स्वीकृत गर्नुहोस्')}
                           </button>
                         </div>
                       </>
@@ -2448,7 +2731,10 @@ export default function AdminCommandCenter() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
               <h3 className="text-base font-extrabold text-slate-900 mb-1">
-                Financial Velocity (Bar Chart • AD / BS)
+                {t(
+                  'Financial Velocity (Bar Chart • AD / BS)',
+                  'मासिक आम्दानी र खर्च (बार चार्ट • AD / BS)'
+                )}
               </h3>
               <div className="w-full h-72 mt-4">
                 {!analyticsLoading && (
@@ -2460,13 +2746,13 @@ export default function AdminCommandCenter() {
                       <Legend />
                       <Bar
                         dataKey="income"
-                        name="Income (Rs.)"
+                        name={t('Income (Rs.)', 'आम्दानी (रु.)')}
                         fill="#4F46E5"
                         radius={[6, 6, 0, 0]}
                       />
                       <Bar
                         dataKey="expenses"
-                        name="Expenses (Rs.)"
+                        name={t('Expenses (Rs.)', 'खर्च (रु.)')}
                         fill="#EF4444"
                         radius={[6, 6, 0, 0]}
                       />
@@ -2477,7 +2763,7 @@ export default function AdminCommandCenter() {
             </div>
             <div className="lg:col-span-4 rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between">
               <h3 className="text-base font-extrabold text-slate-900 mb-1">
-                Utility Outflow (Pie Chart)
+                {t('Utility Outflow (Pie Chart)', 'खर्च विवरण (पाई चार्ट)')}
               </h3>
               <div className="w-full h-56 my-2">
                 <ResponsiveContainer width="100%" height="100%">
@@ -2506,26 +2792,36 @@ export default function AdminCommandCenter() {
           {/* RECORD BUILDING OUTFLOW */}
           <div className="rounded-2xl bg-white p-6 border border-slate-200/80 shadow-xs">
             <h3 className="text-base font-extrabold text-slate-900 mb-1">
-              Record Whole-House Expense
+              {t('Record Whole-House Expense', 'घरको कुल खर्च टिपोट गर्नुहोस्')}
             </h3>
             <form
               onSubmit={handleLogExpense}
               className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-start mt-4"
             >
               <div>
-                <label className="block text-[11px] font-bold mb-1">CATEGORY</label>
+                <label className="block text-[11px] font-bold mb-1">
+                  {t('CATEGORY', 'विधा')}
+                </label>
                 <select
                   value={expenseCategory}
                   onChange={(e) => setExpenseCategory(e.target.value)}
                   className="w-full px-3 py-2.5 text-xs rounded-xl border outline-none"
                 >
-                  <option value="ELECTRICITY_MAIN">Main Electricity (NEA)</option>
-                  <option value="WATER_SUPPLY">Water Supply / Tanker</option>
-                  <option value="MAINTENANCE">Plumbing & Repairs</option>
+                  <option value="ELECTRICITY_MAIN">
+                    {t('Main Electricity (NEA)', 'मुख्य बिजुली बिल (NEA)')}
+                  </option>
+                  <option value="WATER_SUPPLY">
+                    {t('Water Supply / Tanker', 'पानी आपूर्ति / ट्यांकर')}
+                  </option>
+                  <option value="MAINTENANCE">
+                    {t('Plumbing & Repairs', 'मर्मत सम्भार')}
+                  </option>
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-bold mb-1">TITLE</label>
+                <label className="block text-[11px] font-bold mb-1">
+                  {t('TITLE', 'खर्च शीर्षक')}
+                </label>
                 <input
                   type="text"
                   required
@@ -2535,7 +2831,9 @@ export default function AdminCommandCenter() {
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold mb-1">AMOUNT</label>
+                <label className="block text-[11px] font-bold mb-1">
+                  {t('AMOUNT', 'रकम (रु.)')}
+                </label>
                 <input
                   type="number"
                   step="0.01"
@@ -2546,7 +2844,9 @@ export default function AdminCommandCenter() {
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold mb-1">DATE (AD / BS)</label>
+                <label className="block text-[11px] font-bold mb-1">
+                  {t('DATE (AD / BS)', 'मिति (AD / BS)')}
+                </label>
                 <input
                   type="date"
                   required
@@ -2556,7 +2856,7 @@ export default function AdminCommandCenter() {
                 />
                 {expenseDate && (
                   <p className="text-[10px] font-extrabold text-indigo-600 mt-1">
-                    📅 BS: {formatBSOnly(expenseDate)}
+                    📅 {t('BS:', 'बि.सं.:')} {formatBSOnly(expenseDate)}
                   </p>
                 )}
               </div>
@@ -2566,7 +2866,7 @@ export default function AdminCommandCenter() {
                   disabled={expenseMutation.isPending}
                   className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs"
                 >
-                  Commit Expense
+                  {t('Commit Expense', 'खर्च सुरक्षित गर्नुहोस्')}
                 </button>
               </div>
             </form>
@@ -2595,9 +2895,7 @@ export default function AdminCommandCenter() {
               onClick={(e) => e.stopPropagation()}
               className="relative w-full max-w-4xl rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col"
             >
-              {/* Scrollable Modal Body */}
               <div className="overflow-y-auto flex-1">
-                {/* 1. Hero Cover Banner */}
                 <div className="h-36 sm:h-48 bg-gradient-to-r from-indigo-600 via-violet-600 to-teal-500 relative overflow-hidden group">
                   {coverUrl ? (
                     <img
@@ -2620,10 +2918,9 @@ export default function AdminCommandCenter() {
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-slate-900/20 to-transparent pointer-events-none" />
 
-                  {/* Top Action Bar on Cover */}
                   <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
                     <span className="px-3 py-1 rounded-full bg-slate-900/60 backdrop-blur-md text-white text-[11px] font-extrabold border border-white/20">
-                      Tenant Inspection Dossier #{u.id}
+                      {t('Tenant Inspection Dossier', 'भाडावाल निरीक्षण विवरण')} #{u.id}
                     </span>
                     <div className="flex items-center gap-2">
                       {galleryItems.length > 0 && (
@@ -2633,7 +2930,7 @@ export default function AdminCommandCenter() {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/95 hover:bg-white text-slate-900 text-xs font-extrabold shadow-md transition"
                         >
                           <ZoomIn className="w-3.5 h-3.5 text-indigo-600" />
-                          Photo Mode ({galleryItems.length})
+                          {t('Photo Mode', 'फोटो मोड')} ({galleryItems.length})
                         </button>
                       )}
                       <button
@@ -2647,7 +2944,6 @@ export default function AdminCommandCenter() {
                   </div>
                 </div>
 
-                {/* 2. Profile Avatar & Identity Strip */}
                 <div className="px-6 sm:px-8 pb-6">
                   <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-14 relative z-10 mb-6">
                     <div className="flex flex-col sm:flex-row sm:items-end gap-4">
@@ -2697,7 +2993,7 @@ export default function AdminCommandCenter() {
                                 : 'bg-amber-100 text-amber-800'
                             }`}
                           >
-                            KYC: {u.kyc_status}
+                            KYC: {td(u.kyc_status)}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
@@ -2706,23 +3002,25 @@ export default function AdminCommandCenter() {
                           </span>
                           <span className="inline-flex items-center gap-1">
                             <Phone className="w-3.5 h-3.5 text-emerald-600" />{' '}
-                            {u.phone_number || 'No Phone'}
+                            {u.phone_number || t('No Phone', 'फोन छैन')}
                           </span>
                           {u.joined_at && (
-                            <span>Joined: {formatDualDate(u.joined_at)}</span>
+                            <span>
+                              {t('Joined:', 'आबद्ध मिति:')} {formatDualDate(u.joined_at)}
+                            </span>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Quick KYC Verify / Reject + Fine Buttons */}
                     <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => openFineModalForUser(u, null)}
                         className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1"
                       >
-                        <AlertTriangle className="w-3.5 h-3.5" /> + Apply Fine
+                        <AlertTriangle className="w-3.5 h-3.5" />{' '}
+                        {t('+ Apply Fine', '+ जरिवाना लगाउनुहोस्')}
                       </button>
                       {u.kyc_id && u.kyc_status !== 'VERIFIED' && (
                         <button
@@ -2737,7 +3035,7 @@ export default function AdminCommandCenter() {
                           disabled={kycAuditMutation.isPending}
                           className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition"
                         >
-                          ✓ Verify KYC
+                          {t('✓ Verify KYC', '✓ केवाईसी प्रमाणित गर्नुहोस्')}
                         </button>
                       )}
                       {u.kyc_id && u.kyc_status !== 'REJECTED' && (
@@ -2753,7 +3051,7 @@ export default function AdminCommandCenter() {
                           disabled={kycAuditMutation.isPending}
                           className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition"
                         >
-                          Reject KYC
+                          {t('Reject KYC', 'केवाईसी अस्वीकार')}
                         </button>
                       )}
                     </div>
@@ -2763,19 +3061,21 @@ export default function AdminCommandCenter() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mb-6">
                     <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 block">
-                        Assigned Room
+                        {t('Assigned Room', 'तोकिएको कोठा')}
                       </span>
                       <p className="text-base font-black text-slate-900 mt-1">
                         {u.room_details
-                          ? `Room ${u.room_details.room_number}`
+                          ? `${t('Room', 'कोठा')} ${u.room_details.room_number}`
                           : u.room_number
-                          ? `Room ${u.room_number}`
-                          : 'Unassigned'}
+                          ? `${t('Room', 'कोठा')} ${u.room_number}`
+                          : t('Unassigned', 'तोकिएको छैन')}
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         {u.room_details
-                          ? `${u.room_details.floor} • Rs. ${u.room_details.base_rent}/mo`
-                          : 'No active unit'}
+                          ? `${td(u.room_details.floor)} • ${t('Rs.', 'रु.')} ${
+                              u.room_details.base_rent
+                            }${t('/mo', '/महिना')}`
+                          : t('No active unit', 'कुनै सक्रिय कोठा छैन')}
                       </p>
                     </div>
 
@@ -2787,45 +3087,47 @@ export default function AdminCommandCenter() {
                       }`}
                     >
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
-                        Pending / Unpaid Bills
+                        {t('Pending / Unpaid Bills', 'तिर्न बाँकी बिलहरू')}
                       </span>
                       <p
                         className={`text-base font-black mt-1 ${
                           u.pending_bills_count > 0 ? 'text-rose-600' : 'text-emerald-700'
                         }`}
                       >
-                        Rs. {Number(u.total_pending_amount || 0).toLocaleString()}
+                        {t('Rs.', 'रु.')} {Number(u.total_pending_amount || 0).toLocaleString()}
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         {u.pending_bills_count > 0
-                          ? `${u.pending_bills_count} open bill(s)`
-                          : 'No pending dues'}
+                          ? `${u.pending_bills_count} ${t('open bill(s)', 'बाँकी बिल')}`
+                          : t('No pending dues', 'बक्यौता छैन')}
                       </p>
                     </div>
 
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
-                        Total Paid History
+                        {t('Total Paid History', 'कुल भुक्तानी इतिहास')}
                       </span>
                       <p className="text-base font-black text-slate-900 mt-1">
-                        Rs. {Number(u.total_paid_amount || 0).toLocaleString()}
+                        {t('Rs.', 'रु.')} {Number(u.total_paid_amount || 0).toLocaleString()}
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        {u.paid_bills_count || 0} settled invoice(s)
+                        {u.paid_bills_count || 0} {t('settled invoice(s)', 'चुक्ता बिल')}
                       </p>
                     </div>
 
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
-                        Digital Lease & ID
+                        {t('Digital Lease & ID', 'सम्झौता र परिचयपत्र')}
                       </span>
                       <p className="text-base font-black text-slate-900 mt-1 truncate">
-                        {u.citizenship_number || 'No ID No.'}
+                        {u.citizenship_number || t('No ID No.', 'परिचयपत्र नं. छैन')}
                       </p>
                       <p className="text-[11px] text-emerald-600 font-bold mt-0.5">
                         {u.has_accepted_lease
-                          ? `✓ Lease Signed (${formatDualDate(u.lease_accepted_at || 'Verified')})`
-                          : 'Lease Pending'}
+                          ? `${t('✓ Lease Signed', '✓ हस्ताक्षरित')} (${formatDualDate(
+                              u.lease_accepted_at || 'Verified'
+                            )})`
+                          : t('Lease Pending', 'सम्झौता बाँकी')}
                       </p>
                     </div>
                   </div>
@@ -2835,7 +3137,8 @@ export default function AdminCommandCenter() {
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
                       <div className="flex items-center justify-between">
                         <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                          <Home className="w-4 h-4 text-indigo-600" /> Room & Utility Telemetry
+                          <Home className="w-4 h-4 text-indigo-600" />{' '}
+                          {t('Room & Utility Telemetry', 'कोठा र सब-मिटर विवरण')}
                         </h4>
                         {u.room_details && (
                           <button
@@ -2843,97 +3146,126 @@ export default function AdminCommandCenter() {
                             onClick={() => openEditMeterModal(u.room_details)}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] shadow-xs transition"
                           >
-                            <Edit3 className="w-3 h-3" /> Edit Meter
+                            <Edit3 className="w-3 h-3" />{' '}
+                            {t('Edit Meter', 'मिटर सच्याउनुहोस्')}
                           </button>
                         )}
                       </div>
                       {u.room_details ? (
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           <div>
-                            <span className="text-slate-400 block">Move-In Date (AD / BS)</span>
+                            <span className="text-slate-400 block">
+                              {t('Move-In Date (AD / BS)', 'सरेको मिति (AD / BS)')}
+                            </span>
                             <strong>{formatDualDate(u.room_details.entry_date)}</strong>
                           </div>
                           <div>
-                            <span className="text-slate-400 block">Next Due Date (AD / BS)</span>
+                            <span className="text-slate-400 block">
+                              {t('Next Due Date (AD / BS)', 'अर्को मिति (AD / BS)')}
+                            </span>
                             <strong className="text-amber-700">
                               {formatDualDate(u.room_details.next_due_date)}
                             </strong>
                           </div>
                           <div>
-                            <span className="text-slate-400 block">Sub-Meter Reading</span>
+                            <span className="text-slate-400 block">
+                              {t('Sub-Meter Reading', 'सब-मिटर रिडिङ')}
+                            </span>
                             <strong className="text-indigo-600">
-                              {u.room_details.current_meter_reading} units
+                              {u.room_details.current_meter_reading} {t('units', 'युनिट')}
                             </strong>
                           </div>
                           <div>
-                            <span className="text-slate-400 block">Utility Rates</span>
+                            <span className="text-slate-400 block">
+                              {t('Utility Rates', 'बिजुली र पानी दर')}
+                            </span>
                             <strong>
-                              Water Rs. {u.room_details.fixed_water_bill} • Elec Rs.{' '}
-                              {u.room_details.electricity_rate}/u
+                              {t('Water Rs.', 'पानी रु.')} {u.room_details.fixed_water_bill} •{' '}
+                              {t('Elec Rs.', 'बिजुली रु.')} {u.room_details.electricity_rate}/u
                             </strong>
                           </div>
                         </div>
                       ) : (
                         <p className="text-slate-400 py-2">
-                          This user is not currently assigned to an active room.
+                          {t(
+                            'This user is not currently assigned to an active room.',
+                            'यस प्रयोगकर्तालाई हाल कुनै कोठा तोकिएको छैन।'
+                          )}
                         </p>
                       )}
                     </div>
 
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
                       <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" /> Legal & Emergency
-                        Contact
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />{' '}
+                        {t('Legal & Emergency Contact', 'कानुनी र आपतकालीन सम्पर्क')}
                       </h4>
                       <div className="grid grid-cols-2 gap-2 pt-1">
                         <div>
-                          <span className="text-slate-400 block">Legal Full Name</span>
+                          <span className="text-slate-400 block">
+                            {t('Legal Full Name', 'पूरा कानुनी नाम')}
+                          </span>
                           <strong>{u.full_name_legal || u.full_name}</strong>
                         </div>
                         <div>
-                          <span className="text-slate-400 block">Citizenship No.</span>
-                          <strong>{u.citizenship_number || 'Not submitted'}</strong>
+                          <span className="text-slate-400 block">
+                            {t('Citizenship No.', 'नागरिकता नं.')}
+                          </span>
+                          <strong>
+                            {u.citizenship_number || t('Not submitted', 'पेश छैन')}
+                          </strong>
                         </div>
                         <div>
-                          <span className="text-slate-400 block">Emergency Contact</span>
-                          <strong>{u.emergency_contact_name || 'Not provided'}</strong>
+                          <span className="text-slate-400 block">
+                            {t('Emergency Contact', 'आपतकालीन व्यक्ति')}
+                          </span>
+                          <strong>
+                            {u.emergency_contact_name || t('Not provided', 'उपलब्ध छैन')}
+                          </strong>
                         </div>
                         <div>
-                          <span className="text-slate-400 block">Emergency Phone</span>
-                          <strong>{u.emergency_contact_phone || 'Not provided'}</strong>
+                          <span className="text-slate-400 block">
+                            {t('Emergency Phone', 'आपतकालीन फोन')}
+                          </span>
+                          <strong>
+                            {u.emergency_contact_phone || t('Not provided', 'उपलब्ध छैन')}
+                          </strong>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* 5. Interactive Photo Gallery (Profile, Cover, KYC Front & Back) */}
+                  {/* 5. Interactive Photo Gallery */}
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Camera className="w-4 h-4 text-indigo-600" /> Uploaded Identity & Profile
-                        Photos (Click Any Photo for Fullscreen View)
+                        <Camera className="w-4 h-4 text-indigo-600" />{' '}
+                        {t(
+                          'Uploaded Identity & Profile Photos (Click Any Photo for Fullscreen View)',
+                          'अपलोड गरिएका परिचयपत्र र प्रोफाइल फोटोहरू (पूरा स्क्रिनमा हेर्न थिच्नुहोस्)'
+                        )}
                       </h4>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
                       {[
                         {
-                          label: 'Profile Avatar',
+                          label: t('Profile Avatar', 'प्रोफाइल फोटो'),
                           url: avatarUrl,
                           key: 'AVATAR',
                         },
                         {
-                          label: 'Cover Banner',
+                          label: t('Cover Banner', 'कभर ब्यानर'),
                           url: coverUrl,
                           key: 'COVER',
                         },
                         {
-                          label: 'Citizenship Front',
+                          label: t('Citizenship Front', 'नागरिकता (अगाडि)'),
                           url: citFrontUrl,
                           key: 'CIT_FRONT',
                         },
                         {
-                          label: 'Citizenship Back',
+                          label: t('Citizenship Back', 'नागरिकता (पछाडि)'),
                           url: citBackUrl,
                           key: 'CIT_BACK',
                         },
@@ -2967,12 +3299,13 @@ export default function AdminCommandCenter() {
                                     className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                                   />
                                   <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 text-white text-xs font-extrabold transition">
-                                    <ZoomIn className="w-4 h-4" /> View Photo
+                                    <ZoomIn className="w-4 h-4" />{' '}
+                                    {t('View Photo', 'हेर्नुहोस्')}
                                   </div>
                                 </>
                               ) : (
                                 <span className="text-[11px] font-bold text-slate-400">
-                                  Not Uploaded
+                                  {t('Not Uploaded', 'अपलोड छैन')}
                                 </span>
                               )}
                             </div>
@@ -2993,22 +3326,29 @@ export default function AdminCommandCenter() {
                   {/* 6. Tenant Billing & Proof History Table */}
                   <div>
                     <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-indigo-600" /> Billing & Payment Proof
-                      History ({userBills.length})
+                      <FileText className="w-4 h-4 text-indigo-600" />{' '}
+                      {t('Billing & Payment Proof History', 'बिल र भुक्तानी प्रमाण इतिहास')} (
+                      {userBills.length})
                     </h4>
                     {userBills.length === 0 ? (
                       <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 text-center text-xs text-slate-400">
-                        No bills recorded for this user yet.
+                        {t('No bills recorded for this user yet.', 'कुनै बिल रेकर्ड छैन।')}
                       </div>
                     ) : (
                       <div className="overflow-x-auto rounded-2xl border border-slate-200">
                         <table className="w-full text-left text-xs whitespace-nowrap">
                           <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
                             <tr>
-                              <th className="py-3 px-4">Cycle / Room (AD / BS)</th>
-                              <th className="py-3 px-4">Total Payable</th>
-                              <th className="py-3 px-4">Status</th>
-                              <th className="py-3 px-4">Proof Photos</th>
+                              <th className="py-3 px-4">
+                                {t('Cycle / Room (AD / BS)', 'चक्र / कोठा (AD / BS)')}
+                              </th>
+                              <th className="py-3 px-4">
+                                {t('Total Payable', 'कुल तिर्नुपर्ने')}
+                              </th>
+                              <th className="py-3 px-4">{t('Status', 'अवस्था')}</th>
+                              <th className="py-3 px-4">
+                                {t('Proof Photos', 'प्रमाण फोटोहरू')}
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -3027,18 +3367,21 @@ export default function AdminCommandCenter() {
                                       {formatDualMonthLabel(b.billing_month_label)}
                                     </p>
                                     <p className="text-[11px] text-slate-500">
-                                      Room {b.room_number} • Due: {formatDualDate(b.due_date)}
+                                      {t('Room', 'कोठा')} {b.room_number} •{' '}
+                                      {t('Due:', 'तिर्नुपर्ने:')} {formatDualDate(b.due_date)}
                                     </p>
                                   </td>
                                   <td className="py-3 px-4">
                                     <p className="font-black text-slate-900">
-                                      Rs. {Number(b.total_payable).toLocaleString()}
+                                      {t('Rs.', 'रु.')}{' '}
+                                      {Number(b.total_payable).toLocaleString()}
                                     </p>
                                     <p className="text-[10px] text-slate-500">
-                                      {b.units_consumed} units elec
+                                      {b.units_consumed} {t('units elec', 'युनिट बिजुली')}
                                       {Number(b.damage_fine_amount || 0) > 0 && (
                                         <span className="text-rose-600 font-bold ml-1">
-                                          • Fine: Rs. {b.damage_fine_amount}
+                                          • {t('Fine: Rs.', 'जरिवाना: रु.')}{' '}
+                                          {b.damage_fine_amount}
                                         </span>
                                       )}
                                     </p>
@@ -3053,7 +3396,7 @@ export default function AdminCommandCenter() {
                                           : 'bg-rose-100 text-rose-700'
                                       }`}
                                     >
-                                      {b.status_display}
+                                      {td(b.status_display)}
                                     </span>
                                   </td>
                                   <td className="py-3 px-4">
@@ -3065,19 +3408,21 @@ export default function AdminCommandCenter() {
                                             openPhotoLightbox([
                                               {
                                                 url: mUrl,
-                                                title: `Meter Photo — ${formatDualMonthLabel(
+                                                title: `${t('Meter Photo', 'मिटर फोटो')} — ${formatDualMonthLabel(
                                                   b.billing_month_label
                                                 )}`,
-                                                subtitle: `Room ${b.room_number} • ${u.full_name}`,
+                                                subtitle: `${t('Room', 'कोठा')} ${b.room_number} • ${u.full_name}`,
                                               },
                                             ])
                                           }
                                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px]"
                                         >
-                                          <Camera className="w-3 h-3" /> Meter
+                                          <Camera className="w-3 h-3" /> {t('Meter', 'मिटर')}
                                         </button>
                                       ) : (
-                                        <span className="text-[11px] text-slate-400">No Meter</span>
+                                        <span className="text-[11px] text-slate-400">
+                                          {t('No Meter', 'मिटर छैन')}
+                                        </span>
                                       )}
                                       {pUrl ? (
                                         <button
@@ -3086,19 +3431,25 @@ export default function AdminCommandCenter() {
                                             openPhotoLightbox([
                                               {
                                                 url: pUrl,
-                                                title: `Payment Slip — ${formatDualMonthLabel(
+                                                title: `${t('Payment Slip', 'भुक्तानी भौचर')} — ${formatDualMonthLabel(
                                                   b.billing_month_label
                                                 )}`,
-                                                subtitle: `Room ${b.room_number} • Rs. ${b.total_payable}`,
+                                                subtitle: `${t('Room', 'कोठा')} ${b.room_number} • ${t(
+                                                  'Rs.',
+                                                  'रु.'
+                                                )} ${b.total_payable}`,
                                               },
                                             ])
                                           }
                                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px]"
                                         >
-                                          <CreditCard className="w-3 h-3" /> Receipt
+                                          <CreditCard className="w-3 h-3" />{' '}
+                                          {t('Receipt', 'भौचर')}
                                         </button>
                                       ) : (
-                                        <span className="text-[11px] text-slate-400">No Slip</span>
+                                        <span className="text-[11px] text-slate-400">
+                                          {t('No Slip', 'भौचर छैन')}
+                                        </span>
                                       )}
                                       {fineEvUrls.length > 0 && (
                                         <button
@@ -3107,7 +3458,9 @@ export default function AdminCommandCenter() {
                                             openPhotoLightbox(
                                               fineEvUrls.map((ev, i) => ({
                                                 url: getSafeMediaUrl(ev),
-                                                title: `Fine Evidence #${i + 1} — ${formatDualMonthLabel(
+                                                title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
+                                                  i + 1
+                                                } — ${formatDualMonthLabel(
                                                   b.billing_month_label
                                                 )}`,
                                                 subtitle: fullBillObj?.damage_fine_reason,
@@ -3116,8 +3469,8 @@ export default function AdminCommandCenter() {
                                           }
                                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px]"
                                         >
-                                          <AlertTriangle className="w-3 h-3" /> Fine Proof (
-                                          {fineEvUrls.length})
+                                          <AlertTriangle className="w-3 h-3" />{' '}
+                                          {t('Fine Proof', 'जरिवाना फोटो')} ({fineEvUrls.length})
                                         </button>
                                       )}
                                     </div>
@@ -3142,7 +3495,10 @@ export default function AdminCommandCenter() {
                       onClick={() => {
                         if (
                           window.confirm(
-                            `Are you sure you want to ask ${u.full_name} to leave Room ${u.room_number}?`
+                            t(
+                              `Are you sure you want to ask ${u.full_name} to leave Room ${u.room_number}?`,
+                              `के तपाईं ${u.full_name} को कोठा ${u.room_number} खाली गराउन चाहनुहुन्छ?`
+                            )
                           )
                         ) {
                           evictMutation.mutate({
@@ -3153,7 +3509,7 @@ export default function AdminCommandCenter() {
                       }}
                       className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-sm transition"
                     >
-                      Vacate Room {u.room_number}
+                      {t(`Vacate Room ${u.room_number}`, `कोठा ${u.room_number} खाली गराउनुहोस्`)}
                     </button>
                   )}
                   {u.role !== 'ADMIN' && (
@@ -3162,7 +3518,8 @@ export default function AdminCommandCenter() {
                       onClick={() => setUserToDelete(u)}
                       className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-sm transition"
                     >
-                      <Trash2 className="w-3.5 h-3.5" /> Delete Tenant & All Data
+                      <Trash2 className="w-3.5 h-3.5" />{' '}
+                      {t('Delete Tenant & All Data', 'भाडावाल र सम्पूर्ण डाटा मेटाउनुहोस्')}
                     </button>
                   )}
                 </div>
@@ -3171,7 +3528,7 @@ export default function AdminCommandCenter() {
                   onClick={() => setSelectedUserId(null)}
                   className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition ml-auto"
                 >
-                  Close Dossier
+                  {t('Close Dossier', 'विवरण बन्द गर्नुहोस्')}
                 </button>
               </div>
             </div>
@@ -3180,7 +3537,7 @@ export default function AdminCommandCenter() {
       })()}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: FULLSCREEN PHOTO LIGHTBOX MODAL (ZOOM, NEXT/PREV, DOWNLOAD)      */}
+      {/* MODAL 2: FULLSCREEN PHOTO LIGHTBOX MODAL                                  */}
       {/* ========================================================================= */}
       {lightboxState.isOpen && lightboxState.items.length > 0 && (() => {
         const currentPhoto =
@@ -3192,7 +3549,6 @@ export default function AdminCommandCenter() {
             onClick={closePhotoLightbox}
             className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 select-none"
           >
-            {/* Top Toolbar */}
             <div
               onClick={(e) => e.stopPropagation()}
               className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10 text-white"
@@ -3217,7 +3573,6 @@ export default function AdminCommandCenter() {
                     }))
                   }
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
-                  title="Zoom Out"
                 >
                   <ZoomOut className="w-4 h-4" />
                 </button>
@@ -3230,7 +3585,6 @@ export default function AdminCommandCenter() {
                     }))
                   }
                   className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-extrabold text-white transition"
-                  title="Reset Zoom"
                 >
                   {Math.round(lightboxState.zoom * 100)}%
                 </button>
@@ -3243,7 +3597,6 @@ export default function AdminCommandCenter() {
                     }))
                   }
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
-                  title="Zoom In"
                 >
                   <ZoomIn className="w-4 h-4" />
                 </button>
@@ -3257,20 +3610,18 @@ export default function AdminCommandCenter() {
                   }
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition"
                 >
-                  <Download className="w-3.5 h-3.5" /> Download
+                  <Download className="w-3.5 h-3.5" /> {t('Download', 'डाउनलोड')}
                 </button>
                 <button
                   type="button"
                   onClick={closePhotoLightbox}
                   className="p-2 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white transition"
-                  title="Close Photo Viewer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Center Image Canvas */}
             <div className="relative flex-1 flex items-center justify-center overflow-hidden my-4">
               {totalPhotos > 1 && (
                 <button
@@ -3285,7 +3636,6 @@ export default function AdminCommandCenter() {
                     }));
                   }}
                   className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
-                  title="Previous Photo"
                 >
                   <ChevronLeft className="w-6 h-6" />
                 </button>
@@ -3311,14 +3661,12 @@ export default function AdminCommandCenter() {
                     }));
                   }}
                   className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
-                  title="Next Photo"
                 >
                   <ChevronRight className="w-6 h-6" />
                 </button>
               )}
             </div>
 
-            {/* Bottom Thumbnail Strip */}
             {totalPhotos > 1 && (
               <div
                 onClick={(e) => e.stopPropagation()}
@@ -3363,10 +3711,13 @@ export default function AdminCommandCenter() {
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">
-                    Official Payment QR Setup
+                    {t('Official Payment QR Setup', 'आधिकारिक भुक्तानी QR सेटअप')}
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Upload or update the QR code shown to all tenants
+                    {t(
+                      'Upload or update the QR code shown to all tenants',
+                      'सबै भाडावाललाई देखाइने QR कोड अपलोड वा अपडेट गर्नुहोस्'
+                    )}
                   </p>
                 </div>
               </div>
@@ -3405,18 +3756,26 @@ export default function AdminCommandCenter() {
                             }
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition"
                           >
-                            <Download className="w-3.5 h-3.5" /> Download Current QR
+                            <Download className="w-3.5 h-3.5" />{' '}
+                            {t('Download Current QR', 'हालको QR डाउनलोड')}
                           </button>
                           <button
                             type="button"
                             onClick={() => {
-                              if (window.confirm('Remove current Payment QR code?')) {
+                              if (
+                                window.confirm(
+                                  t(
+                                    'Remove current Payment QR code?',
+                                    'हालको भुक्तानी QR हटाउने हो?'
+                                  )
+                                )
+                              ) {
                                 deleteQRMutation.mutate();
                               }
                             }}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-extrabold transition"
                           >
-                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                            <Trash2 className="w-3.5 h-3.5" /> {t('Remove', 'हटाउनुहोस्')}
                           </button>
                         </>
                       )}
@@ -3424,7 +3783,10 @@ export default function AdminCommandCenter() {
                   </>
                 ) : (
                   <div className="py-8 text-center text-xs text-slate-400">
-                    No QR code image uploaded yet. Select an image below.
+                    {t(
+                      'No QR code image uploaded yet. Select an image below.',
+                      'अहिलेसम्म कुनै QR फोटो अपलोड गरिएको छैन।'
+                    )}
                   </div>
                 )}
 
@@ -3432,8 +3794,8 @@ export default function AdminCommandCenter() {
                   <Upload className="w-4 h-4" />
                   <span>
                     {paymentQR?.qr_image_url || qrImagePreview
-                      ? 'Choose New QR Image to Replace'
-                      : 'Upload QR Code Image'}
+                      ? t('Choose New QR Image to Replace', 'नयाँ QR फोटो छान्नुहोस्')
+                      : t('Upload QR Code Image', 'QR कोड फोटो अपलोड गर्नुहोस्')}
                   </span>
                   <input
                     type="file"
@@ -3452,27 +3814,25 @@ export default function AdminCommandCenter() {
 
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
-                  Merchant / Account Title
+                  {t('Merchant / Account Title', 'खाता / मर्चेन्टको नाम')}
                 </label>
                 <input
                   type="text"
                   required
                   value={qrMerchantName}
                   onChange={(e) => setQrMerchantName(e.target.value)}
-                  placeholder="e.g. SmartRent Official eSewa / Fonepay"
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
-                  Payment Instructions for Tenants
+                  {t('Payment Instructions for Tenants', 'भाडावालका लागि भुक्तानी निर्देशन')}
                 </label>
                 <textarea
                   rows={2}
                   value={qrPaymentNote}
                   onChange={(e) => setQrPaymentNote(e.target.value)}
-                  placeholder="e.g. Scan with eSewa, Khalti, or Mobile Banking and upload screenshot."
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-600 resize-none"
                 />
               </div>
@@ -3487,14 +3847,16 @@ export default function AdminCommandCenter() {
                   }}
                   className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   disabled={updateQRMutation.isPending}
                   className="flex-1 py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-md transition"
                 >
-                  {updateQRMutation.isPending ? 'Saving QR...' : 'Save & Publish QR'}
+                  {updateQRMutation.isPending
+                    ? t('Saving QR...', 'सुरक्षित हुँदैछ...')
+                    : t('Save & Publish QR', 'QR सुरक्षित र प्रकाशन गर्नुहोस्')}
                 </button>
               </div>
             </form>
@@ -3515,10 +3877,12 @@ export default function AdminCommandCenter() {
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
-                    {resetStep === 1 ? 'Danger Confirmation (1 of 2)' : 'Final Irreversible Warning (2 of 2)'}
+                    {resetStep === 1
+                      ? t('Danger Confirmation (1 of 2)', 'पहिलो चेतावनी (१/२)')
+                      : t('Final Irreversible Warning (2 of 2)', 'अन्तिम चेतावनी (२/२)')}
                   </span>
                   <h3 className="text-base font-black text-slate-900">
-                    Factory Reset SmartRent Database
+                    {t('Factory Reset SmartRent Database', 'स्मार्टरेन्ट डाटाबेस रिसेट')}
                   </h3>
                 </div>
               </div>
@@ -3545,20 +3909,47 @@ export default function AdminCommandCenter() {
               <div className="space-y-4">
                 <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-950 space-y-2">
                   <p className="font-extrabold text-rose-700">
-                    Are you sure you want to reset the entire system to brand new?
+                    {t(
+                      'Are you sure you want to reset the entire system to brand new?',
+                      'के तपाईं सम्पूर्ण प्रणालीलाई नयाँ अवस्थामा रिसेट गर्न चाहनुहुन्छ?'
+                    )}
                   </p>
                   <ul className="list-disc pl-4 space-y-1 text-[11px] text-rose-800">
-                    <li>Deletes all <strong>Tenant accounts</strong> and their KYC documents.</li>
-                    <li>Deletes all <strong>Monthly Bills, Expenses, Reservations, and Tenancies</strong>.</li>
-                    <li>Deletes all <strong>Chat Messages, Maintenance Tickets, and Notices</strong>.</li>
-                    <li>Resets all <strong>Rooms to Vacant</strong> with <strong>0.00 meter reading</strong>.</li>
+                    <li>
+                      {t(
+                        'Deletes all Tenant accounts and their KYC documents.',
+                        'सबै भाडावाल खाता र केवाईसी कागजात मेटिनेछन्।'
+                      )}
+                    </li>
+                    <li>
+                      {t(
+                        'Deletes all Monthly Bills, Expenses, Reservations, and Tenancies.',
+                        'सबै बिल, खर्च, बुकिङ र बसाइँ विवरण मेटिनेछन्।'
+                      )}
+                    </li>
+                    <li>
+                      {t(
+                        'Deletes all Chat Messages, Maintenance Tickets, and Notices.',
+                        'सबै च्याट सन्देश, मर्मत टिकट र सूचना मेटिनेछन्।'
+                      )}
+                    </li>
+                    <li>
+                      {t(
+                        'Resets all Rooms to Vacant with 0.00 meter reading.',
+                        'सबै कोठा खाली र ०.०० मिटर रिडिङमा रिसेट हुनेछन्।'
+                      )}
+                    </li>
                   </ul>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900">
                   <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
                   <span>
-                    <strong>Safe Protected:</strong> Your logged-in Landlord Admin account and room structure will NOT be deleted.
+                    <strong>{t('Safe Protected:', 'सुरक्षित:')}</strong>{' '}
+                    {t(
+                      'Your logged-in Landlord Admin account and room structure will NOT be deleted.',
+                      'तपाईंको एडमिन खाता र कोठाहरूको संरचना मेटिने छैन।'
+                    )}
                   </span>
                 </div>
 
@@ -3568,14 +3959,14 @@ export default function AdminCommandCenter() {
                     onClick={() => setResetStep(0)}
                     className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
                   >
-                    Cancel
+                    {t('Cancel', 'रद्द गर्नुहोस्')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setResetStep(2)}
                     className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md transition"
                   >
-                    Yes, Proceed to Final Step →
+                    {t('Yes, Proceed to Final Step →', 'अन्तिम चरणमा जानुहोस् →')}
                   </button>
                 </div>
               </div>
@@ -3590,23 +3981,29 @@ export default function AdminCommandCenter() {
               >
                 <div className="p-4 rounded-2xl bg-rose-600 text-white text-xs space-y-1.5 shadow-inner">
                   <p className="font-black uppercase tracking-wide flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4 shrink-0" /> SECOND & FINAL CONFIRMATION
+                    <AlertTriangle className="w-4 h-4 shrink-0" />{' '}
+                    {t('SECOND & FINAL CONFIRMATION', 'दोस्रो तथा अन्तिम पुष्टि')}
                   </p>
                   <p className="text-[11px] text-rose-100 leading-relaxed">
-                    This action cannot be undone. Every tenant, bill, and chat will be permanently erased, leaving only your Admin account and fresh vacant rooms.
+                    {t(
+                      'This action cannot be undone. Every tenant, bill, and chat will be permanently erased.',
+                      'यो कार्य फिर्ता गर्न सकिँदैन। सबै भाडावाल, बिल र च्याट स्थायी रूपमा मेटिनेछन्।'
+                    )}
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-extrabold text-slate-700 uppercase mb-1.5">
-                    Type <span className="text-rose-600 font-black">RESET</span> below to unlock final wipe:
+                    {t('Type ', 'तल ')}{' '}
+                    <span className="text-rose-600 font-black">RESET</span>{' '}
+                    {t('below to unlock final wipe:', 'लेखेर पुष्टि गर्नुहोस्:')}
                   </label>
                   <input
                     type="text"
                     required
                     value={resetConfirmText}
                     onChange={(e) => setResetConfirmText(e.target.value)}
-                    placeholder="Type RESET in capital letters"
+                    placeholder="RESET"
                     className="w-full px-3.5 py-2.5 text-xs font-extrabold tracking-widest uppercase rounded-xl border-2 border-rose-300 focus:border-rose-600 outline-none"
                   />
                 </div>
@@ -3621,7 +4018,7 @@ export default function AdminCommandCenter() {
                     }}
                     className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
                   >
-                    Cancel & Keep Data
+                    {t('Cancel & Keep Data', 'रद्द गर्नुहोस्')}
                   </button>
                   <button
                     type="submit"
@@ -3632,8 +4029,8 @@ export default function AdminCommandCenter() {
                     className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-800 disabled:opacity-40 text-white text-xs font-extrabold shadow-lg transition"
                   >
                     {resetDatabaseMutation.isPending
-                      ? 'Wiping Database...'
-                      : '🔥 Wipe & Reset Database Now'}
+                      ? t('Wiping Database...', 'रिसेट हुँदैछ...')
+                      : t('🔥 Wipe & Reset Database Now', '🔥 डाटाबेस रिसेट गर्नुहोस्')}
                   </button>
                 </div>
               </form>
@@ -3649,7 +4046,9 @@ export default function AdminCommandCenter() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-base font-extrabold text-slate-900">Create New Administrator</h3>
+              <h3 className="text-base font-extrabold text-slate-900">
+                {t('Create New Administrator', 'नयाँ एडमिन खाता बनाउनुहोस्')}
+              </h3>
               <button
                 type="button"
                 onClick={() => {
@@ -3677,7 +4076,7 @@ export default function AdminCommandCenter() {
             >
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
-                  Full Name
+                  {t('Full Name', 'पूरा नाम')}
                 </label>
                 <input
                   type="text"
@@ -3690,7 +4089,7 @@ export default function AdminCommandCenter() {
               </div>
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
-                  Email Address
+                  {t('Email Address', 'इमेल ठेगाना')}
                 </label>
                 <input
                   type="email"
@@ -3703,7 +4102,7 @@ export default function AdminCommandCenter() {
               </div>
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
-                  Phone Number
+                  {t('Phone Number', 'मोबाइल नम्बर')}
                 </label>
                 <input
                   type="text"
@@ -3716,7 +4115,7 @@ export default function AdminCommandCenter() {
               </div>
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
-                  Secure Password
+                  {t('Secure Password', 'सुरक्षित पासवर्ड')}
                 </label>
                 <div className="relative">
                   <input
@@ -3733,7 +4132,6 @@ export default function AdminCommandCenter() {
                     onClick={() => setShowNewAdminPassword((prev) => !prev)}
                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-indigo-600 transition"
                     tabIndex={-1}
-                    title={showNewAdminPassword ? 'Hide password' : 'Show password'}
                   >
                     {showNewAdminPassword ? (
                       <EyeOff className="w-4 h-4" />
@@ -3753,14 +4151,16 @@ export default function AdminCommandCenter() {
                   }}
                   className="flex-1 py-3 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   disabled={manageAdminMutation.isPending}
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md"
                 >
-                  {manageAdminMutation.isPending ? 'Creating...' : 'Create Admin'}
+                  {manageAdminMutation.isPending
+                    ? t('Creating...', 'बनाउँदै...')
+                    : t('Create Admin', 'एडमिन बनाउनुहोस्')}
                 </button>
               </div>
             </form>
@@ -3774,7 +4174,9 @@ export default function AdminCommandCenter() {
       {assignModalRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-lg font-bold mb-4">Assign Room {assignModalRoom.room_number}</h3>
+            <h3 className="text-lg font-bold mb-4">
+              {t('Assign Room', 'कोठा तोक्नुहोस्')} {assignModalRoom.room_number}
+            </h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -3795,7 +4197,7 @@ export default function AdminCommandCenter() {
                 onChange={(e) => setSelectedTenantId(e.target.value)}
                 className="w-full px-3 py-2 border rounded-xl text-xs font-semibold"
               >
-                <option value="">Choose User</option>
+                <option value="">{t('Choose User', 'भाडावाल छान्नुहोस्')}</option>
                 {tenantUsers.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.full_name} ({u.email})
@@ -3804,7 +4206,7 @@ export default function AdminCommandCenter() {
               </select>
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
-                  Move-In Date (AD)
+                  {t('Move-In Date (AD)', 'सरेको मिति (AD)')}
                 </label>
                 <input
                   type="date"
@@ -3815,13 +4217,14 @@ export default function AdminCommandCenter() {
                 />
                 {entryDate && (
                   <p className="text-[11px] font-extrabold text-indigo-600 mt-1">
-                    📅 Nepali Date (BS): {formatBSOnly(entryDate)}
+                    📅 {t('Nepali Date (BS):', 'नेपाली मिति (बि.सं.):')}{' '}
+                    {formatBSOnly(entryDate)}
                   </p>
                 )}
               </div>
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-600 uppercase mb-1">
-                  Starting Sub-Meter Reading
+                  {t('Starting Sub-Meter Reading', 'सुरुवाती सब-मिटर रिडिङ')}
                 </label>
                 <input
                   type="number"
@@ -3838,13 +4241,13 @@ export default function AdminCommandCenter() {
                   onClick={() => setAssignModalRoom(null)}
                   className="flex-1 py-2 border rounded-xl text-xs font-bold"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold"
                 >
-                  Confirm
+                  {t('Confirm', 'पक्का गर्नुहोस्')}
                 </button>
               </div>
             </form>
@@ -3858,7 +4261,9 @@ export default function AdminCommandCenter() {
       {showCashModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-lg font-bold mb-4">Record Cash Payment</h3>
+            <h3 className="text-lg font-bold mb-4">
+              {t('Record Cash Payment', 'नगद भुक्तानी रेकर्ड गर्नुहोस्')}
+            </h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -3879,11 +4284,12 @@ export default function AdminCommandCenter() {
                 onChange={(e) => setCashBillId(e.target.value)}
                 className="w-full px-3 py-2 border rounded-xl text-xs font-semibold"
               >
-                <option value="">Choose Bill</option>
+                <option value="">{t('Choose Bill', 'बिल छान्नुहोस्')}</option>
                 {selectableBillsForDropdown.map((b) => (
                   <option key={b.id} value={b.id}>
-                    Room {b.room_number} — {b.tenant_name} (
-                    {formatDualMonthLabel(b.billing_month_label)}) • Rs. {b.total_payable}
+                    {t('Room', 'कोठा')} {b.room_number} — {b.tenant_name} (
+                    {formatDualMonthLabel(b.billing_month_label)}) • {t('Rs.', 'रु.')}{' '}
+                    {b.total_payable}
                   </option>
                 ))}
               </select>
@@ -3893,7 +4299,7 @@ export default function AdminCommandCenter() {
                 required
                 value={cashMeterReading}
                 onChange={(e) => setCashMeterReading(e.target.value)}
-                placeholder="New Meter Reading"
+                placeholder={t('New Meter Reading', 'नयाँ मिटर रिडिङ')}
                 className="w-full px-3 py-2 border rounded-xl text-xs"
               />
               <div className="flex gap-2">
@@ -3902,13 +4308,13 @@ export default function AdminCommandCenter() {
                   onClick={() => setShowCashModal(false)}
                   className="flex-1 py-2 border rounded-xl text-xs font-bold"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold"
                 >
-                  Confirm
+                  {t('Confirm', 'पक्का गर्नुहोस्')}
                 </button>
               </div>
             </form>
@@ -3917,7 +4323,7 @@ export default function AdminCommandCenter() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 8: UPGRADED APPLY FINE MODAL (TENANT + BILL + EVIDENCE + UNDO)      */}
+      {/* MODAL 8: UPGRADED APPLY FINE MODAL                                        */}
       {/* ========================================================================= */}
       {showFineModal && (
         <div
@@ -3928,7 +4334,6 @@ export default function AdminCommandCenter() {
             onClick={(e) => e.stopPropagation()}
             className="relative w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 my-auto max-h-[92vh] overflow-y-auto"
           >
-            {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -3936,10 +4341,16 @@ export default function AdminCommandCenter() {
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">
-                    Apply Property Damage / Rule Violation Fine
+                    {t(
+                      'Apply Property Damage / Rule Violation Fine',
+                      'सम्पत्ति क्षति / नियम उल्लंघन जरिवाना लगाउनुहोस्'
+                    )}
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Select a tenant or bill, attach evidence photos, and send an automated email notice
+                    {t(
+                      'Select a tenant or bill, attach evidence photos, and send an automated email notice',
+                      'भाडावाल वा बिल छान्नुहोस्, प्रमाण फोटो राख्नुहोस् र इमेल सूचना पठाउनुहोस्'
+                    )}
                   </p>
                 </div>
               </div>
@@ -3960,35 +4371,43 @@ export default function AdminCommandCenter() {
             )}
 
             <form onSubmit={handleApplyFineSubmit} className="space-y-4">
-              {/* Step 1: Select Tenant / User */}
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
-                  1. Select Tenant / Registered User *
+                  {t('1. Select Tenant / Registered User *', '१. भाडावाल छान्नुहोस् *')}
                 </label>
                 <select
                   value={fineTenantId}
                   onChange={(e) => handleSelectFineTenant(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none transition"
                 >
-                  <option value="">-- Choose Tenant / User ({tenantUsers.length} Registered) --</option>
+                  <option value="">
+                    {t(
+                      `-- Choose Tenant / User (${tenantUsers.length} Registered) --`,
+                      `-- भाडावाल छान्नुहोस् (${tenantUsers.length} दर्ता) --`
+                    )}
+                  </option>
                   {tenantUsers.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.full_name} ({u.email}){' '}
-                      {u.room_number ? `• Room ${u.room_number}` : '• No Room Assigned'}
+                      {u.room_number
+                        ? `• ${t('Room', 'कोठा')} ${u.room_number}`
+                        : `• ${t('No Room Assigned', 'कोठा तोकिएको छैन')}`}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Step 2: Select Target Bill (Auto-populated or auto-created) */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
-                    2. Choose Bill (AD / BS)
+                    {t('2. Choose Bill (AD / BS)', '२. बिल छान्नुहोस् (AD / BS)')}
                   </label>
                   {fineTenantId && filteredBillsForFine.length === 0 && (
                     <span className="text-[10px] font-extrabold text-emerald-600">
-                      ✨ New invoice will be auto-created for this tenant
+                      {t(
+                        '✨ New invoice will be auto-created',
+                        '✨ नयाँ बिल स्वतः तयार हुनेछ'
+                      )}
                     </span>
                   )}
                 </div>
@@ -3999,20 +4418,25 @@ export default function AdminCommandCenter() {
                 >
                   <option value="">
                     {fineTenantId && filteredBillsForFine.length === 0
-                      ? 'Auto-Create Fresh Invoice for Selected Tenant'
-                      : '-- Choose Existing Bill (or leave blank to auto-select) --'}
+                      ? t(
+                          'Auto-Create Fresh Invoice for Selected Tenant',
+                          'छानिएको भाडावालका लागि नयाँ बिल स्वतः बनाउनुहोस्'
+                        )
+                      : t(
+                          '-- Choose Existing Bill (or leave blank to auto-select) --',
+                          '-- भइरहेको बिल छान्नुहोस् (वा स्वतः छान्न खाली छोड्नुहोस्) --'
+                        )}
                   </option>
                   {filteredBillsForFine.map((b) => (
                     <option key={b.id} value={b.id}>
-                      Room {b.room_number} — {b.tenant_name || 'Tenant'} (
-                      {formatDualMonthLabel(b.billing_month_label)}) • Total: Rs.{' '}
-                      {Number(b.total_payable || 0).toLocaleString()} [{b.status_display}]
+                      {t('Room', 'कोठा')} {b.room_number} — {b.tenant_name || 'Tenant'} (
+                      {formatDualMonthLabel(b.billing_month_label)}) • {t('Rs.', 'रु.')}{' '}
+                      {Number(b.total_payable || 0).toLocaleString()} [{td(b.status_display)}]
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Selected Tenant / Bill Live Preview Banner + Quick Undo Fine if already fined */}
               {(selectedFineTenantObj || selectedFineBillObj) && (
                 <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <div>
@@ -4020,7 +4444,7 @@ export default function AdminCommandCenter() {
                       {selectedFineTenantObj?.full_name || selectedFineBillObj?.tenant_name}
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      Email: {selectedFineTenantObj?.email || 'Will notify registered email'}
+                      {selectedFineTenantObj?.email || ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -4030,27 +4454,18 @@ export default function AdminCommandCenter() {
                         onClick={() => handleUndoFine(selectedFineBillObj.id)}
                         className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] shadow-xs transition"
                       >
-                        Undo Current Fine (Rs. {selectedFineBillObj.damage_fine_amount})
+                        {t('Undo Current Fine', 'हालको जरिवाना हटाउनुहोस्')} ({t('Rs.', 'रु.')}{' '}
+                        {selectedFineBillObj.damage_fine_amount})
                       </button>
                     )}
-                    <span className="px-2.5 py-1 rounded-lg bg-white text-indigo-700 font-extrabold text-[11px] border border-indigo-200">
-                      {selectedFineBillObj
-                        ? `Room ${selectedFineBillObj.room_number} • Rs. ${Number(
-                            selectedFineBillObj.total_payable
-                          ).toLocaleString()}`
-                        : selectedFineTenantObj?.room_number
-                        ? `Room ${selectedFineTenantObj.room_number}`
-                        : 'Direct Fine Invoice'}
-                    </span>
                   </div>
                 </div>
               )}
 
-              {/* Step 3: Fine Mode & Amount */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
-                    3. Fine Amount (NPR) *
+                    {t('3. Fine Amount (NPR) *', '३. जरिवाना रकम (रु.) *')}
                   </label>
                   <input
                     type="number"
@@ -4059,14 +4474,14 @@ export default function AdminCommandCenter() {
                     required
                     value={fineAmount}
                     onChange={(e) => setFineAmount(e.target.value)}
-                    placeholder="e.g. 600"
+                    placeholder="e.g. 500"
                     className="w-full px-3.5 py-2.5 text-sm font-black text-rose-600 rounded-xl border border-slate-200 outline-none focus:border-rose-500"
                   />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
-                    Calculation Mode
+                    {t('Calculation Mode', 'गणना मोड')}
                   </label>
                   <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
                     <button
@@ -4078,7 +4493,7 @@ export default function AdminCommandCenter() {
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      Set Exact Fine
+                      {t('Set Exact Fine', 'निश्चित रकम राख्ने')}
                     </button>
                     <button
                       type="button"
@@ -4089,51 +4504,61 @@ export default function AdminCommandCenter() {
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      + Add to Fine
+                      {t('+ Add to Fine', '+ पुरानोमा थप्ने')}
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* Step 4: Violation / Damage Reason + Quick Presets */}
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
-                  4. Violation / Damage Reason (Included in Email) *
+                  {t(
+                    '4. Violation / Damage Reason (Included in Email) *',
+                    '४. जरिवानाको कारण (इमेलमा पठाइनेछ) *'
+                  )}
                 </label>
                 <textarea
                   rows={2}
                   required
                   value={fineReason}
                   onChange={(e) => setFineReason(e.target.value)}
-                  placeholder="Describe the damage, dirt, broken item, or rule violation..."
+                  placeholder={t(
+                    'Describe the damage, dirt, broken item, or rule violation...',
+                    'क्षति, फोहोर वा नियम उल्लंघनको कारण लेख्नुहोस्...'
+                  )}
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-rose-500 resize-none"
                 />
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {FINE_REASON_PRESETS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setFineReason(preset)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-[10px] font-bold transition"
-                    >
-                      + {preset}
-                    </button>
-                  ))}
+                  {FINE_REASON_PRESETS.map((preset, idx) => {
+                    const label = isNepali ? preset.ne : preset.en;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setFineReason(label)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-[10px] font-bold transition"
+                      >
+                        + {label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Step 5: Evidence Photo Upload (Dirt, Broken Items, Violation Proof) */}
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
-                  5. Attach Evidence Photos (Optional • Up to 5 MB each)
+                  {t(
+                    '5. Attach Evidence Photos (Optional • Up to 5 MB each)',
+                    '५. प्रमाण फोटोहरू जोड्नुहोस् (ऐच्छिक • ५ MB सम्म)'
+                  )}
                 </label>
                 <label className="flex flex-col items-center justify-center p-4 rounded-2xl border-2 border-dashed border-rose-200 hover:border-rose-500 bg-rose-50/30 cursor-pointer transition text-center">
                   <ImagePlus className="w-6 h-6 text-rose-500 mb-1" />
                   <span className="text-xs font-extrabold text-slate-800">
-                    Upload Photos of Damage, Dirt, or Broken Items
-                  </span>
-                  <span className="text-[10px] text-slate-500 mt-0.5">
-                    Supports JPG, PNG, WEBP, HEIC • Stored with bill & sent in tenant email
+                    {t(
+                      'Upload Photos of Damage, Dirt, or Broken Items',
+                      'क्षति, फोहोर वा फुटेका सामानको फोटो अपलोड गर्नुहोस्'
+                    )}
                   </span>
                   <input
                     type="file"
@@ -4163,23 +4588,19 @@ export default function AdminCommandCenter() {
                         >
                           <X className="w-3 h-3" />
                         </button>
-                        <span className="absolute bottom-0.5 left-1 px-1 rounded bg-black/60 text-white text-[9px] font-bold">
-                          {item.sizeMB}M
-                        </span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Submit & Cancel Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowFineModal(false)}
                   className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
@@ -4189,12 +4610,12 @@ export default function AdminCommandCenter() {
                   {applyFineMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Applying & Emailing...
+                      {t('Applying & Emailing...', 'लागू हुँदैछ...')}
                     </>
                   ) : (
                     <>
                       <AlertTriangle className="w-4 h-4" />
-                      Apply Fine & Notify Tenant
+                      {t('Apply Fine & Notify Tenant', 'जरिवाना लगाई जानकारी पठाउनुहोस्')}
                     </>
                   )}
                 </button>
@@ -4223,10 +4644,10 @@ export default function AdminCommandCenter() {
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
-                    Permanent Removal
+                    {t('Permanent Removal', 'स्थायी रूपमा हटाउने')}
                   </span>
                   <h3 className="text-base font-black text-slate-900">
-                    Delete Tenant & All Data?
+                    {t('Delete Tenant & All Data?', 'भाडावाल र सम्पूर्ण डाटा मेटाउने हो?')}
                   </h3>
                 </div>
               </div>
@@ -4247,20 +4668,46 @@ export default function AdminCommandCenter() {
               )}
               <p className="pt-1 font-bold text-indigo-600">
                 {userToDelete.room_number
-                  ? `Currently Assigned: Room ${userToDelete.room_number} (Will be marked Vacant)`
-                  : 'No Active Room Assigned'}
+                  ? t(
+                      `Currently Assigned: Room ${userToDelete.room_number} (Will be marked Vacant)`,
+                      `हाल तोकिएको: कोठा ${userToDelete.room_number} (स्वतः खाली हुनेछ)`
+                    )
+                  : t('No Active Room Assigned', 'कुनै सक्रिय कोठा तोकिएको छैन')}
               </p>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-[11px] text-rose-900 space-y-1">
               <p className="font-extrabold text-rose-700">
-                This will permanently erase from the database:
+                {t(
+                  'This will permanently erase from the database:',
+                  'यसले डाटाबेसबाट स्थायी रूपमा मेटाउनेछ:'
+                )}
               </p>
               <ul className="list-disc pl-4 space-y-0.5 text-rose-800">
-                <li>Tenant login account, profile avatar & cover banner</li>
-                <li>KYC citizenship photos & digital lease records</li>
-                <li>All monthly bills, receipts, reservations & move-out requests</li>
-                <li>All chat messages & maintenance tickets</li>
+                <li>
+                  {t(
+                    'Tenant login account, profile avatar & cover banner',
+                    'भाडावालको लगइन खाता र प्रोफाइल/कभर फोटो'
+                  )}
+                </li>
+                <li>
+                  {t(
+                    'KYC citizenship photos & digital lease records',
+                    'केवाईसी नागरिकता फोटो र भाडा सम्झौता'
+                  )}
+                </li>
+                <li>
+                  {t(
+                    'All monthly bills, receipts, reservations & move-out requests',
+                    'सबै मासिक बिल, रसिद, बुकिङ र कोठा छोड्ने अनुरोध'
+                  )}
+                </li>
+                <li>
+                  {t(
+                    'All chat messages & maintenance tickets',
+                    'सबै च्याट सन्देश र मर्मत टिकटहरू'
+                  )}
+                </li>
               </ul>
             </div>
 
@@ -4270,7 +4717,7 @@ export default function AdminCommandCenter() {
                 onClick={() => setUserToDelete(null)}
                 className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition"
               >
-                Cancel
+                {t('Cancel', 'रद्द गर्नुहोस्')}
               </button>
               <button
                 type="button"
@@ -4286,12 +4733,12 @@ export default function AdminCommandCenter() {
                 {evictMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Deleting...
+                    {t('Deleting...', 'मेटिँदैछ...')}
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
-                    Yes, Delete Tenant
+                    {t('Yes, Delete Tenant', 'हो, भाडावाल मेटाउनुहोस्')}
                   </>
                 )}
               </button>
@@ -4319,10 +4766,13 @@ export default function AdminCommandCenter() {
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 block">
-                    Sub-Meter Calibration
+                    {t('Sub-Meter Calibration', 'सब-मिटर रिडिङ समायोजन')}
                   </span>
                   <h3 className="text-base font-black text-slate-900">
-                    Edit Room {editMeterRoom.room_number} Sub-Meter
+                    {t(
+                      `Edit Room ${editMeterRoom.room_number} Sub-Meter`,
+                      `कोठा ${editMeterRoom.room_number} को सब-मिटर सच्याउनुहोस्`
+                    )}
                   </h3>
                 </div>
               </div>
@@ -4337,17 +4787,23 @@ export default function AdminCommandCenter() {
 
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-semibold">Room Status:</span>
+                <span className="text-slate-500 font-semibold">
+                  {t('Room Status:', 'कोठाको अवस्था:')}
+                </span>
                 <span className="font-extrabold text-slate-900">
                   {editMeterRoom.is_occupied
-                    ? `Occupied (${editMeterRoom.active_tenancy?.full_name || 'Active Tenant'})`
-                    : 'Vacant / Available'}
+                    ? `${t('Occupied', 'बसोबास छ')} (${
+                        editMeterRoom.active_tenancy?.full_name || t('Active Tenant', 'सक्रिय भाडावाल')
+                      })`
+                    : t('Vacant / Available', 'खाली / उपलब्ध')}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-semibold">Previous Saved Reading:</span>
+                <span className="text-slate-500 font-semibold">
+                  {t('Previous Saved Reading:', 'अघिल्लो सुरक्षित रिडिङ:')}
+                </span>
                 <strong className="text-indigo-600">
-                  {editMeterRoom.current_meter_reading ?? 0} units
+                  {editMeterRoom.current_meter_reading ?? 0} {t('units', 'युनिट')}
                 </strong>
               </div>
             </div>
@@ -4364,7 +4820,10 @@ export default function AdminCommandCenter() {
             >
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
-                  New Initial / Current Sub-Meter Reading (kWh Units) *
+                  {t(
+                    'New Initial / Current Sub-Meter Reading (kWh Units) *',
+                    'नयाँ सुरुवाती / हालको सब-मिटर रिडिङ (युनिट) *'
+                  )}
                 </label>
                 <input
                   type="number"
@@ -4377,9 +4836,10 @@ export default function AdminCommandCenter() {
                   className="w-full px-4 py-3 text-lg font-black text-slate-900 rounded-xl border-2 border-indigo-200 focus:border-indigo-600 outline-none transition"
                 />
                 <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                  Saving this updates Room {editMeterRoom.room_number}&apos;s sub-meter baseline and
-                  automatically syncs any open/unpaid bill&apos;s previous reading on the tenant
-                  dashboard.
+                  {t(
+                    `Saving this updates Room ${editMeterRoom.room_number}'s sub-meter baseline and automatically syncs any open/unpaid bill's previous reading on the tenant dashboard.`,
+                    `यो सुरक्षित गर्दा कोठा ${editMeterRoom.room_number} को सब-मिटर रिडिङ अपडेट हुन्छ र भाडावालको खुला बिलमा अघिल्लो रिडिङ स्वतः सिंक हुन्छ।`
+                  )}
                 </p>
               </div>
 
@@ -4389,7 +4849,7 @@ export default function AdminCommandCenter() {
                   onClick={() => setEditMeterRoom(null)}
                   className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
@@ -4399,12 +4859,12 @@ export default function AdminCommandCenter() {
                   {updateRoomMeterMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Saving...
+                      {t('Saving...', 'सुरक्षित हुँदैछ...')}
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      Save Meter Reading
+                      {t('Save Meter Reading', 'मिटर रिडिङ सुरक्षित गर्नुहोस्')}
                     </>
                   )}
                 </button>
