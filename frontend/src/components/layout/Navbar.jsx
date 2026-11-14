@@ -78,7 +78,6 @@ export default function Navbar() {
     setAvatarLoadFailed(false);
   }, [user?.profile_picture_path, user?.profile_picture_url, user?.profile_picture]);
 
-  // Close mobile sidebar drawer automatically when route changes
   useEffect(() => {
     setMobileSidebarOpen(false);
   }, [location.pathname]);
@@ -193,9 +192,9 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 h-16 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-2.5 sm:px-4 lg:px-8 flex items-center justify-between gap-1.5 sm:gap-3">
-        {/* Left: Mobile Sidebar Hamburger + Brand Logo */}
-        <div className="flex items-center gap-2 min-w-0">
+      <header className="sticky top-0 z-40 h-16 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-5 lg:px-8 flex items-center justify-between gap-2">
+        {/* Left: Mobile Sidebar Hamburger + Clean Untruncated Brand Logo */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setMobileSidebarOpen(true)}
@@ -205,15 +204,15 @@ export default function Navbar() {
             <Menu className="w-5 h-5" />
           </button>
 
-          <Link to="/" className="flex items-center gap-2 min-w-0">
+          <Link to="/" className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 shrink-0">
               <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div className="min-w-0">
-              <span className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 block leading-none truncate">
+            <div>
+              <span className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 block leading-none whitespace-nowrap">
                 {t('SmartRent', 'स्मार्टरेन्ट')}
               </span>
-              <span className="hidden sm:block text-[10px] font-medium text-slate-500 tracking-wide truncate mt-0.5">
+              <span className="hidden sm:block text-[10px] font-medium text-slate-500 tracking-wide whitespace-nowrap mt-0.5">
                 {t(
                   'Smart rental services by JASMIR',
                   'जश्मिरद्वारा संचालित स्मार्ट कोठा भाडा सेवा'
@@ -231,7 +230,7 @@ export default function Navbar() {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
                   active
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
@@ -245,7 +244,6 @@ export default function Navbar() {
 
         {/* Right: Compact EN | ने Toggle + Notifications + Profile / Auth Buttons */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-          {/* COMPACT ENGLISH / NEPALI (EN | ने) LANGUAGE TOGGLE SWITCH */}
           <div
             className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/90 shadow-2xs shrink-0"
             title="Switch Language (English / नेपाली)"
@@ -277,7 +275,6 @@ export default function Navbar() {
 
           {user ? (
             <div className="flex items-center gap-1.5 sm:gap-2.5 relative" ref={dropdownRef}>
-              {/* Notification Bell */}
               <button
                 type="button"
                 onClick={() => setShowNotifications((prev) => !prev)}
@@ -294,7 +291,6 @@ export default function Navbar() {
                 )}
               </button>
 
-              {/* Notification Dropdown */}
               {showNotifications && (
                 <div className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-12 w-[calc(100vw-1rem)] max-w-sm sm:w-96 rounded-3xl bg-white shadow-2xl border border-slate-200 p-4 z-50">
                   <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
@@ -442,7 +438,7 @@ export default function Navbar() {
               {/* Profile Avatar Pill */}
               <Link
                 to="/profile"
-                className="flex items-center gap-2 p-1 sm:pl-1 sm:pr-2.5 sm:py-1 rounded-full hover:bg-slate-100 transition border border-slate-200/80 shrink-0"
+                className="flex items-center gap-2 p-0.5 sm:pl-1 sm:pr-2.5 sm:py-1 rounded-full hover:bg-slate-100 transition border border-slate-200/80 shrink-0"
                 title={t('Profile & Security', 'प्रोफाइल र सुरक्षा')}
               >
                 {navAvatarUrl ? (
@@ -450,10 +446,10 @@ export default function Navbar() {
                     src={navAvatarUrl}
                     alt={user.full_name}
                     onError={() => setAvatarLoadFailed(true)}
-                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-indigo-200 bg-slate-100 shrink-0"
+                    className="w-8 h-8 rounded-full object-cover border border-indigo-200 bg-slate-100 shrink-0"
                   />
                 ) : (
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
                     {user.full_name?.charAt(0)?.toUpperCase() || 'U'}
                   </div>
                 )}
@@ -479,17 +475,17 @@ export default function Navbar() {
                 </div>
               </Link>
 
-              {/* Sign Out Button */}
+              {/* Sign Out Button (Hidden on narrow mobile since it's in the ☰ Drawer; visible on sm+) */}
               <button
                 onClick={logout}
                 title={t('Sign Out', 'लगआउट गर्नुहोस्')}
-                className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition shrink-0"
+                className="hidden sm:inline-flex p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition shrink-0"
               >
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 onClick={() => openAuthModal('LOGIN')}
                 className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold text-slate-700 hover:bg-slate-100 border border-slate-200 transition whitespace-nowrap"
@@ -509,9 +505,7 @@ export default function Navbar() {
         </div>
       </header>
 
-      {/* ========================================================================= */}
-      {/* MOBILE & TABLET SLIDE-OUT LEFT SIDEBAR DRAWER                             */}
-      {/* ========================================================================= */}
+      {/* MOBILE & TABLET SLIDE-OUT LEFT SIDEBAR DRAWER */}
       {mobileSidebarOpen && (
         <div
           onClick={() => setMobileSidebarOpen(false)}
@@ -522,7 +516,6 @@ export default function Navbar() {
             className="w-72 max-w-[82vw] bg-white h-full shadow-2xl border-r border-slate-200 flex flex-col justify-between p-5 overflow-y-auto"
           >
             <div className="space-y-6">
-              {/* Drawer Brand Header */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
@@ -546,7 +539,6 @@ export default function Navbar() {
                 </button>
               </div>
 
-              {/* Logged-in User Card OR Auth Buttons */}
               {user ? (
                 <div
                   onClick={() => {
@@ -608,7 +600,6 @@ export default function Navbar() {
                 </div>
               )}
 
-              {/* Navigation Links */}
               <div className="space-y-1">
                 <p className="px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
                   {t('Navigation Menu', 'नेभिगेसन मेनु')}
@@ -648,7 +639,6 @@ export default function Navbar() {
               </div>
             </div>
 
-            {/* Bottom Language & Logout Controls */}
             <div className="pt-4 border-t border-slate-100 space-y-3">
               <div className="flex items-center justify-between bg-slate-100 p-1 rounded-xl">
                 <button

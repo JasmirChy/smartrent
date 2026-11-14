@@ -34,6 +34,7 @@ import {
   LogOut,
   HeartHandshake,
   FileCheck2,
+  Home,
 } from 'lucide-react';
 import axiosClient, { createReservation, acceptDigitalLease } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
@@ -795,7 +796,7 @@ export default function PublicLanding() {
     ),
     subtitle: t(
       'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
-      'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी महसुल (रु. १००/कोठा)'
+      'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी (रु. १००/कोठा)'
     ),
     badge_text: t('Verified Direct-Landlord Listing', 'घरधनीद्वारा प्रमाणित आवास'),
     resolved_url: DEFAULT_HERO_IMAGE,
@@ -825,167 +826,149 @@ export default function PublicLanding() {
 
   return (
     <div className="w-full">
-      {/* Top Live Telemetry Strip */}
-      <div className="bg-indigo-50/80 border-b border-indigo-100 px-4 py-2 text-center">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-slate-700">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-            {t('LIVE TELEMETRY', 'लाइभ सब-मिटर प्रणाली')}
-          </span>
-          <span>
-            {t(
-              'Automated Digital Sub-Metering Active • Transparent Utility Billing (Electricity Rs. 15/unit • Water Rs. 100/room)',
-              'स्वचालित डिजिटल सब-मिटरिङ सक्रिय • पारदर्शी बिलिङ प्रणाली (बिजुली रु. १५/युनिट • पानी रु. १००/कोठा)'
-            )}
-          </span>
-        </div>
-      </div>
-
-      {/* PUBLIC HOUSE NOTICES / ANNOUNCEMENTS BANNER */}
+      {/* COMPACT HOUSE NOTICES BANNER (ONLY SHOWS WHEN ACTIVE NOTICES EXIST) */}
       {notices.length > 0 && (
-        <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white px-4 py-3 shadow-md border-b border-indigo-700/50">
-          <div className="max-w-7xl mx-auto space-y-2">
-            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-indigo-300">
-              <BellRing className="w-3.5 h-3.5 animate-pulse text-amber-400" />
-              {t('Official House Announcements', 'आधिकारिक घर सूचना तथा जानकारी')}
+        <div className="bg-slate-900 text-white px-3 sm:px-6 py-2.5 border-b border-slate-800">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
+            <div className="flex items-center gap-2 min-w-0 text-xs">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-200 font-extrabold text-[10px] uppercase shrink-0">
+                <BellRing className="w-3 h-3 text-amber-400 animate-pulse" />
+                {td(notices[0].category_display || notices[0].category)}
+              </span>
+              <span className="font-bold text-white truncate">{notices[0].title}:</span>
+              <span className="text-slate-300 truncate">{notices[0].content}</span>
             </div>
-            {notices.map((notice) => (
-              <div
-                key={notice.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-white/10 p-2.5 rounded-xl backdrop-blur-xs"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                      notice.category === 'URGENT'
-                        ? 'bg-rose-600 text-white animate-pulse'
-                        : 'bg-indigo-500 text-white'
-                    }`}
-                  >
-                    {td(notice.category_display || notice.category)}
-                  </span>
-                  <span className="font-bold">{notice.title}:</span>
-                  <span className="text-indigo-100 line-clamp-1">{notice.content}</span>
-                </div>
-                <span className="text-[10px] text-indigo-300 whitespace-nowrap">
-                  {notice.created_at
-                    ? formatDualDate(new Date(notice.created_at).toISOString().split('T')[0])
-                    : ''}
-                </span>
-              </div>
-            ))}
+            <span className="text-[10px] text-slate-400 shrink-0 hidden sm:inline">
+              {notices[0].created_at
+                ? formatDualDate(new Date(notices[0].created_at).toISOString().split('T')[0])
+                : ''}
+            </span>
           </div>
         </div>
       )}
 
-      {/* HERO SECTION WITH MULTI-IMAGE SLIDESHOW CAROUSEL */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-14 lg:py-16">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
-          {/* Left Column: Headline & CTA */}
-          <div className="lg:col-span-6 space-y-6 lg:pt-4">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-200/60 text-indigo-700 text-xs font-semibold">
-              <ShieldCheck className="w-4 h-4 text-indigo-600" />
-              {t('Verified Direct-Landlord Rental Portal', 'घरधनीद्वारा संचालित आधिकारिक भाडा पोर्टल')}
+      {/* ========================================================================= */}
+      {/* CLEAN, MINIMAL & VISUAL-FIRST HERO SECTION                                */}
+      {/* ========================================================================= */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-10 lg:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center">
+          {/* Left Column: Crisp Headline, Compact Price Chips & Side-by-Side CTAs */}
+          <div className="lg:col-span-6 space-y-4 sm:space-y-5">
+            {/* Single Sleek Status Pill */}
+            <div className="inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-emerald-700 font-extrabold">
+                {t(
+                  `${stats.available_rooms} of ${stats.total_rooms} Rooms Available`,
+                  `${stats.total_rooms} मध्ये ${stats.available_rooms} कोठा खाली`
+                )}
+              </span>
+              <span className="text-slate-300">•</span>
+              <span className="text-indigo-600 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                {t('Direct Landlord Portal', 'आधिकारिक भाडा पोर्टल')}
+              </span>
             </div>
 
-            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.12]">
-              {t('Next-Gen Living.', 'आधुनिक र व्यवस्थित बसोबास।')}{' '}
+            {/* Clean, Balanced Heading */}
+            <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-black tracking-tight text-slate-900 leading-[1.18]">
+              {t('Smart, Peaceful Living.', 'आधुनिक र शान्त बसोबास।')}
               <span className="text-indigo-600 block mt-1">
-                {t('Sub-Metered Precision.', 'पारदर्शी डिजिटल सब-मिटरिङ।')}
+                {t('Digital Sub-Meter Precision.', 'पारदर्शी डिजिटल सब-मिटरिङ।')}
               </span>
             </h1>
 
-            <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl">
+            {/* Concise 2-Line Subtitle */}
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-lg">
               {t(
-                'Zero utility squabbles, transparent digital electricity and water calculation, and instant online/cash rent receipts. Designed for disciplined students, professionals, and peaceful living.',
-                'बिजुली र पानीको हिसाबमा कुनै विवाद नहुने, पारदर्शी डिजिटल सब-मिटर गणना र तुरुन्तै अनलाइन वा नगद भाडा रसिद प्राप्त हुने। अनुशासित विद्यार्थी, कर्मचारी र शान्त बसोबासका लागि उपयुक्त।'
+                'Transparent sub-metered electricity, 24/7 water supply, and instant digital rent receipts for students and professionals.',
+                'प्रत्येक कोठामा छुट्टै सब-मिटर बिजुली, २४ सै घण्टा पानी र तुरुन्तै अनलाइन भाडा रसिद प्राप्त हुने शान्त र सुरक्षित आवास।'
               )}
             </p>
 
-            <div className="rounded-2xl bg-white p-4 border border-slate-200/80 shadow-sm flex items-center justify-between max-w-lg">
-              <div className="flex items-center gap-3">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
-                <div>
-                  <p className="text-xs font-bold text-slate-900">
-                    {t('Now Leasing — Live Room Status', 'भाडाका लागि उपलब्ध — लाइभ कोठा विवरण')}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {isNepali
-                      ? `कुल ${stats.total_rooms} कोठामध्ये ${stats.available_rooms} कोठा खाली र तयार छन्`
-                      : `${stats.available_rooms} of ${stats.total_rooms} Premium Rooms Vacant & Ready`}
-                  </p>
-                </div>
+            {/* 3 Compact Visual Rate Cards */}
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 max-w-lg pt-1">
+              <div className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                  {t('Small Unit', 'सानो कोठा')}
+                </span>
+                <p className="text-sm sm:text-base font-black text-slate-900 mt-0.5">
+                  {t('Rs. 2,500', 'रु. २,५००')}
+                </p>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {t('Rooms A3, B4', 'कोठा A3, B4')}
+                </span>
               </div>
-              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-700">
-                {t('GROUND & FIRST FL', 'भुइँ र पहिलो तल्ला')}
-              </span>
+
+              <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100 shadow-2xs">
+                <span className="text-[10px] font-bold uppercase text-indigo-600 block">
+                  {t('Standard', 'स्ट्यान्डर्ड')}
+                </span>
+                <p className="text-sm sm:text-base font-black text-indigo-700 mt-0.5">
+                  {t('Rs. 3,800', 'रु. ३,८००')}
+                </p>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {t('Spacious Suite', 'ठूलो कोठा')}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                  {t('Sub-Meter', 'बिजुली / पानी')}
+                </span>
+                <p className="text-sm sm:text-base font-black text-slate-900 mt-0.5">
+                  {t('Rs. 15/u', 'रु. १५/युनिट')}
+                </p>
+                <span className="text-[10px] text-emerald-600 font-bold">
+                  {t('+ Rs. 100 Water', '+ रु. १०० पानी')}
+                </span>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            {/* Side-by-Side Action Buttons */}
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-3 pt-1 max-w-lg">
               <a
                 href="#rooms-inventory"
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-lg shadow-indigo-600/25 transition"
+                className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-indigo-600/20 transition"
               >
-                {t('Check Room Availability', 'उपलब्ध कोठाहरू हेर्नुहोस्')}
-                <ArrowRight className="w-4 h-4" />
+                <span>{t('Explore Rooms', 'कोठा छान्नुहोस्')}</span>
+                <ArrowRight className="w-4 h-4 shrink-0" />
               </a>
 
               {user ? (
                 <button
+                  type="button"
                   onClick={() => navigate(isAdmin ? '/admin-deck' : '/tenant')}
-                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-sm font-bold shadow-sm transition"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 text-xs sm:text-sm font-extrabold shadow-2xs transition"
                 >
-                  {isAdmin
-                    ? t('Open Admin Command Center', 'एडमिन कमाण्ड सेन्टर खोल्नुहोस्')
-                    : t('Open Tenant Dashboard', 'भाडावाल ड्यासबोर्ड खोल्नुहोस्')}
+                  <Home className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="truncate">
+                    {isAdmin
+                      ? t('Admin Deck', 'एडमिन प्यानल')
+                      : t('My Dashboard', 'मेरो ड्यासबोर्ड')}
+                  </span>
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={() => openAuthModal('LOGIN')}
-                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-sm font-bold shadow-sm transition"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 text-xs sm:text-sm font-extrabold shadow-2xs transition"
                 >
-                  {t('Tenant Portal Login', 'भाडावाल पोर्टल लगइन')}
+                  <span>{t('Tenant Login', 'भाडावाल लगइन')}</span>
                 </button>
               )}
             </div>
-
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/80 max-w-lg">
-              <div>
-                <p className="text-lg sm:text-xl font-extrabold text-slate-900">
-                  {t('Rs. 2,500', 'रु. २,५००')}
-                </p>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  {t('Small Rooms (A3, B4)', 'साना कोठाहरू (A3, B4)')}
-                </p>
-              </div>
-              <div>
-                <p className="text-lg sm:text-xl font-extrabold text-slate-900">
-                  {t('Rs. 3,800', 'रु. ३,८००')}
-                </p>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  {t('Standard Rooms', 'स्ट्यान्डर्ड कोठाहरू')}
-                </p>
-              </div>
-              <div>
-                <p className="text-lg sm:text-xl font-extrabold text-slate-900">
-                  {t('Rs. 15/kWh', 'रु. १५/युनिट')}
-                </p>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  {t('+ Rs. 100 Water/mo', '+ रु. १०० पानी/महिना')}
-                </p>
-              </div>
-            </div>
           </div>
 
-          {/* Right Column: Interactive Multi-Image Slideshow Card */}
+          {/* Right Column: Sleek 16:10 Interactive Hero Slideshow Card */}
           <div className="lg:col-span-6">
             <div
               onMouseEnter={() => setIsHoveringHero(true)}
               onMouseLeave={() => setIsHoveringHero(false)}
-              className="relative rounded-3xl bg-white p-2.5 sm:p-3.5 shadow-2xl shadow-indigo-950/10 border border-slate-200/80"
+              className="relative rounded-3xl bg-white p-2 sm:p-3 shadow-xl shadow-indigo-950/5 border border-slate-200/80"
             >
               {/* Main Slideshow Viewport */}
-              <div className="relative w-full aspect-[4/5] sm:aspect-[16/10] rounded-2xl overflow-hidden bg-slate-900 group">
+              <div className="relative w-full aspect-[16/10] rounded-2xl overflow-hidden bg-slate-900 group">
                 <img
                   key={currentBanner.id || activeSlide}
                   src={currentBanner.resolved_url}
@@ -993,33 +976,35 @@ export default function PublicLanding() {
                   onClick={() => setShowLightbox(true)}
                   className="w-full h-full object-cover transition-all duration-700 cursor-pointer group-hover:scale-[1.02]"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/15 to-slate-950/30 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/10 to-slate-950/25 pointer-events-none" />
 
                 {/* Top Left Badge + Slide Counter */}
-                <div className="absolute top-3.5 left-3.5 flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-xs font-bold shadow-md">
+                <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-[11px] font-extrabold shadow-sm">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    {currentBanner.badge_text || t('Verified House Inspection', 'प्रमाणित आवास निरीक्षण')}
+                    <span className="truncate max-w-[160px] sm:max-w-none">
+                      {currentBanner.badge_text || t('Verified Listing', 'प्रमाणित आवास')}
+                    </span>
                   </div>
 
                   {banners.length > 1 && (
-                    <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white text-[11px] font-extrabold border border-white/15">
+                    <span className="px-2 py-0.5 rounded-full bg-slate-900/75 backdrop-blur-md text-white text-[10px] font-extrabold border border-white/15">
                       {activeSlide + 1} / {banners.length}
                     </span>
                   )}
                 </div>
 
                 {/* Top Right Controls */}
-                <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
+                <div className="absolute top-3 right-3 flex items-center gap-1.5">
                   {banners.length > 1 && (
                     <button
                       type="button"
                       onClick={() => setIsAutoPlaying((prev) => !prev)}
-                      className="p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
+                      className="p-1.5 sm:p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
                       title={
                         isAutoPlaying
-                          ? t('Pause Slideshow', 'स्लाइडशो रोक्नुहोस्')
-                          : t('Play Slideshow', 'स्लाइडशो चलाउनुहोस्')
+                          ? t('Pause Slideshow', 'रोक्नुहोस्')
+                          : t('Play Slideshow', 'चलाउनुहोस्')
                       }
                     >
                       {isAutoPlaying ? (
@@ -1033,8 +1018,8 @@ export default function PublicLanding() {
                   <button
                     type="button"
                     onClick={() => setShowLightbox(true)}
-                    className="p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
-                    title={t('View Fullscreen Slideshow', 'पूरा स्क्रिनमा हेर्नुहोस्')}
+                    className="p-1.5 sm:p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
+                    title={t('Fullscreen', 'पूरा स्क्रिन')}
                   >
                     <ZoomIn className="w-3.5 h-3.5" />
                   </button>
@@ -1044,12 +1029,14 @@ export default function PublicLanding() {
                       <button
                         type="button"
                         onClick={() => setShowBannerEditor(!showBannerEditor)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-lg transition"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold shadow-lg transition"
                       >
                         <ImagePlus className="w-3.5 h-3.5" />
-                        {showBannerEditor
-                          ? t('Close Manager', 'बन्द गर्नुहोस्')
-                          : t('Manage Slideshow', 'स्लाइडशो व्यवस्थापन')}
+                        <span className="hidden sm:inline">
+                          {showBannerEditor
+                            ? t('Close', 'बन्द')
+                            : t('Manage Slides', 'फोटो व्यवस्थापन')}
+                        </span>
                       </button>
                       {currentBanner.id && (
                         <button
@@ -1059,15 +1046,14 @@ export default function PublicLanding() {
                               window.confirm(
                                 t(
                                   'Delete this slide from the homepage slideshow?',
-                                  'के तपाईं यो फोटो स्लाइडशोबाट हटाउन चाहनुहुन्छ?'
+                                  'यो फोटो स्लाइडशोबाट हटाउने हो?'
                                 )
                               )
                             ) {
                               deleteBannerMutation.mutate(currentBanner.id);
                             }
                           }}
-                          className="p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
-                          title={t('Delete Current Slide', 'यो स्लाइड हटाउनुहोस्')}
+                          className="p-1.5 sm:p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1084,8 +1070,7 @@ export default function PublicLanding() {
                       onClick={() =>
                         setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1))
                       }
-                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-lg transition transform hover:scale-105"
-                      title={t('Previous Slide', 'अघिल्लो फोटो')}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-md transition"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -1094,54 +1079,51 @@ export default function PublicLanding() {
                       onClick={() =>
                         setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1))
                       }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-lg transition transform hover:scale-105"
-                      title={t('Next Slide', 'अर्को फोटो')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-md transition"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </>
                 )}
 
-                {/* Bottom Caption Card */}
-                <div className="absolute bottom-3.5 inset-x-3.5 rounded-2xl bg-white/95 backdrop-blur-md p-3.5 sm:p-4 shadow-lg flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                      <Zap className="w-5 h-5" />
+                {/* Bottom Caption Overlay */}
+                <div className="absolute bottom-3 inset-x-3 rounded-2xl bg-white/95 backdrop-blur-md p-3 sm:p-3.5 shadow-lg flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                      <Zap className="w-4 h-4" />
                     </div>
-                    <div className="truncate">
-                      <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                    <div className="min-w-0">
+                      <p className="text-xs font-extrabold text-slate-900 truncate">
                         {currentBanner.title}
                       </p>
-                      <p className="text-[11px] text-slate-500 truncate">
+                      <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
                         {currentBanner.subtitle ||
                           t(
                             'Sub-metered Power & 24/7 Water Supply',
-                            'सब-मिटर बिजुली र २४ सै घण्टा पानी सुविधा'
+                            'सब-मिटर बिजुली र २४ सै घण्टा पानी'
                           )}
                       </p>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold text-xs sm:text-sm">
-                      {t('Rs. 2,500 – 3,800', 'रु. २,५०० – ३,८००')}
-                    </span>
-                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold text-[11px] shrink-0">
+                    {t('Rs. 2.5k–3.8k', 'रु. २.५k–३.८k')}
+                  </span>
                 </div>
               </div>
 
-              {/* Interactive Thumbnail Filmstrip & Dots */}
+              {/* Thumbnail Strip */}
               {banners.length > 1 && (
-                <div className="pt-3 px-1 space-y-2">
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <div className="pt-2.5 px-1 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
                     {banners.map((b, idx) => (
                       <button
                         key={b.id || idx}
                         type="button"
                         onClick={() => setActiveSlide(idx)}
-                        className={`relative w-16 h-11 rounded-xl overflow-hidden shrink-0 border-2 transition-all ${
+                        className={`relative w-12 h-8 sm:w-14 sm:h-10 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
                           idx === activeSlide
-                            ? 'border-indigo-600 ring-2 ring-indigo-600/25 scale-[1.03]'
-                            : 'border-slate-200 opacity-65 hover:opacity-100'
+                            ? 'border-indigo-600 scale-105'
+                            : 'border-slate-200 opacity-60 hover:opacity-100'
                         }`}
                       >
                         <img
@@ -1153,14 +1135,14 @@ export default function PublicLanding() {
                     ))}
                   </div>
 
-                  <div className="flex items-center justify-center gap-1.5">
+                  <div className="flex items-center gap-1 shrink-0">
                     {banners.map((b, idx) => (
                       <button
                         key={b.id || idx}
                         type="button"
                         onClick={() => setActiveSlide(idx)}
                         className={`h-1.5 rounded-full transition-all ${
-                          idx === activeSlide ? 'w-6 bg-indigo-600' : 'w-1.5 bg-slate-300'
+                          idx === activeSlide ? 'w-5 bg-indigo-600' : 'w-1.5 bg-slate-300'
                         }`}
                       />
                     ))}
@@ -1170,14 +1152,14 @@ export default function PublicLanding() {
 
               {/* ADMIN MULTI-IMAGE SLIDESHOW MANAGER PANEL */}
               {isAdmin && showBannerEditor && (
-                <div className="mt-3 p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+                <div className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Layers className="w-4 h-4 text-indigo-600" />
-                      <p className="text-xs font-extrabold text-indigo-900 uppercase tracking-wider">
+                      <p className="text-xs font-extrabold text-indigo-900 uppercase">
                         {t(
-                          `Admin: Multi-Image Hero Slideshow Manager (${banners.length} Active Slides)`,
-                          `एडमिन: स्लाइडशो फोटो व्यवस्थापन (${banners.length} सक्रिय स्लाइडहरू)`
+                          `Slideshow Manager (${banners.length} Slides)`,
+                          `स्लाइडशो व्यवस्थापन (${banners.length} फोटो)`
                         )}
                       </p>
                     </div>
@@ -1192,11 +1174,9 @@ export default function PublicLanding() {
 
                   {bannerFeedback.text && (
                     <div
-                      className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
+                      className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between ${
                         bannerFeedback.type === 'error'
                           ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : bannerFeedback.type === 'info'
-                          ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
                           : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                       }`}
                     >
@@ -1210,70 +1190,22 @@ export default function PublicLanding() {
                     </div>
                   )}
 
-                  {banners.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-bold text-slate-500 uppercase">
-                        {t(
-                          'Current Published Slides (Click Trash to Remove)',
-                          'हालका प्रकाशित स्लाइडहरू (हटाउन डिलिट आइकन थिच्नुहोस्)'
-                        )}
-                      </p>
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-36 overflow-y-auto pr-1">
-                        {banners.map((b, idx) => (
-                          <div
-                            key={b.id || idx}
-                            onClick={() => setActiveSlide(idx)}
-                            className={`relative h-16 rounded-xl overflow-hidden border cursor-pointer group ${
-                              idx === activeSlide
-                                ? 'border-indigo-600 ring-2 ring-indigo-600/20'
-                                : 'border-slate-200'
-                            }`}
-                          >
-                            <img
-                              src={b.resolved_url}
-                              alt={b.title}
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-between px-2">
-                              <span className="text-[10px] font-extrabold text-white">
-                                #{idx + 1}
-                              </span>
-                              {b.id && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteBannerMutation.mutate(b.id);
-                                  }}
-                                  className="p-1 rounded-lg bg-rose-600 text-white hover:bg-rose-700"
-                                  title={t('Delete Slide', 'स्लाइड हटाउनुहोस्')}
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleBannerUpload} className="space-y-3 pt-2 border-t border-slate-200">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <form onSubmit={handleBannerUpload} className="space-y-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
                         type="text"
                         value={bannerTitle}
                         onChange={(e) => setBannerTitle(e.target.value)}
-                        placeholder={t('Slide Title (e.g. Studio B2)', 'स्लाइड शीर्षक')}
-                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                        placeholder={t('Slide Title', 'स्लाइड शीर्षक')}
+                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
                         required
                       />
                       <input
                         type="text"
                         value={bannerBadge}
                         onChange={(e) => setBannerBadge(e.target.value)}
-                        placeholder={t('Top Badge Text', 'माथिल्लो ब्याज पाठ')}
-                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                        placeholder={t('Badge Text', 'ब्याज पाठ')}
+                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
                       />
                     </div>
                     <input
@@ -1281,22 +1213,13 @@ export default function PublicLanding() {
                       value={bannerSubtitle}
                       onChange={(e) => setBannerSubtitle(e.target.value)}
                       placeholder={t('Subtitle description', 'उप-शीर्षक विवरण')}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
                     />
 
-                    <label className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-indigo-300 hover:border-indigo-600 bg-white cursor-pointer transition text-center">
-                      <Upload className="w-5 h-5 text-indigo-600 mb-1" />
+                    <label className="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-dashed border-indigo-300 hover:border-indigo-600 bg-white cursor-pointer transition text-center">
+                      <Upload className="w-4 h-4 text-indigo-600 mb-1" />
                       <span className="text-xs font-extrabold text-slate-800">
-                        {t(
-                          'Select Multiple Hero Banner Images',
-                          'एक वा एकभन्दा बढी ब्यानर फोटोहरू छान्नुहोस्'
-                        )}
-                      </span>
-                      <span className="text-[11px] text-slate-400">
-                        {t(
-                          'You can select 1 or multiple photos at once (up to 5 MB each)',
-                          'प्रत्येक ५ एमबी सम्मका एक वा धेरै फोटोहरू एकैपटक छान्न सकिन्छ'
-                        )}
+                        {t('Select Banner Images (Up to 5 MB)', 'ब्यानर फोटो छान्नुहोस् (५ MB सम्म)')}
                       </span>
                       <input
                         type="file"
@@ -1308,72 +1231,44 @@ export default function PublicLanding() {
                     </label>
 
                     {bannerPreviews.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] font-bold text-indigo-700">
-                          {t(
-                            `Ready to Upload (${bannerPreviews.length} selected):`,
-                            `अपलोडका लागि तयार (${bannerPreviews.length} छानिएको):`
-                          )}
-                        </p>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                          {bannerPreviews.map((item, idx) => (
-                            <div
-                              key={idx}
-                              className="relative h-16 rounded-xl overflow-hidden border border-indigo-200 bg-white"
+                      <div className="grid grid-cols-4 gap-2">
+                        {bannerPreviews.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="relative h-14 rounded-xl overflow-hidden border border-indigo-200 bg-white"
+                          >
+                            <img
+                              src={item.url}
+                              alt={item.name}
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeQueuedBannerFile(idx)}
+                              className="absolute top-1 right-1 p-0.5 rounded-full bg-slate-900/75 text-white"
                             >
-                              <img
-                                src={item.url}
-                                alt={item.name}
-                                className="w-full h-full object-cover"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeQueuedBannerFile(idx)}
-                                className="absolute top-1 right-1 p-1 rounded-full bg-slate-900/75 text-white hover:bg-rose-600"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                              <span className="absolute bottom-0.5 left-1 px-1.5 py-0.2 rounded bg-black/60 text-white text-[9px] font-bold">
-                                {item.sizeMB} MB
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
 
-                    <div className="flex justify-end gap-2 pt-1">
-                      {bannerFiles.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBannerFiles([]);
-                            setBannerPreviews([]);
-                          }}
-                          className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100"
-                        >
-                          {t('Clear Queue', 'सूची खाली गर्नुहोस्')}
-                        </button>
-                      )}
+                    <div className="flex justify-end gap-2">
                       <button
                         type="submit"
                         disabled={uploadBannerMutation.isPending || bannerFiles.length === 0}
-                        className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-md transition"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition"
                       >
                         {uploadBannerMutation.isPending ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            {t('Uploading Slides...', 'अपलोड हुँदैछ...')}
+                            {t('Uploading...', 'अपलोड हुँदैछ...')}
                           </>
                         ) : (
                           <>
                             <Upload className="w-3.5 h-3.5" />
-                            {bannerFiles.length > 0
-                              ? t(
-                                  `Upload ${bannerFiles.length} Slide(s)`,
-                                  `${bannerFiles.length} फोटो अपलोड गर्नुहोस्`
-                                )
-                              : t('Upload to Slideshow', 'स्लाइडशोमा अपलोड गर्नुहोस्')}
+                            {t('Upload Slides', 'अपलोड गर्नुहोस्')}
                           </>
                         )}
                       </button>
@@ -1389,38 +1284,32 @@ export default function PublicLanding() {
       {/* REAL-TIME INVENTORY: ROOMS A1-A4 & B1-B5 */}
       <section
         id="rooms-inventory"
-        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-slate-200/70"
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 border-t border-slate-200/70"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-7">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
-              {t('REAL-TIME INVENTORY', 'लाइभ कोठा सूची')}
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 mb-0.5">
+              {t('LIVE ROOM INVENTORY', 'लाइभ कोठा विवरण')}
             </p>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
               {t('Available Rooms & Studios', 'उपलब्ध कोठा तथा स्टुडियोहरू')}
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              {t(
-                'Explore floor-by-floor specifications, pricing, and live occupancy statuses.',
-                'तल्ला अनुसार कोठाको विवरण, मासिक भाडा दर र खाली/बसोबास अवस्था हेर्नुहोस्।'
-              )}
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
+            <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
               {[
                 {
                   key: 'ALL',
-                  label: t(`All Units (${rooms.length || 9})`, `सबै कोठा (${rooms.length || 9})`),
+                  label: t(`All (${rooms.length || 9})`, `सबै (${rooms.length || 9})`),
                 },
                 {
                   key: 'GROUND',
-                  label: t('Ground Floor (A1–A4)', 'भुइँ तल्ला (A1–A4)'),
+                  label: t('Ground (A1–A4)', 'भुइँ तल्ला (A1–A4)'),
                 },
                 {
                   key: 'FIRST',
-                  label: t('First Floor (B1–B5)', 'पहिलो तल्ला (B1–B5)'),
+                  label: t('First (B1–B5)', 'पहिलो तल्ला (B1–B5)'),
                 },
               ].map((tab) => (
                 <button
@@ -1439,15 +1328,15 @@ export default function PublicLanding() {
 
             <button
               onClick={() => setAvailableOnly(!availableOnly)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${
                 availableOnly
                   ? 'bg-emerald-600 text-white border-emerald-600'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
               {availableOnly
-                ? t('✓ Showing Available Only', '✓ खाली कोठा मात्र देखाइएको')
-                : t('Filter: Available Only', 'फिल्टर: खाली कोठा मात्र')}
+                ? t('✓ Vacant Only', '✓ खाली मात्र')
+                : t('Vacant Only', 'खाली कोठा मात्र')}
             </button>
           </div>
         </div>
@@ -1457,26 +1346,23 @@ export default function PublicLanding() {
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
           </div>
         ) : (
-          <div className="space-y-10">
+          <div className="space-y-9">
             {(floorFilter === 'ALL' || floorFilter === 'GROUND') && (
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3.5">
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
                     <h3 className="text-sm font-extrabold text-slate-900">
-                      {t('Ground Floor', 'भुइँ तल्ला')}
+                      {t('Ground Floor (A1–A4)', 'भुइँ तल्ला (A1–A4)')}
                     </h3>
-                    <span className="text-xs text-slate-500">
-                      {t('4 Units • A1, A2, A3 (Small), A4', '४ कोठाहरू • A1, A2, A3 (सानो), A4')}
-                    </span>
                   </div>
-                  <span className="text-xs font-semibold text-emerald-600">
+                  <span className="text-xs font-bold text-emerald-600">
                     {groundRooms.filter((r) => !r.is_occupied).length}{' '}
                     {t('Available', 'खाली उपलब्ध')}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {groundRooms.map((room) => (
                     <RoomCard
                       key={room.id}
@@ -1497,20 +1383,14 @@ export default function PublicLanding() {
 
             {(floorFilter === 'ALL' || floorFilter === 'FIRST') && (
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3.5">
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
                     <h3 className="text-sm font-extrabold text-slate-900">
-                      {t('First Floor', 'पहिलो तल्ला')}
+                      {t('First Floor (B1–B5)', 'पहिलो तल्ला (B1–B5)')}
                     </h3>
-                    <span className="text-xs text-slate-500">
-                      {t(
-                        '5 Units • B1, B2, B3, B4 (Small), B5',
-                        '५ कोठाहरू • B1, B2, B3, B4 (सानो), B5'
-                      )}
-                    </span>
                   </div>
-                  <span className="text-xs font-semibold text-emerald-600">
+                  <span className="text-xs font-bold text-emerald-600">
                     {firstRooms.filter((r) => !r.is_occupied).length}{' '}
                     {t('Available', 'खाली उपलब्ध')}
                   </span>
@@ -1543,37 +1423,31 @@ export default function PublicLanding() {
       {/* ========================================================================= */}
       <section
         id="house-rules"
-        className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-14 border-t border-slate-200/70 space-y-8"
+        className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-slate-200/70 space-y-6"
       >
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
-              {t('COMMUNITY HARMONY & TENANT CHARTER', 'सामुदायिक सद्भाव र भाडावाल आचारसंहिता')}
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 mb-0.5">
+              {t('TENANT CHARTER', 'भाडावाल आचारसंहिता')}
             </p>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
               {t('House Rules & Guidelines', 'घरको नियम तथा निर्देशिका')}
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              {t(
-                'Official 13-point residential guidelines for a clean, safe, peaceful, and respectful living environment.',
-                'सफा, सुरक्षित, शान्त र सम्मानजनक बसोबास वातावरणका लागि १३-बुँदे आधिकारिक आवासीय नियमहरू।'
-              )}
-            </p>
           </div>
 
           <button
             type="button"
             onClick={() => setExpandAllRules((prev) => !prev)}
-            className="self-start sm:self-auto px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 border border-slate-200 text-xs font-extrabold shadow-2xs transition"
+            className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 border border-slate-200 text-xs font-extrabold shadow-2xs transition"
           >
             {expandAllRules
-              ? t('Collapse All 13 Categories', 'सबै १३ बुँदाहरू संक्षिप्त गर्नुहोस्')
-              : t('Expand All 13 Categories', 'सबै १३ बुँदाहरू विस्तारमा हेर्नुहोस्')}
+              ? t('Collapse All', 'सबै संक्षिप्त गर्नुहोस्')
+              : t('Expand All 13 Rules', 'सबै १३ नियम हेर्नुहोस्')}
           </button>
         </div>
 
         {/* 13 ACCORDION CARDS */}
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {HOUSE_RULES_CATEGORIES.map((cat, idx) => {
             const isOpen = expandAllRules || openRuleIndex === idx;
             const IconComponent = cat.icon;
@@ -1584,8 +1458,8 @@ export default function PublicLanding() {
                 key={cat.id}
                 className={`rounded-2xl transition overflow-hidden border ${
                   cat.isHighlightedFineCategory
-                    ? 'bg-rose-50/40 border-rose-200 shadow-sm'
-                    : 'bg-white border-slate-200/80 shadow-xs'
+                    ? 'bg-rose-50/40 border-rose-200 shadow-xs'
+                    : 'bg-white border-slate-200/80 shadow-2xs'
                 }`}
               >
                 <button
@@ -1598,18 +1472,18 @@ export default function PublicLanding() {
                       setOpenRuleIndex(isOpen ? -1 : idx);
                     }
                   }}
-                  className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-slate-50/60 transition"
+                  className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50/60 transition"
                 >
-                  <div className="flex items-center gap-3.5 min-w-0 pr-3">
+                  <div className="flex items-center gap-3 min-w-0 pr-3">
                     <div
-                      className={`w-10 h-10 rounded-xl ${cat.iconBg} flex items-center justify-center shrink-0`}
+                      className={`w-9 h-9 rounded-xl ${cat.iconBg} flex items-center justify-center shrink-0`}
                     >
-                      <IconComponent className="w-5 h-5" />
+                      <IconComponent className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3
-                          className={`text-sm sm:text-base font-extrabold ${
+                          className={`text-xs sm:text-sm font-extrabold ${
                             cat.isHighlightedFineCategory ? 'text-rose-900' : 'text-slate-900'
                           }`}
                         >
@@ -1617,40 +1491,40 @@ export default function PublicLanding() {
                         </h3>
                         {cat.isHighlightedFineCategory && (
                           <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-extrabold uppercase">
-                            {t('Penalty Schedule', 'जरिवाना तालिका')}
+                            {t('Fines', 'जरिवाना')}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 truncate">
+                      <p className="text-[11px] text-slate-500 truncate">
                         {isNepali ? cat.subtitleNe : cat.subtitle}
                       </p>
                     </div>
                   </div>
                   <ChevronDown
-                    className={`w-5 h-5 text-slate-400 shrink-0 transition-transform duration-200 ${
+                    className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${
                       isOpen ? 'rotate-180 text-indigo-600' : ''
                     }`}
                   />
                 </button>
 
                 {isOpen && (
-                  <div className="px-5 pb-5 pt-2 border-t border-slate-100/90 space-y-4">
+                  <div className="px-4 pb-4 pt-2 border-t border-slate-100/90 space-y-3">
                     {cat.isHighlightedFineCategory && (
                       <div className="overflow-x-auto rounded-xl border border-rose-200 bg-white">
                         <table className="w-full text-left text-xs">
-                          <thead className="bg-rose-50 text-rose-900 font-extrabold uppercase text-[11px] border-b border-rose-200">
+                          <thead className="bg-rose-50 text-rose-900 font-extrabold uppercase text-[10px] border-b border-rose-200">
                             <tr>
-                              <th className="py-2.5 px-4">{t('Violation', 'उल्लंघन / गल्ती')}</th>
-                              <th className="py-2.5 px-4">{t('Penalty', 'जरिवाना / दण्ड')}</th>
+                              <th className="py-2 px-3">{t('Violation', 'उल्लंघन / गल्ती')}</th>
+                              <th className="py-2 px-3">{t('Penalty', 'जरिवाना')}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-rose-100">
                             {DAMAGE_FINE_PENALTIES.map((row, rIdx) => (
-                              <tr key={rIdx} className="hover:bg-rose-50/30">
-                                <td className="py-2.5 px-4 font-semibold text-slate-800">
+                              <tr key={rIdx}>
+                                <td className="py-2 px-3 font-semibold text-slate-800">
                                   {isNepali ? row.violationNe : row.violation}
                                 </td>
-                                <td className="py-2.5 px-4 font-extrabold text-rose-600">
+                                <td className="py-2 px-3 font-extrabold text-rose-600">
                                   {isNepali ? row.penaltyNe : row.penalty}
                                 </td>
                               </tr>
@@ -1660,14 +1534,14 @@ export default function PublicLanding() {
                       </div>
                     )}
 
-                    <ul className="space-y-2">
+                    <ul className="space-y-1.5">
                       {pointsList.map((point, pIdx) => (
                         <li
                           key={pIdx}
-                          className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700"
+                          className="flex items-start gap-2 text-xs text-slate-700"
                         >
                           <CheckCircle2
-                            className={`w-4 h-4 shrink-0 mt-0.5 ${
+                            className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
                               cat.isHighlightedFineCategory
                                 ? 'text-rose-600'
                                 : 'text-indigo-600'
@@ -1685,43 +1559,39 @@ export default function PublicLanding() {
         </div>
 
         {/* SEPARATE HIGHLIGHTED CARD FOR DAMAGE FINES & PENALTIES */}
-        <div className="rounded-3xl bg-gradient-to-br from-rose-50 via-white to-amber-50/60 border-2 border-rose-200 p-6 sm:p-8 shadow-md space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-200/70 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                <AlertTriangle className="w-5 h-5" />
+        <div className="rounded-3xl bg-gradient-to-br from-rose-50 via-white to-amber-50/50 border border-rose-200 p-5 sm:p-7 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-200/70 pb-3.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4" />
               </div>
               <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
-                  {t('Highlighted Policy Schedule', 'विशेष जरिवाना नीति तालिका')}
-                </span>
-                <h3 className="text-lg sm:text-xl font-black text-slate-900">
+                <h3 className="text-base sm:text-lg font-black text-slate-900">
                   {t('Damage Fines & Penalties Schedule', 'क्षति जरिवाना र दण्ड तालिका')}
                 </h3>
               </div>
             </div>
-            <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-extrabold self-start sm:self-auto">
-              {t('Evidence-Backed Enforcement', 'फोटो प्रमाणसहित लागू हुने')}
+            <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 text-[11px] font-extrabold self-start sm:self-auto">
+              {t('Evidence-Backed Policy', 'फोटो प्रमाणसहित लागू हुने')}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Violation & Penalty Table */}
-            <div className="lg:col-span-7 overflow-x-auto rounded-2xl border border-rose-200 bg-white shadow-2xs">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead className="bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wider">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <div className="lg:col-span-7 overflow-x-auto rounded-2xl border border-rose-200 bg-white">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-rose-600 text-white text-[10px] font-extrabold uppercase">
                   <tr>
-                    <th className="py-3 px-4">{t('Violation', 'उल्लंघन / क्षति विवरण')}</th>
-                    <th className="py-3 px-4">{t('Penalty', 'जरिवाना / दण्ड')}</th>
+                    <th className="py-2.5 px-3.5">{t('Violation', 'उल्लंघन / क्षति विवरण')}</th>
+                    <th className="py-2.5 px-3.5">{t('Penalty', 'जरिवाना / दण्ड')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {DAMAGE_FINE_PENALTIES.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-rose-50/40 transition">
-                      <td className="py-3 px-4 font-bold text-slate-800">
+                    <tr key={idx} className="hover:bg-rose-50/40">
+                      <td className="py-2.5 px-3.5 font-bold text-slate-800">
                         {isNepali ? item.violationNe : item.violation}
                       </td>
-                      <td className="py-3 px-4 font-black text-rose-600">
+                      <td className="py-2.5 px-3.5 font-black text-rose-600">
                         {isNepali ? item.penaltyNe : item.penalty}
                       </td>
                     </tr>
@@ -1730,19 +1600,16 @@ export default function PublicLanding() {
               </table>
             </div>
 
-            {/* Fine Guidelines Box */}
-            <div className="lg:col-span-5 rounded-2xl bg-white p-5 border border-rose-200/90 space-y-3 shadow-2xs">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-rose-700 flex items-center gap-1.5">
+            <div className="lg:col-span-5 rounded-2xl bg-white p-4 border border-rose-200/90 space-y-2.5">
+              <h4 className="text-xs font-extrabold uppercase text-rose-700 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-rose-600" />{' '}
-                {t('Official Fine Guidelines', 'जरिवाना सम्बन्धी आधिकारिक निर्देशिका')}
+                {t('Official Fine Guidelines', 'जरिवाना निर्देशिका')}
               </h4>
-              <ul className="space-y-2.5 text-xs text-slate-700">
+              <ul className="space-y-2 text-xs text-slate-700">
                 {FINE_GUIDELINES_LIST.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span className="font-medium leading-relaxed">
-                      {isNepali ? item.ne : item.en}
-                    </span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>{isNepali ? item.ne : item.en}</span>
                   </li>
                 ))}
               </ul>
@@ -1751,36 +1618,33 @@ export default function PublicLanding() {
         </div>
 
         {/* IMPORTANT NOTICE & "I AGREE & ACCEPT" TENANT ACKNOWLEDGMENT CARD */}
-        <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl space-y-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-2xl">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-extrabold uppercase tracking-wider border border-indigo-400/30">
-                <FileCheck2 className="w-3.5 h-3.5" />{' '}
+        <div className="rounded-3xl bg-slate-900 text-white p-5 sm:p-7 shadow-lg space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5 max-w-2xl">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-extrabold uppercase border border-indigo-400/30">
+                <FileCheck2 className="w-3 h-3" />{' '}
                 {t('Important Notice', 'महत्त्वपूर्ण सूचना')}
               </div>
-              <h3 className="text-lg sm:text-xl font-extrabold text-white">
+              <h3 className="text-base sm:text-lg font-extrabold text-white">
                 {t(
                   'Tenant Acknowledgment & Responsibility Charter',
                   'भाडावालको सहमति र जिम्मेवारी प्रतिबद्धता'
                 )}
               </h3>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              <p className="text-xs text-slate-300 leading-relaxed">
                 {t(
-                  'All tenants are expected to follow these guidelines to maintain a clean, safe, peaceful, and respectful living environment. By accepting these rules, tenants acknowledge their responsibilities toward the property and other residents.',
-                  'सफा, सुरक्षित, शान्त र सम्मानजनक बसोबास वातावरण कायम राख्न सबै भाडावालहरूले यी नियमहरू पालना गर्नुपर्नेछ। यी नियमहरू स्वीकार गरेर, भाडावालहरूले घरको सम्पत्ति र अन्य बसोबास गर्नेहरूप्रति आफ्नो जिम्मेवारी स्वीकार गर्दछन्।'
+                  'By accepting these rules, tenants acknowledge their responsibilities toward maintaining a clean, safe, and peaceful living environment.',
+                  'यी नियमहरू स्वीकार गरेर, भाडावालहरूले सफा, सुरक्षित र शान्त वातावरण कायम राख्ने आफ्नो जिम्मेवारी स्वीकार गर्दछन्।'
                 )}
               </p>
             </div>
 
-            <div className="shrink-0 flex flex-col sm:flex-row md:flex-col items-stretch sm:items-center gap-3">
+            <div className="shrink-0">
               {hasAcceptedRules ? (
-                <div className="px-5 py-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2">
+                <div className="px-4 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>
-                    {t(
-                      '✓ House Rules Acknowledged & Accepted',
-                      '✓ घरको नियम र निर्देशिका स्वीकार गरिएको छ'
-                    )}
+                    {t('✓ Rules Acknowledged', '✓ नियमहरू स्वीकार गरियो')}
                   </span>
                 </div>
               ) : (
@@ -1788,12 +1652,12 @@ export default function PublicLanding() {
                   type="button"
                   onClick={handleAcceptHouseRules}
                   disabled={acceptRulesMutation.isPending}
-                  className="px-6 py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-emerald-500/25 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 transition inline-flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {acceptRulesMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {t('Recording Acknowledgment...', 'सहमति दर्ता हुँदैछ...')}
+                      {t('Saving...', 'सुरक्षित हुँदैछ...')}
                     </>
                   ) : (
                     <>
@@ -1807,7 +1671,7 @@ export default function PublicLanding() {
           </div>
 
           {rulesAckMsg && (
-            <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2">
+            <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2">
               <span>{rulesAckMsg}</span>
               <button
                 type="button"
@@ -2143,21 +2007,21 @@ function RoomCard({ room, onAction, t }) {
 
   return (
     <div
-      className={`rounded-2xl bg-white p-5 border transition flex flex-col justify-between ${
+      className={`rounded-2xl bg-white p-4 sm:p-5 border transition flex flex-col justify-between ${
         occupied
           ? 'border-slate-200/70 opacity-90'
-          : 'border-indigo-200/80 shadow-md shadow-indigo-950/5 hover:border-indigo-500'
+          : 'border-indigo-200/80 shadow-sm hover:shadow-md hover:border-indigo-500'
       }`}
     >
       <div>
-        <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-1.5">
             <h4 className="text-base font-extrabold text-slate-900">
               {t('Room', 'कोठा')} {room.room_number}
             </h4>
             {isSmall && (
               <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[10px]">
-                {t('Small Room', 'सानो कोठा')}
+                {t('Small', 'सानो')}
               </span>
             )}
           </div>
@@ -2169,59 +2033,46 @@ function RoomCard({ room, onAction, t }) {
                 : 'bg-emerald-100 text-emerald-700'
             }`}
           >
-            {occupied ? t('• Occupied', '• बुक भइसकेको') : t('• Available', '• खाली छ')}
+            {occupied ? t('• Occupied', '• बुक छ') : t('• Available', '• खाली छ')}
           </span>
         </div>
 
-        <p className="text-xs text-slate-500 font-medium mb-4">
+        <p className="text-xs text-slate-500 font-medium mb-3">
           {room.title} • {room.area_sqft} {t('sq.ft', 'वर्ग फिट')}
         </p>
 
-        <ul className="space-y-2 mb-5">
-          {(room.features || []).map((feat, i) => (
-            <li key={i} className="flex items-center gap-2 text-xs text-slate-600">
-              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-              <span className="truncate">{feat}</span>
-            </li>
-          ))}
-          <li className="flex items-center gap-2 text-xs text-slate-600">
-            <Droplets className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>
-              {t('Water: Rs.', 'पानी: रु.')} {Number(room.fixed_water_bill).toFixed(0)}
-              {t('/mo', '/महिना')}
-            </span>
-          </li>
-          <li className="flex items-center gap-2 text-xs text-slate-600">
-            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>
-              {t('Electricity: Rs.', 'बिजुली: रु.')}{' '}
-              {Number(room.electricity_rate_per_unit).toFixed(0)}
-              {t('/unit', '/युनिट')}
-            </span>
-          </li>
-        </ul>
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[11px] font-semibold text-slate-700">
+            <Droplets className="w-3 h-3 text-emerald-600" />
+            {t('Water Rs.', 'पानी रु.')} {Number(room.fixed_water_bill).toFixed(0)}
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[11px] font-semibold text-slate-700">
+            <Zap className="w-3 h-3 text-amber-500" />
+            {t('Elec Rs.', 'बिजुली रु.')} {Number(room.electricity_rate_per_unit).toFixed(0)}/u
+          </span>
+        </div>
       </div>
 
-      <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
+      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
         <div>
           <p className="text-base font-extrabold text-slate-900">
             {t('Rs.', 'रु.')} {Number(room.base_rent).toLocaleString()}
           </p>
           <p className="text-[10px] text-slate-400 font-medium">
-            {t('/ month base rent', '/ महिना आधारभूत भाडा')}
+            {t('/ month', '/ महिना')}
           </p>
         </div>
 
         {occupied ? (
           <span className="px-3 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold">
-            {t('Occupied', 'खाली छैन')}
+            {t('Occupied', 'बुक भइसकेको')}
           </span>
         ) : (
           <button
             onClick={onAction}
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition relative"
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition relative"
           >
-            {t('Reserve / Apply', 'बुक गर्नुहोस्')}
+            {t('Reserve', 'बुक गर्नुहोस्')}
             {pendingCount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow">
                 {pendingCount}
