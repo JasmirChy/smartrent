@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import axiosClient, { createReservation, acceptDigitalLease } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
 
 const DEFAULT_HERO_IMAGE =
@@ -48,7 +49,9 @@ const HOUSE_RULES_CATEGORIES = [
   {
     id: 1,
     title: '1. Cleanliness & Hygiene',
+    titleNe: '१. सरसफाइ र स्वच्छता',
     subtitle: 'Sanitation standards for rooms, kitchens, drains, and shared spaces',
+    subtitleNe: 'कोठा, भान्सा, नाली र साझा स्थानहरूको सरसफाइ मापदण्ड',
     icon: Sparkles,
     iconBg: 'bg-emerald-50 text-emerald-600',
     items: [
@@ -58,11 +61,20 @@ const HOUSE_RULES_CATEGORIES = [
       'Do not throw waste, sanitary products, or food into drains or toilets.',
       'Maintain cleanliness around the building.',
     ],
+    itemsNe: [
+      'कोठा, बाथरुम र साझा स्थानहरू सधैं सफा राख्नुहोस्।',
+      'फोहोरमैला तोकिएको डस्टबिनमा मात्र फाल्नुहोस्।',
+      'भान्सा र साझा सुविधाहरू प्रयोग गरेपछि सफा राख्नुहोस्।',
+      'नाली वा शौचालयमा फोहोर, सेनिटरी सामान वा खाना नफाल्नुहोस्।',
+      'घर वरिपरिको वातावरण सफा र स्वच्छ राख्नुहोस्।',
+    ],
   },
   {
     id: 2,
     title: '2. Property Damage & Maintenance',
+    titleNe: '२. सम्पत्ति सुरक्षा र मर्मत सम्भार',
     subtitle: 'Care of walls, fixtures, and reporting of maintenance issues',
+    subtitleNe: 'भित्ता, ढोका, फर्निचरको सुरक्षा र मर्मत सम्बन्धी जानकारी',
     icon: Wrench,
     iconBg: 'bg-indigo-50 text-indigo-600',
     items: [
@@ -72,11 +84,20 @@ const HOUSE_RULES_CATEGORIES = [
       'Tenants are responsible for damage caused by negligence or misuse.',
       'Normal wear and tear is not chargeable.',
     ],
+    itemsNe: [
+      'भित्ता, ढोका, फर्निचर र बत्ती/धाराका सामानहरूको उचित हेरचाह गर्नुहोस्।',
+      'अनुमति बिना भित्तामा प्वाल पार्ने, रङ लगाउने वा संरचना परिवर्तन नगर्नुहोस्।',
+      'पानी चुहिने, सामान टुटफुट हुने वा मर्मत समस्या भएमा तुरुन्तै जानकारी गराउनुहोस्।',
+      'लापरबाही वा गलत प्रयोगले भएको क्षतिको जिम्मेवारी भाडावाल स्वयंको हुनेछ।',
+      'सामान्य प्रयोगका क्रममा हुने प्राकृतिक खिइवटमा जरिवाना लाग्ने छैन।',
+    ],
   },
   {
     id: 3,
     title: '3. Electricity & Water Usage',
+    titleNe: '३. बिजुली र पानीको प्रयोग',
     subtitle: 'Responsible utility consumption and sub-meter integrity',
+    subtitleNe: 'बिजुली र पानीको सही सदुपयोग तथा सब-मिटर सुरक्षा',
     icon: Zap,
     iconBg: 'bg-amber-50 text-amber-600',
     items: [
@@ -86,11 +107,20 @@ const HOUSE_RULES_CATEGORIES = [
       'Do not tamper with meters, wiring, or connections.',
       'Pay utility bills within the agreed deadline.',
     ],
+    itemsNe: [
+      'प्रयोग नभएको बेला बत्ती र विद्युतीय उपकरणहरू बन्द गर्नुहोस्।',
+      'बिजुली र पानीको अनावश्यक खेर नफाल्नुहोस्।',
+      'उच्च क्षमताका विद्युतीय उपकरणहरू जिम्मेवारीपूर्वक प्रयोग गर्नुहोस्।',
+      'सब-मिटर, तार वा जडानमा कुनै पनि छेडछाड नगर्नुहोस्।',
+      'तोकिएको समयसीमा भित्र बिजुली र पानीको बिल भुक्तानी गर्नुहोस्।',
+    ],
   },
   {
     id: 4,
     title: '4. Noise & Peaceful Environment',
+    titleNe: '४. शान्त र मर्यादित वातावरण',
     subtitle: 'Quiet hours (10:00 PM – 6:00 AM) and neighborly conduct',
+    subtitleNe: 'राति १०:०० देखि बिहान ६:०० सम्म शान्त समय र शिष्ट व्यवहार',
     icon: Moon,
     iconBg: 'bg-violet-50 text-violet-600',
     items: [
@@ -99,11 +129,19 @@ const HOUSE_RULES_CATEGORIES = [
       'Respect neighbors and other tenants.',
       'Fighting, threatening, or disruptive behavior is prohibited.',
     ],
+    itemsNe: [
+      'चर्को स्वरमा गीत बजाउने, कराउने र अनावश्यक होहल्ला नगर्नुहोस्।',
+      'राति १०:०० बजेदेखि बिहान ६:०० बजेसम्म पूर्ण शान्त वातावरण कायम राख्नुहोस्।',
+      'छिमेकी र अन्य भाडावालहरूलाई सम्मान गर्नुहोस्।',
+      'झगडा गर्ने, धम्की दिने वा अशान्ति फैलाउने कार्य पूर्णतः निषेधित छ।',
+    ],
   },
   {
     id: 5,
     title: '5. Security & Safety',
+    titleNe: '५. सुरक्षा र सावधानी',
     subtitle: 'Access control, appliance safety, and emergency awareness',
+    subtitleNe: 'ढोका/ताला सुरक्षा, खाना पकाउँदा सावधानी र आपतकालीन सतर्कता',
     icon: Lock,
     iconBg: 'bg-teal-50 text-teal-600',
     items: [
@@ -114,11 +152,21 @@ const HOUSE_RULES_CATEGORIES = [
       'Do not keep hazardous or illegal materials on the property.',
       'Report suspicious activities and emergencies immediately.',
     ],
+    itemsNe: [
+      'बाहिर जाँदा कोठा र मूल गेटमा राम्ररी ताला लगाउनुहोस्।',
+      'अपरिचित वा अनधिकृत व्यक्तिलाई साँचो वा प्रवेश कोड नदिनुहोस्।',
+      'रातभरि बस्ने पाहुना आउँदा घरधनीलाई जानकारी गराउनुहोस्।',
+      'खाना पकाउने ग्यास वा हिटर बालेर कोठा छोडेर नहिँड्नुहोस्।',
+      'घरमा कुनै पनि जोखिमपूर्ण वा गैरकानुनी वस्तुहरू नराख्नुहोस्।',
+      'शंकास्पद गतिविधि वा आपतकालीन अवस्था देखिएमा तुरुन्त खबर गर्नुहोस्।',
+    ],
   },
   {
     id: 6,
     title: '6. Parking & Common Areas',
+    titleNe: '६. पार्किङ र साझा क्षेत्रहरू',
     subtitle: 'Designated parking and unobstructed corridors & staircases',
+    subtitleNe: 'तोकिएको स्थानमा पार्किङ र प्यासेज/भर्याङ खुला राख्ने नियम',
     icon: Car,
     iconBg: 'bg-sky-50 text-sky-600',
     items: [
@@ -128,11 +176,20 @@ const HOUSE_RULES_CATEGORIES = [
       'Do not misuse or damage shared facilities.',
       'Keep common areas accessible to everyone.',
     ],
+    itemsNe: [
+      'सवारी साधन तोकिएको पार्किङ स्थानमा मात्र राख्नुहोस्।',
+      'प्यासेज, भर्याङ र बाल्कोनी सधैं सफा राख्नुहोस्।',
+      'मूल ढोका वा अन्य सवारी साधन छेकिएर पार्किङ नगर्नुहोस्।',
+      'साझा सुविधाहरूको दुरुपयोग वा नोक्सानी नगर्नुहोस्।',
+      'साझा क्षेत्रहरू सबैका लागि सहज र खुला राख्नुहोस्।',
+    ],
   },
   {
     id: 7,
     title: '7. Visitors & Guests',
+    titleNe: '७. पाहुना र आगन्तुकहरू',
     subtitle: 'Guest conduct and prior notice for overnight stays',
+    subtitleNe: 'पाहुनाको मर्यादित व्यवहार र राति बस्ने पाहुनाको जानकारी',
     icon: Users,
     iconBg: 'bg-indigo-50 text-indigo-600',
     items: [
@@ -141,11 +198,19 @@ const HOUSE_RULES_CATEGORIES = [
       'Ensure guests respect other residents and house rules.',
       'Visitors must not damage property or disturb others.',
     ],
+    itemsNe: [
+      'आफ्ना पाहुनाहरूको व्यवहारप्रति भाडावाल स्वयं जिम्मेवार हुनेछन्।',
+      'पाहुना रातभरि वा लामो समय बस्ने भएमा घरधनीलाई जानकारी गराउनुहोस्।',
+      'पाहुनाहरूले अन्य भाडावाल र घरको नियमको पालना गरेको सुनिश्चित गर्नुहोस्।',
+      'पाहुनाहरूबाट घरको सम्पत्तिमा क्षति वा अन्यलाई डिस्टर्ब हुनु हुँदैन।',
+    ],
   },
   {
     id: 8,
     title: '8. Rent & Bill Payments',
+    titleNe: '८. कोठा भाडा र बिल भुक्तानी',
     subtitle: 'Timely monthly settlement and receipt record-keeping',
+    subtitleNe: 'समयमै मासिक भाडा तथा बिल भुक्तानी र रसिद सुरक्षित राख्ने',
     icon: CreditCard,
     iconBg: 'bg-emerald-50 text-emerald-600',
     items: [
@@ -155,11 +220,20 @@ const HOUSE_RULES_CATEGORIES = [
       'Keep payment receipts for future reference.',
       'Follow agreed rent and billing arrangements.',
     ],
+    itemsNe: [
+      'मासिक कोठा भाडा र बिजुली/पानीको बिल समयमै भुक्तानी गर्नुहोस्।',
+      'बाँकी बक्यौता तोकिएको समयसीमा भित्रै चुक्ता गर्नुहोस्।',
+      'भुक्तानीमा केहि ढिलाइ हुने अवस्था आएमा समयमै घरधनीलाई जानकारी दिनुहोस्।',
+      'भुक्तानी गरेका रसिदहरू भविष्यको प्रयोजनका लागि सुरक्षित राख्नुहोस्।',
+      'सहमति अनुसारको भाडा र बिलिङ नियम पालना गर्नुहोस्।',
+    ],
   },
   {
     id: 9,
     title: '9. Maintenance & Communication',
+    titleNe: '९. मर्मत सम्भार र संवाद',
     subtitle: 'Official reporting channels and inspection cooperation',
+    subtitleNe: 'वेबसाइट वा घरधनीमार्फत समस्या टिपाउने र निरीक्षणमा सहयोग',
     icon: MessageSquare,
     iconBg: 'bg-blue-50 text-blue-600',
     items: [
@@ -169,11 +243,20 @@ const HOUSE_RULES_CATEGORIES = [
       'Report complaints through the website or directly to the owner.',
       'Allow necessary access during emergencies.',
     ],
+    itemsNe: [
+      'मर्मत सम्भारका समस्या र टुटफुट तुरुन्तै जानकारी गराउनुहोस्।',
+      'कुनै मर्मत वा परिवर्तन गर्नुअघि घरधनीको अनुमति लिनुहोस्।',
+      'पूर्व जानकारी गराई गरिने कोठा निरीक्षणमा सहयोग गर्नुहोस्।',
+      'गुनासो वा समस्या स्मार्टरेन्ट वेबसाइट वा सिधै घरधनीलाई टिपाउनुहोस्।',
+      'आपतकालीन अवस्थामा आवश्यक जाँचका लागि प्रवेश सहज बनाउनुहोस्।',
+    ],
   },
   {
     id: 10,
     title: '10. Additional Restrictions',
+    titleNe: '१०. थप प्रतिबन्धहरू',
     subtitle: 'Policies on pets, subletting, commercial use, and privacy',
+    subtitleNe: 'घरपालुवा जनावर, सब-लेटिङ, व्यापारिक प्रयोग र गोपनीयता',
     icon: Ban,
     iconBg: 'bg-rose-50 text-rose-600',
     items: [
@@ -183,11 +266,20 @@ const HOUSE_RULES_CATEGORIES = [
       'Unauthorized commercial activities are not allowed.',
       "Respect everyone's privacy and personal belongings.",
     ],
+    itemsNe: [
+      'गैरकानुनी गतिविधिहरू पूर्ण रूपमा निषेधित छन्।',
+      'घरपालुवा जनावर राख्न घरधनीको पूर्व अनुमति अनिवार्य छ।',
+      'लिखित अनुमति बिना कोठा अरुलाई भाडामा (Sublet) दिन पाइने छैन।',
+      'अनधिकृत व्यापारिक गतिविधि सञ्चालन गर्न पाइने छैन।',
+      'सबैको व्यक्तिगत गोपनीयता र सामानको सम्मान गर्नुहोस्।',
+    ],
   },
   {
     id: 11,
     title: '11. Damage Fines & Penalties',
+    titleNe: '११. क्षति जरिवाना र दण्डहरू',
     subtitle: 'Official penalty schedule and transparent fine enforcement rules',
+    subtitleNe: 'नियम उल्लंघन वा क्षतिमा लाग्ने आधिकारिक जरिवाना तालिका',
     icon: AlertTriangle,
     iconBg: 'bg-rose-100 text-rose-600',
     isHighlightedFineCategory: true,
@@ -200,11 +292,22 @@ const HOUSE_RULES_CATEGORIES = [
       'No fines for normal wear and tear.',
       'All penalties must be reasonable and follow the rental agreement and applicable law.',
     ],
+    itemsNe: [
+      'प्रत्येक जरिवानामा स्पष्ट कारण उल्लेख गरिएको हुनेछ।',
+      'सम्भव भएसम्म फोटो प्रमाण संलग्न गरिनेछ।',
+      'जरिवाना जारी हुँदा भाडावालले इमेल र ड्यासबोर्डमा सूचना पाउनेछन्।',
+      'भाडावालले जरिवानाको विवरण हेर्न र कुरा राख्न सक्नेछन्।',
+      'मर्मत खर्चमा आवश्यक बिल/प्रमाण समावेश हुनेछ।',
+      'सामान्य प्राकृतिक खिइवटमा कुनै जरिवाना लाग्ने छैन।',
+      'सबै जरिवानाहरू न्यायोचित र भाडा सम्झौता अनुरूप हुनेछन्।',
+    ],
   },
   {
     id: 12,
     title: '12. Moving In & Moving Out',
+    titleNe: '१२. कोठामा सर्दा र कोठा छोड्दा',
     subtitle: 'Registration, handover inspection, advance notice, and final settlement',
+    subtitleNe: 'दर्ता, कोठा बुझबुझारथ, पूर्व सूचना र अन्तिम हिसाब फरफारक',
     icon: LogOut,
     iconBg: 'bg-amber-50 text-amber-600',
     items: [
@@ -215,11 +318,21 @@ const HOUSE_RULES_CATEGORIES = [
       'Return keys and owner-provided belongings.',
       'Complete the final inspection before deposit settlement.',
     ],
+    itemsNe: [
+      'कोठामा सर्नुअघि अनलाइन दर्ता र केवाईसी (KYC) पूरा गर्नुहोस्।',
+      'कोठा बुझ्दा पहिले नै कुनै क्षति भएमा तुरुन्तै जानकारी गराउनुहोस्।',
+      'कोठा छोड्नुअघि पूर्व सूचना (Move-Out Request) दिनुहोस्।',
+      'कोठा छोड्नुअघि बाँकी भाडा र बिजुली/पानीको बिल चुक्ता गर्नुहोस्।',
+      'कोठाको साँचो र घरधनीले उपलब्ध गराएका सामानहरू फिर्ता गर्नुहोस्।',
+      'अन्तिम मिटर रिडिङ र निरीक्षण पछि मात्र हिसाब फरफारक गरिनेछ।',
+    ],
   },
   {
     id: 13,
     title: '13. General Responsibilities',
+    titleNe: '१३. सामान्य जिम्मेवारीहरू',
     subtitle: 'Community harmony, announcements, and agreement compliance',
+    subtitleNe: 'आपसी सद्भाव, घरधनीको सूचना पालना र सम्झौताको सम्मान',
     icon: HeartHandshake,
     iconBg: 'bg-teal-50 text-teal-600',
     items: [
@@ -229,27 +342,90 @@ const HOUSE_RULES_CATEGORIES = [
       'Keep registered contact information updated.',
       'Repeated violations may result in action under the rental agreement.',
     ],
+    itemsNe: [
+      'अन्य भाडावाल, उनीहरूको गोपनीयता र सामानको सम्मान गर्नुहोस्।',
+      'मित्रवत र सहयोगी वातावरण कायम राख्नुहोस्।',
+      'घरधनीका आधिकारिक सूचना र निर्देशनहरू पालना गर्नुहोस्।',
+      'आफ्नो दर्ता गरिएको मोबाइल नम्बर र विवरण अद्यावधिक राख्नुहोस्।',
+      'पटक-पटक नियम उल्लंघन भएमा भाडा सम्झौता अनुसार कारबाही हुन सक्नेछ।',
+    ],
   },
 ];
 
 const DAMAGE_FINE_PENALTIES = [
-  { violation: 'Littering in shared areas', penalty: 'NPR 100–200' },
-  { violation: 'Repeated noise disturbances', penalty: 'NPR 200–500' },
-  { violation: 'Intentional water wastage', penalty: 'Actual additional cost' },
-  { violation: 'Damaged furniture or fixtures', penalty: 'Repair/replacement cost' },
-  { violation: 'Plumbing or electrical damage', penalty: 'Actual repair cost' },
-  { violation: 'Unauthorized modifications', penalty: 'Restoration cost' },
-  { violation: 'Damage caused by guests', penalty: 'Actual repair cost' },
+  {
+    violation: 'Littering in shared areas',
+    violationNe: 'साझा क्षेत्रमा फोहोर फाल्दा',
+    penalty: 'NPR 100–200',
+    penaltyNe: 'रु. १००–२००',
+  },
+  {
+    violation: 'Repeated noise disturbances',
+    violationNe: 'पटक-पटक होहल्ला वा डिस्टर्ब गर्दा',
+    penalty: 'NPR 200–500',
+    penaltyNe: 'रु. २००–५००',
+  },
+  {
+    violation: 'Intentional water wastage',
+    violationNe: 'जानीजानी पानी खेर फाल्दा',
+    penalty: 'Actual additional cost',
+    penaltyNe: 'थप वास्तविक लागत',
+  },
+  {
+    violation: 'Damaged furniture or fixtures',
+    violationNe: 'फर्निचर वा सामान टुटफुट भएमा',
+    penalty: 'Repair/replacement cost',
+    penaltyNe: 'मर्मत / प्रतिस्थापन खर्च',
+  },
+  {
+    violation: 'Plumbing or electrical damage',
+    violationNe: 'धारा/पाइप वा बिजुलीमा क्षति पुर्याएमा',
+    penalty: 'Actual repair cost',
+    penaltyNe: 'वास्तविक मर्मत खर्च',
+  },
+  {
+    violation: 'Unauthorized modifications',
+    violationNe: 'अनुमति बिना कोठाको संरचना परिवर्तन गरेमा',
+    penalty: 'Restoration cost',
+    penaltyNe: 'पहिलेकै अवस्थामा फर्काउने खर्च',
+  },
+  {
+    violation: 'Damage caused by guests',
+    violationNe: 'पाहुनाबाट भएको क्षति',
+    penalty: 'Actual repair cost',
+    penaltyNe: 'वास्तविक मर्मत खर्च',
+  },
 ];
 
 const FINE_GUIDELINES_LIST = [
-  'Every fine must include a clear reason.',
-  'Photographic evidence should be attached whenever possible.',
-  'Tenants receive notifications for issued fines.',
-  'Tenants can review and dispute fines.',
-  'Repair costs must have supporting evidence.',
-  'No fines for normal wear and tear.',
-  'All penalties must be reasonable and follow the rental agreement and applicable law.',
+  {
+    en: 'Every fine must include a clear reason.',
+    ne: 'प्रत्येक जरिवानामा स्पष्ट कारण उल्लेख गरिएको हुनेछ।',
+  },
+  {
+    en: 'Photographic evidence should be attached whenever possible.',
+    ne: 'सम्भव भएसम्म फोटो प्रमाण संलग्न गरिनेछ।',
+  },
+  {
+    en: 'Tenants receive notifications for issued fines.',
+    ne: 'जरिवाना जारी हुँदा भाडावालले इमेल र ड्यासबोर्डमा सूचना पाउनेछन्।',
+  },
+  {
+    en: 'Tenants can review and dispute fines.',
+    ne: 'भाडावालले जरिवानाको विवरण हेर्न र कुरा राख्न सक्नेछन्।',
+  },
+  {
+    en: 'Repair costs must have supporting evidence.',
+    ne: 'मर्मत खर्चमा आवश्यक बिल/प्रमाण समावेश हुनेछ।',
+  },
+  {
+    en: 'No fines for normal wear and tear.',
+    ne: 'सामान्य प्राकृतिक खिइवटमा कुनै जरिवाना लाग्ने छैन।',
+  },
+  {
+    en: 'All penalties must be reasonable and follow the rental agreement and applicable law.',
+    ne: 'सबै जरिवानाहरू न्यायोचित र भाडा सम्झौता अनुरूप हुनेछन्।',
+  },
 ];
 
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
@@ -266,8 +442,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
   let finalUrl = rawUrl.trim();
 
-  // If the URL contains a /media/ path (even if saved with localhost or http://),
-  // always attach it to the active backendOrigin
   const mediaIndex = finalUrl.indexOf('/media/');
   if (mediaIndex !== -1) {
     finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
@@ -275,7 +449,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
     finalUrl = `${backendOrigin}${finalUrl}`;
   }
 
-  // Upgrade http:// to https:// whenever running on HTTPS (Vercel / Render)
   if (
     finalUrl.startsWith('http://') &&
     !finalUrl.includes('localhost') &&
@@ -294,6 +467,7 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
 export default function PublicLanding() {
   const { user, isAdmin, openAuthModal, refreshProfile } = useAuth();
+  const { isNepali, t, td } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -337,8 +511,8 @@ export default function PublicLanding() {
     'Sub-meter #M-202 • Digital Telemetry Active'
   );
   const [bannerBadge, setBannerBadge] = useState('Physical Inspection Passed');
-  const [bannerFiles, setBannerFiles] = useState([]); // Array of File objects
-  const [bannerPreviews, setBannerPreviews] = useState([]); // Array of { name, url, sizeMB }
+  const [bannerFiles, setBannerFiles] = useState([]);
+  const [bannerPreviews, setBannerPreviews] = useState([]);
   const [bannerFeedback, setBannerFeedback] = useState({ type: '', text: '' });
 
   // Fetch live Landing Data
@@ -358,21 +532,18 @@ export default function PublicLanding() {
 
   const hasAcceptedRules = Boolean(user?.has_accepted_lease || rulesAcceptedLocal);
 
-  // Normalize banner image URLs for both laptop and mobile
   const banners = rawBanners.map((b) => ({
     ...b,
     resolved_url:
       getSafeMediaUrl(b.image_path || b.image_url || b.image) || DEFAULT_HERO_IMAGE,
   }));
 
-  // Keep activeSlide in bounds when banners array changes
   useEffect(() => {
     if (banners.length > 0 && activeSlide >= banners.length) {
       setActiveSlide(0);
     }
   }, [banners.length, activeSlide]);
 
-  // Auto-advance slideshow timer (every 4.5 seconds unless paused or hovered)
   useEffect(() => {
     if (!isAutoPlaying || isHoveringHero || showLightbox || banners.length <= 1) {
       return undefined;
@@ -383,7 +554,6 @@ export default function PublicLanding() {
     return () => clearInterval(timer);
   }, [isAutoPlaying, isHoveringHero, showLightbox, banners.length]);
 
-  // Clean up object URLs
   useEffect(() => {
     return () => {
       bannerPreviews.forEach((p) => {
@@ -394,19 +564,21 @@ export default function PublicLanding() {
     };
   }, [bannerPreviews]);
 
-  // Mutation: Accept House Rules & Digital Lease Acknowledgment
   const acceptRulesMutation = useMutation({
     mutationFn: acceptDigitalLease,
     onSuccess: async (resData) => {
       try {
         localStorage.setItem('smartrent_rules_accepted', 'true');
       } catch {
-        // Ignore storage errors
+        // Ignore
       }
       setRulesAcceptedLocal(true);
       setRulesAckMsg(
         resData?.message ||
-          'Thank you! Your acknowledgment of the House Rules & Guidelines has been recorded.'
+          t(
+            'Thank you! Your acknowledgment of the House Rules & Guidelines has been recorded.',
+            'धन्यवाद! घरको नियम तथा निर्देशिकामा तपाईंको सहमति सुरक्षित गरियो।'
+          )
       );
       if (typeof refreshProfile === 'function') {
         await refreshProfile();
@@ -419,10 +591,15 @@ export default function PublicLanding() {
       try {
         localStorage.setItem('smartrent_rules_accepted', 'true');
       } catch {
-        // Ignore storage errors
+        // Ignore
       }
       setRulesAcceptedLocal(true);
-      setRulesAckMsg('House Rules & Guidelines acknowledgment saved!');
+      setRulesAckMsg(
+        t(
+          'House Rules & Guidelines acknowledgment saved!',
+          'घरको नियम तथा निर्देशिकामा तपाईंको सहमति सुरक्षित गरियो!'
+        )
+      );
     },
   });
 
@@ -433,16 +610,18 @@ export default function PublicLanding() {
       try {
         localStorage.setItem('smartrent_rules_accepted', 'true');
       } catch {
-        // Ignore storage errors
+        // Ignore
       }
       setRulesAcceptedLocal(true);
       setRulesAckMsg(
-        'You have accepted the House Rules & Guidelines! Sign in anytime to link this acknowledgment to your tenant profile.'
+        t(
+          'You have accepted the House Rules & Guidelines! Sign in anytime to link this acknowledgment to your tenant profile.',
+          'तपाईंले घरको नियम तथा निर्देशिका स्वीकार गर्नुभएको छ! यसलाई आफ्नो प्रोफाइलमा जोड्न लगइन गर्नुहोस्।'
+        )
       );
     }
   };
 
-  // Admin Mutation: Upload Multiple Hero Images at once
   const uploadBannerMutation = useMutation({
     mutationFn: async (formData) => {
       const res = await axiosClient.post('/rooms/banners/', formData, {
@@ -457,7 +636,9 @@ export default function PublicLanding() {
       setActiveSlide(0);
       setBannerFeedback({
         type: 'success',
-        text: resData?.message || 'Hero slideshow images uploaded successfully!',
+        text:
+          resData?.message ||
+          t('Hero slideshow images uploaded successfully!', 'स्लाइडशो फोटोहरू सफलतापूर्वक अपलोड भए!'),
       });
     },
     onError: (err) => {
@@ -466,12 +647,14 @@ export default function PublicLanding() {
         text:
           err.response?.data?.error ||
           err.response?.data?.detail ||
-          'Failed to upload banner image(s). Make sure each image is under 5 MB.',
+          t(
+            'Failed to upload banner image(s). Make sure each image is under 5 MB.',
+            'फोटो अपलोड हुन सकेन। प्रत्येक फोटो ५ एमबी भन्दा कम हुनुपर्छ।'
+          ),
       });
     },
   });
 
-  // Admin Mutation: Delete Hero Image
   const deleteBannerMutation = useMutation({
     mutationFn: async (bannerId) => {
       await axiosClient.delete(`/rooms/banners/${bannerId}/`);
@@ -481,12 +664,11 @@ export default function PublicLanding() {
       queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
       setBannerFeedback({
         type: 'success',
-        text: 'Slide removed from hero slideshow.',
+        text: t('Slide removed from hero slideshow.', 'स्लाइडशोबाट फोटो हटाइयो।'),
       });
     },
   });
 
-  // Reservation Submission Mutation
   const reserveMutation = useMutation({
     mutationFn: async (formData) => {
       return await createReservation(formData);
@@ -494,7 +676,10 @@ export default function PublicLanding() {
     onSuccess: () => {
       setReservationMsg({
         type: 'success',
-        text: 'Room reservation request submitted successfully! Landlord will review and assign.',
+        text: t(
+          'Room reservation request submitted successfully! Landlord will review and assign.',
+          'कोठा बुकिङ अनुरोध सफलतापूर्वक पठाइयो! घरधनीले जाँच गरी कोठा तोक्नुहुनेछ।'
+        ),
       });
       setTimeout(() => {
         setReservingRoom(null);
@@ -508,7 +693,7 @@ export default function PublicLanding() {
         text:
           err.response?.data?.room?.[0] ||
           err.response?.data?.detail ||
-          'Failed to submit reservation.',
+          t('Failed to submit reservation.', 'बुकिङ अनुरोध पठाउन सकिएन।'),
       });
     },
   });
@@ -543,7 +728,10 @@ export default function PublicLanding() {
       setBannerPreviews((prev) => [...prev, ...newPreviews]);
       setBannerFeedback({
         type: 'info',
-        text: `${validFiles.length} image(s) queued for slideshow upload. Click "Upload to Slideshow" below.`,
+        text: t(
+          `${validFiles.length} image(s) queued for slideshow upload. Click "Upload to Slideshow" below.`,
+          `${validFiles.length} फोटो(हरू) अपलोडका लागि तयार छन्। तलको अपलोड बटन थिच्नुहोस्।`
+        ),
       });
     }
     e.target.value = '';
@@ -565,7 +753,7 @@ export default function PublicLanding() {
     if (bannerFiles.length === 0) {
       setBannerFeedback({
         type: 'error',
-        text: 'Please select one or more images first.',
+        text: t('Please select one or more images first.', 'कृपया पहिले कम्तीमा एउटा फोटो छान्नुहोस्।'),
       });
       return;
     }
@@ -601,9 +789,15 @@ export default function PublicLanding() {
 
   const currentBanner = banners[activeSlide] || {
     id: null,
-    title: 'Smart House Rental • Ground & 1st Floor',
-    subtitle: 'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
-    badge_text: 'Verified Direct-Landlord Listing',
+    title: t(
+      'Smart House Rental • Ground & 1st Floor',
+      'स्मार्ट कोठा भाडा • भुइँ र पहिलो तल्ला'
+    ),
+    subtitle: t(
+      'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
+      'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी महसुल (रु. १००/कोठा)'
+    ),
+    badge_text: t('Verified Direct-Landlord Listing', 'घरधनीद्वारा प्रमाणित आवास'),
     resolved_url: DEFAULT_HERO_IMAGE,
   };
 
@@ -636,11 +830,13 @@ export default function PublicLanding() {
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-slate-700">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-            LIVE TELEMETRY
+            {t('LIVE TELEMETRY', 'लाइभ सब-मिटर प्रणाली')}
           </span>
           <span>
-            Automated Digital Sub-Metering Active • Transparent Utility Billing (Electricity Rs.
-            15/unit • Water Rs. 100/room)
+            {t(
+              'Automated Digital Sub-Metering Active • Transparent Utility Billing (Electricity Rs. 15/unit • Water Rs. 100/room)',
+              'स्वचालित डिजिटल सब-मिटरिङ सक्रिय • पारदर्शी बिलिङ प्रणाली (बिजुली रु. १५/युनिट • पानी रु. १००/कोठा)'
+            )}
           </span>
         </div>
       </div>
@@ -651,7 +847,7 @@ export default function PublicLanding() {
           <div className="max-w-7xl mx-auto space-y-2">
             <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-indigo-300">
               <BellRing className="w-3.5 h-3.5 animate-pulse text-amber-400" />
-              Official House Announcements
+              {t('Official House Announcements', 'आधिकारिक घर सूचना तथा जानकारी')}
             </div>
             {notices.map((notice) => (
               <div
@@ -666,7 +862,7 @@ export default function PublicLanding() {
                         : 'bg-indigo-500 text-white'
                     }`}
                   >
-                    {notice.category_display || notice.category}
+                    {td(notice.category_display || notice.category)}
                   </span>
                   <span className="font-bold">{notice.title}:</span>
                   <span className="text-indigo-100 line-clamp-1">{notice.content}</span>
@@ -689,32 +885,39 @@ export default function PublicLanding() {
           <div className="lg:col-span-6 space-y-6 lg:pt-4">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-200/60 text-indigo-700 text-xs font-semibold">
               <ShieldCheck className="w-4 h-4 text-indigo-600" />
-              Verified Direct-Landlord Rental Portal
+              {t('Verified Direct-Landlord Rental Portal', 'घरधनीद्वारा संचालित आधिकारिक भाडा पोर्टल')}
             </div>
 
             <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.12]">
-              Next-Gen Living.{' '}
-              <span className="text-indigo-600 block mt-1">Sub-Metered Precision.</span>
+              {t('Next-Gen Living.', 'आधुनिक र व्यवस्थित बसोबास।')}{' '}
+              <span className="text-indigo-600 block mt-1">
+                {t('Sub-Metered Precision.', 'पारदर्शी डिजिटल सब-मिटरिङ।')}
+              </span>
             </h1>
 
             <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl">
-              Zero utility squabbles, transparent digital electricity and water calculation, and
-              instant online/cash rent receipts. Designed for disciplined students, professionals,
-              and peaceful living.
+              {t(
+                'Zero utility squabbles, transparent digital electricity and water calculation, and instant online/cash rent receipts. Designed for disciplined students, professionals, and peaceful living.',
+                'बिजुली र पानीको हिसाबमा कुनै विवाद नहुने, पारदर्शी डिजिटल सब-मिटर गणना र तुरुन्तै अनलाइन वा नगद भाडा रसिद प्राप्त हुने। अनुशासित विद्यार्थी, कर्मचारी र शान्त बसोबासका लागि उपयुक्त।'
+              )}
             </p>
 
             <div className="rounded-2xl bg-white p-4 border border-slate-200/80 shadow-sm flex items-center justify-between max-w-lg">
               <div className="flex items-center gap-3">
                 <span className="w-3 h-3 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Now Leasing — Live Room Status</p>
+                  <p className="text-xs font-bold text-slate-900">
+                    {t('Now Leasing — Live Room Status', 'भाडाका लागि उपलब्ध — लाइभ कोठा विवरण')}
+                  </p>
                   <p className="text-xs text-slate-500">
-                    {stats.available_rooms} of {stats.total_rooms} Premium Rooms Vacant & Ready
+                    {isNepali
+                      ? `कुल ${stats.total_rooms} कोठामध्ये ${stats.available_rooms} कोठा खाली र तयार छन्`
+                      : `${stats.available_rooms} of ${stats.total_rooms} Premium Rooms Vacant & Ready`}
                   </p>
                 </div>
               </div>
               <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-700">
-                GROUND & FIRST FL
+                {t('GROUND & FIRST FL', 'भुइँ र पहिलो तल्ला')}
               </span>
             </div>
 
@@ -723,7 +926,7 @@ export default function PublicLanding() {
                 href="#rooms-inventory"
                 className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-lg shadow-indigo-600/25 transition"
               >
-                Check Room Availability
+                {t('Check Room Availability', 'उपलब्ध कोठाहरू हेर्नुहोस्')}
                 <ArrowRight className="w-4 h-4" />
               </a>
 
@@ -732,30 +935,44 @@ export default function PublicLanding() {
                   onClick={() => navigate(isAdmin ? '/admin-deck' : '/tenant')}
                   className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-sm font-bold shadow-sm transition"
                 >
-                  Open {isAdmin ? 'Admin Command Center' : 'Tenant Dashboard'}
+                  {isAdmin
+                    ? t('Open Admin Command Center', 'एडमिन कमाण्ड सेन्टर खोल्नुहोस्')
+                    : t('Open Tenant Dashboard', 'भाडावाल ड्यासबोर्ड खोल्नुहोस्')}
                 </button>
               ) : (
                 <button
                   onClick={() => openAuthModal('LOGIN')}
                   className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-sm font-bold shadow-sm transition"
                 >
-                  Tenant Portal Login
+                  {t('Tenant Portal Login', 'भाडावाल पोर्टल लगइन')}
                 </button>
               )}
             </div>
 
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/80 max-w-lg">
               <div>
-                <p className="text-lg sm:text-xl font-extrabold text-slate-900">Rs. 2,500</p>
-                <p className="text-[11px] text-slate-500 font-medium">Small Rooms (A3, B4)</p>
+                <p className="text-lg sm:text-xl font-extrabold text-slate-900">
+                  {t('Rs. 2,500', 'रु. २,५००')}
+                </p>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {t('Small Rooms (A3, B4)', 'साना कोठाहरू (A3, B4)')}
+                </p>
               </div>
               <div>
-                <p className="text-lg sm:text-xl font-extrabold text-slate-900">Rs. 3,800</p>
-                <p className="text-[11px] text-slate-500 font-medium">Standard Rooms</p>
+                <p className="text-lg sm:text-xl font-extrabold text-slate-900">
+                  {t('Rs. 3,800', 'रु. ३,८००')}
+                </p>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {t('Standard Rooms', 'स्ट्यान्डर्ड कोठाहरू')}
+                </p>
               </div>
               <div>
-                <p className="text-lg sm:text-xl font-extrabold text-slate-900">Rs. 15/kWh</p>
-                <p className="text-[11px] text-slate-500 font-medium">+ Rs. 100 Water/mo</p>
+                <p className="text-lg sm:text-xl font-extrabold text-slate-900">
+                  {t('Rs. 15/kWh', 'रु. १५/युनिट')}
+                </p>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {t('+ Rs. 100 Water/mo', '+ रु. १०० पानी/महिना')}
+                </p>
               </div>
             </div>
           </div>
@@ -782,7 +999,7 @@ export default function PublicLanding() {
                 <div className="absolute top-3.5 left-3.5 flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-xs font-bold shadow-md">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    {currentBanner.badge_text || 'Verified House Inspection'}
+                    {currentBanner.badge_text || t('Verified House Inspection', 'प्रमाणित आवास निरीक्षण')}
                   </div>
 
                   {banners.length > 1 && (
@@ -792,14 +1009,18 @@ export default function PublicLanding() {
                   )}
                 </div>
 
-                {/* Top Right Controls: Fullscreen Zoom, Auto-Play Toggle & Admin Manager */}
+                {/* Top Right Controls */}
                 <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
                   {banners.length > 1 && (
                     <button
                       type="button"
                       onClick={() => setIsAutoPlaying((prev) => !prev)}
                       className="p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
-                      title={isAutoPlaying ? 'Pause Slideshow' : 'Play Slideshow'}
+                      title={
+                        isAutoPlaying
+                          ? t('Pause Slideshow', 'स्लाइडशो रोक्नुहोस्')
+                          : t('Play Slideshow', 'स्लाइडशो चलाउनुहोस्')
+                      }
                     >
                       {isAutoPlaying ? (
                         <Pause className="w-3.5 h-3.5" />
@@ -813,7 +1034,7 @@ export default function PublicLanding() {
                     type="button"
                     onClick={() => setShowLightbox(true)}
                     className="p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
-                    title="View Fullscreen Slideshow"
+                    title={t('View Fullscreen Slideshow', 'पूरा स्क्रिनमा हेर्नुहोस्')}
                   >
                     <ZoomIn className="w-3.5 h-3.5" />
                   </button>
@@ -826,18 +1047,27 @@ export default function PublicLanding() {
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-lg transition"
                       >
                         <ImagePlus className="w-3.5 h-3.5" />
-                        {showBannerEditor ? 'Close Manager' : 'Manage Slideshow'}
+                        {showBannerEditor
+                          ? t('Close Manager', 'बन्द गर्नुहोस्')
+                          : t('Manage Slideshow', 'स्लाइडशो व्यवस्थापन')}
                       </button>
                       {currentBanner.id && (
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm('Delete this slide from the homepage slideshow?')) {
+                            if (
+                              window.confirm(
+                                t(
+                                  'Delete this slide from the homepage slideshow?',
+                                  'के तपाईं यो फोटो स्लाइडशोबाट हटाउन चाहनुहुन्छ?'
+                                )
+                              )
+                            ) {
                               deleteBannerMutation.mutate(currentBanner.id);
                             }
                           }}
                           className="p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
-                          title="Delete Current Slide"
+                          title={t('Delete Current Slide', 'यो स्लाइड हटाउनुहोस्')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -855,7 +1085,7 @@ export default function PublicLanding() {
                         setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1))
                       }
                       className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-lg transition transform hover:scale-105"
-                      title="Previous Slide"
+                      title={t('Previous Slide', 'अघिल्लो फोटो')}
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -865,7 +1095,7 @@ export default function PublicLanding() {
                         setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1))
                       }
                       className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-lg transition transform hover:scale-105"
-                      title="Next Slide"
+                      title={t('Next Slide', 'अर्को फोटो')}
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -883,13 +1113,17 @@ export default function PublicLanding() {
                         {currentBanner.title}
                       </p>
                       <p className="text-[11px] text-slate-500 truncate">
-                        {currentBanner.subtitle || 'Sub-metered Power & 24/7 Water Supply'}
+                        {currentBanner.subtitle ||
+                          t(
+                            'Sub-metered Power & 24/7 Water Supply',
+                            'सब-मिटर बिजुली र २४ सै घण्टा पानी सुविधा'
+                          )}
                       </p>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
                     <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold text-xs sm:text-sm">
-                      Rs. 2,500 – 3,800
+                      {t('Rs. 2,500 – 3,800', 'रु. २,५०० – ३,८००')}
                     </span>
                   </div>
                 </div>
@@ -941,7 +1175,10 @@ export default function PublicLanding() {
                     <div className="flex items-center gap-2">
                       <Layers className="w-4 h-4 text-indigo-600" />
                       <p className="text-xs font-extrabold text-indigo-900 uppercase tracking-wider">
-                        Admin: Multi-Image Hero Slideshow Manager ({banners.length} Active Slides)
+                        {t(
+                          `Admin: Multi-Image Hero Slideshow Manager (${banners.length} Active Slides)`,
+                          `एडमिन: स्लाइडशो फोटो व्यवस्थापन (${banners.length} सक्रिय स्लाइडहरू)`
+                        )}
                       </p>
                     </div>
                     <button
@@ -973,11 +1210,13 @@ export default function PublicLanding() {
                     </div>
                   )}
 
-                  {/* Existing Slides Strip with Quick Delete */}
                   {banners.length > 0 && (
                     <div className="space-y-1.5">
                       <p className="text-[11px] font-bold text-slate-500 uppercase">
-                        Current Published Slides (Click Trash to Remove)
+                        {t(
+                          'Current Published Slides (Click Trash to Remove)',
+                          'हालका प्रकाशित स्लाइडहरू (हटाउन डिलिट आइकन थिच्नुहोस्)'
+                        )}
                       </p>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-36 overflow-y-auto pr-1">
                         {banners.map((b, idx) => (
@@ -1007,7 +1246,7 @@ export default function PublicLanding() {
                                     deleteBannerMutation.mutate(b.id);
                                   }}
                                   className="p-1 rounded-lg bg-rose-600 text-white hover:bg-rose-700"
-                                  title="Delete Slide"
+                                  title={t('Delete Slide', 'स्लाइड हटाउनुहोस्')}
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -1019,14 +1258,13 @@ export default function PublicLanding() {
                     </div>
                   )}
 
-                  {/* Upload New Single or Multiple Slides Form */}
                   <form onSubmit={handleBannerUpload} className="space-y-3 pt-2 border-t border-slate-200">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <input
                         type="text"
                         value={bannerTitle}
                         onChange={(e) => setBannerTitle(e.target.value)}
-                        placeholder="Slide Title (e.g. Studio B2 • Balcony)"
+                        placeholder={t('Slide Title (e.g. Studio B2)', 'स्लाइड शीर्षक')}
                         className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                         required
                       />
@@ -1034,7 +1272,7 @@ export default function PublicLanding() {
                         type="text"
                         value={bannerBadge}
                         onChange={(e) => setBannerBadge(e.target.value)}
-                        placeholder="Top Badge Text"
+                        placeholder={t('Top Badge Text', 'माथिल्लो ब्याज पाठ')}
                         className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                       />
                     </div>
@@ -1042,18 +1280,23 @@ export default function PublicLanding() {
                       type="text"
                       value={bannerSubtitle}
                       onChange={(e) => setBannerSubtitle(e.target.value)}
-                      placeholder="Subtitle description"
+                      placeholder={t('Subtitle description', 'उप-शीर्षक विवरण')}
                       className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                     />
 
-                    {/* Multi-file Dropzone */}
                     <label className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-indigo-300 hover:border-indigo-600 bg-white cursor-pointer transition text-center">
                       <Upload className="w-5 h-5 text-indigo-600 mb-1" />
                       <span className="text-xs font-extrabold text-slate-800">
-                        Select Multiple Hero Banner Images
+                        {t(
+                          'Select Multiple Hero Banner Images',
+                          'एक वा एकभन्दा बढी ब्यानर फोटोहरू छान्नुहोस्'
+                        )}
                       </span>
                       <span className="text-[11px] text-slate-400">
-                        You can select 1 or multiple photos at once (JPG, PNG, WEBP, HEIC up to 5 MB each)
+                        {t(
+                          'You can select 1 or multiple photos at once (up to 5 MB each)',
+                          'प्रत्येक ५ एमबी सम्मका एक वा धेरै फोटोहरू एकैपटक छान्न सकिन्छ'
+                        )}
                       </span>
                       <input
                         type="file"
@@ -1064,11 +1307,13 @@ export default function PublicLanding() {
                       />
                     </label>
 
-                    {/* Preview Queued Files Before Upload */}
                     {bannerPreviews.length > 0 && (
                       <div className="space-y-1.5">
                         <p className="text-[11px] font-bold text-indigo-700">
-                          Ready to Upload ({bannerPreviews.length} selected):
+                          {t(
+                            `Ready to Upload (${bannerPreviews.length} selected):`,
+                            `अपलोडका लागि तयार (${bannerPreviews.length} छानिएको):`
+                          )}
                         </p>
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                           {bannerPreviews.map((item, idx) => (
@@ -1085,7 +1330,6 @@ export default function PublicLanding() {
                                 type="button"
                                 onClick={() => removeQueuedBannerFile(idx)}
                                 className="absolute top-1 right-1 p-1 rounded-full bg-slate-900/75 text-white hover:bg-rose-600"
-                                title="Remove from queue"
                               >
                                 <X className="w-3 h-3" />
                               </button>
@@ -1108,7 +1352,7 @@ export default function PublicLanding() {
                           }}
                           className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100"
                         >
-                          Clear Queue
+                          {t('Clear Queue', 'सूची खाली गर्नुहोस्')}
                         </button>
                       )}
                       <button
@@ -1119,12 +1363,17 @@ export default function PublicLanding() {
                         {uploadBannerMutation.isPending ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            Uploading Slides...
+                            {t('Uploading Slides...', 'अपलोड हुँदैछ...')}
                           </>
                         ) : (
                           <>
                             <Upload className="w-3.5 h-3.5" />
-                            Upload {bannerFiles.length > 0 ? `${bannerFiles.length} Slide(s)` : 'to Slideshow'}
+                            {bannerFiles.length > 0
+                              ? t(
+                                  `Upload ${bannerFiles.length} Slide(s)`,
+                                  `${bannerFiles.length} फोटो अपलोड गर्नुहोस्`
+                                )
+                              : t('Upload to Slideshow', 'स्लाइडशोमा अपलोड गर्नुहोस्')}
                           </>
                         )}
                       </button>
@@ -1145,22 +1394,34 @@ export default function PublicLanding() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
-              REAL-TIME INVENTORY
+              {t('REAL-TIME INVENTORY', 'लाइभ कोठा सूची')}
             </p>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-              Available Rooms & Studios
+              {t('Available Rooms & Studios', 'उपलब्ध कोठा तथा स्टुडियोहरू')}
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Explore floor-by-floor specifications, pricing, and live occupancy statuses.
+              {t(
+                'Explore floor-by-floor specifications, pricing, and live occupancy statuses.',
+                'तल्ला अनुसार कोठाको विवरण, मासिक भाडा दर र खाली/बसोबास अवस्था हेर्नुहोस्।'
+              )}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
               {[
-                { key: 'ALL', label: `All Units (${rooms.length || 9})` },
-                { key: 'GROUND', label: 'Ground Floor (A1–A4)' },
-                { key: 'FIRST', label: 'First Floor (B1–B5)' },
+                {
+                  key: 'ALL',
+                  label: t(`All Units (${rooms.length || 9})`, `सबै कोठा (${rooms.length || 9})`),
+                },
+                {
+                  key: 'GROUND',
+                  label: t('Ground Floor (A1–A4)', 'भुइँ तल्ला (A1–A4)'),
+                },
+                {
+                  key: 'FIRST',
+                  label: t('First Floor (B1–B5)', 'पहिलो तल्ला (B1–B5)'),
+                },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -1184,7 +1445,9 @@ export default function PublicLanding() {
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              {availableOnly ? '✓ Showing Available Only' : 'Filter: Available Only'}
+              {availableOnly
+                ? t('✓ Showing Available Only', '✓ खाली कोठा मात्र देखाइएको')
+                : t('Filter: Available Only', 'फिल्टर: खाली कोठा मात्र')}
             </button>
           </div>
         </div>
@@ -1200,11 +1463,16 @@ export default function PublicLanding() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">Ground Floor</h3>
-                    <span className="text-xs text-slate-500">4 Units • A1, A2, A3 (Small), A4</span>
+                    <h3 className="text-sm font-extrabold text-slate-900">
+                      {t('Ground Floor', 'भुइँ तल्ला')}
+                    </h3>
+                    <span className="text-xs text-slate-500">
+                      {t('4 Units • A1, A2, A3 (Small), A4', '४ कोठाहरू • A1, A2, A3 (सानो), A4')}
+                    </span>
                   </div>
                   <span className="text-xs font-semibold text-emerald-600">
-                    {groundRooms.filter((r) => !r.is_occupied).length} Available
+                    {groundRooms.filter((r) => !r.is_occupied).length}{' '}
+                    {t('Available', 'खाली उपलब्ध')}
                   </span>
                 </div>
 
@@ -1213,6 +1481,7 @@ export default function PublicLanding() {
                     <RoomCard
                       key={room.id}
                       room={room}
+                      t={t}
                       onAction={() => {
                         if (!user) {
                           openAuthModal('SIGNUP');
@@ -1231,13 +1500,19 @@ export default function PublicLanding() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-indigo-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">First Floor</h3>
+                    <h3 className="text-sm font-extrabold text-slate-900">
+                      {t('First Floor', 'पहिलो तल्ला')}
+                    </h3>
                     <span className="text-xs text-slate-500">
-                      5 Units • B1, B2, B3, B4 (Small), B5
+                      {t(
+                        '5 Units • B1, B2, B3, B4 (Small), B5',
+                        '५ कोठाहरू • B1, B2, B3, B4 (सानो), B5'
+                      )}
                     </span>
                   </div>
                   <span className="text-xs font-semibold text-emerald-600">
-                    {firstRooms.filter((r) => !r.is_occupied).length} Available
+                    {firstRooms.filter((r) => !r.is_occupied).length}{' '}
+                    {t('Available', 'खाली उपलब्ध')}
                   </span>
                 </div>
 
@@ -1246,6 +1521,7 @@ export default function PublicLanding() {
                     <RoomCard
                       key={room.id}
                       room={room}
+                      t={t}
                       onAction={() => {
                         if (!user) {
                           openAuthModal('SIGNUP');
@@ -1272,13 +1548,16 @@ export default function PublicLanding() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
-              COMMUNITY HARMONY & TENANT CHARTER
+              {t('COMMUNITY HARMONY & TENANT CHARTER', 'सामुदायिक सद्भाव र भाडावाल आचारसंहिता')}
             </p>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-              House Rules & Guidelines
+              {t('House Rules & Guidelines', 'घरको नियम तथा निर्देशिका')}
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Official 13-point residential guidelines for a clean, safe, peaceful, and respectful living environment.
+              {t(
+                'Official 13-point residential guidelines for a clean, safe, peaceful, and respectful living environment.',
+                'सफा, सुरक्षित, शान्त र सम्मानजनक बसोबास वातावरणका लागि १३-बुँदे आधिकारिक आवासीय नियमहरू।'
+              )}
             </p>
           </div>
 
@@ -1287,7 +1566,9 @@ export default function PublicLanding() {
             onClick={() => setExpandAllRules((prev) => !prev)}
             className="self-start sm:self-auto px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 border border-slate-200 text-xs font-extrabold shadow-2xs transition"
           >
-            {expandAllRules ? 'Collapse All 13 Categories' : 'Expand All 13 Categories'}
+            {expandAllRules
+              ? t('Collapse All 13 Categories', 'सबै १३ बुँदाहरू संक्षिप्त गर्नुहोस्')
+              : t('Expand All 13 Categories', 'सबै १३ बुँदाहरू विस्तारमा हेर्नुहोस्')}
           </button>
         </div>
 
@@ -1296,6 +1577,7 @@ export default function PublicLanding() {
           {HOUSE_RULES_CATEGORIES.map((cat, idx) => {
             const isOpen = expandAllRules || openRuleIndex === idx;
             const IconComponent = cat.icon;
+            const pointsList = isNepali && cat.itemsNe ? cat.itemsNe : cat.items;
 
             return (
               <div
@@ -1331,15 +1613,17 @@ export default function PublicLanding() {
                             cat.isHighlightedFineCategory ? 'text-rose-900' : 'text-slate-900'
                           }`}
                         >
-                          {cat.title}
+                          {isNepali ? cat.titleNe : cat.title}
                         </h3>
                         {cat.isHighlightedFineCategory && (
                           <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-extrabold uppercase">
-                            Penalty Schedule
+                            {t('Penalty Schedule', 'जरिवाना तालिका')}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 truncate">{cat.subtitle}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {isNepali ? cat.subtitleNe : cat.subtitle}
+                      </p>
                     </div>
                   </div>
                   <ChevronDown
@@ -1356,18 +1640,18 @@ export default function PublicLanding() {
                         <table className="w-full text-left text-xs">
                           <thead className="bg-rose-50 text-rose-900 font-extrabold uppercase text-[11px] border-b border-rose-200">
                             <tr>
-                              <th className="py-2.5 px-4">Violation</th>
-                              <th className="py-2.5 px-4">Penalty</th>
+                              <th className="py-2.5 px-4">{t('Violation', 'उल्लंघन / गल्ती')}</th>
+                              <th className="py-2.5 px-4">{t('Penalty', 'जरिवाना / दण्ड')}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-rose-100">
                             {DAMAGE_FINE_PENALTIES.map((row, rIdx) => (
                               <tr key={rIdx} className="hover:bg-rose-50/30">
                                 <td className="py-2.5 px-4 font-semibold text-slate-800">
-                                  {row.violation}
+                                  {isNepali ? row.violationNe : row.violation}
                                 </td>
                                 <td className="py-2.5 px-4 font-extrabold text-rose-600">
-                                  {row.penalty}
+                                  {isNepali ? row.penaltyNe : row.penalty}
                                 </td>
                               </tr>
                             ))}
@@ -1377,7 +1661,7 @@ export default function PublicLanding() {
                     )}
 
                     <ul className="space-y-2">
-                      {cat.items.map((point, pIdx) => (
+                      {pointsList.map((point, pIdx) => (
                         <li
                           key={pIdx}
                           className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700"
@@ -1409,15 +1693,15 @@ export default function PublicLanding() {
               </div>
               <div>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">
-                  Highlighted Policy Schedule
+                  {t('Highlighted Policy Schedule', 'विशेष जरिवाना नीति तालिका')}
                 </span>
                 <h3 className="text-lg sm:text-xl font-black text-slate-900">
-                  Damage Fines & Penalties Schedule
+                  {t('Damage Fines & Penalties Schedule', 'क्षति जरिवाना र दण्ड तालिका')}
                 </h3>
               </div>
             </div>
             <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-extrabold self-start sm:self-auto">
-              Evidence-Backed Enforcement
+              {t('Evidence-Backed Enforcement', 'फोटो प्रमाणसहित लागू हुने')}
             </span>
           </div>
 
@@ -1427,15 +1711,19 @@ export default function PublicLanding() {
               <table className="w-full text-left text-xs sm:text-sm">
                 <thead className="bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wider">
                   <tr>
-                    <th className="py-3 px-4">Violation</th>
-                    <th className="py-3 px-4">Penalty</th>
+                    <th className="py-3 px-4">{t('Violation', 'उल्लंघन / क्षति विवरण')}</th>
+                    <th className="py-3 px-4">{t('Penalty', 'जरिवाना / दण्ड')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {DAMAGE_FINE_PENALTIES.map((item, idx) => (
                     <tr key={idx} className="hover:bg-rose-50/40 transition">
-                      <td className="py-3 px-4 font-bold text-slate-800">{item.violation}</td>
-                      <td className="py-3 px-4 font-black text-rose-600">{item.penalty}</td>
+                      <td className="py-3 px-4 font-bold text-slate-800">
+                        {isNepali ? item.violationNe : item.violation}
+                      </td>
+                      <td className="py-3 px-4 font-black text-rose-600">
+                        {isNepali ? item.penaltyNe : item.penalty}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1445,13 +1733,16 @@ export default function PublicLanding() {
             {/* Fine Guidelines Box */}
             <div className="lg:col-span-5 rounded-2xl bg-white p-5 border border-rose-200/90 space-y-3 shadow-2xs">
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-rose-700 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-rose-600" /> Official Fine Guidelines
+                <ShieldCheck className="w-4 h-4 text-rose-600" />{' '}
+                {t('Official Fine Guidelines', 'जरिवाना सम्बन्धी आधिकारिक निर्देशिका')}
               </h4>
               <ul className="space-y-2.5 text-xs text-slate-700">
                 {FINE_GUIDELINES_LIST.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span className="font-medium leading-relaxed">{item}</span>
+                    <span className="font-medium leading-relaxed">
+                      {isNepali ? item.ne : item.en}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -1464,15 +1755,20 @@ export default function PublicLanding() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-extrabold uppercase tracking-wider border border-indigo-400/30">
-                <FileCheck2 className="w-3.5 h-3.5" /> Important Notice
+                <FileCheck2 className="w-3.5 h-3.5" />{' '}
+                {t('Important Notice', 'महत्त्वपूर्ण सूचना')}
               </div>
               <h3 className="text-lg sm:text-xl font-extrabold text-white">
-                Tenant Acknowledgment & Responsibility Charter
+                {t(
+                  'Tenant Acknowledgment & Responsibility Charter',
+                  'भाडावालको सहमति र जिम्मेवारी प्रतिबद्धता'
+                )}
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                All tenants are expected to follow these guidelines to maintain a clean, safe,
-                peaceful, and respectful living environment. By accepting these rules, tenants
-                acknowledge their responsibilities toward the property and other residents.
+                {t(
+                  'All tenants are expected to follow these guidelines to maintain a clean, safe, peaceful, and respectful living environment. By accepting these rules, tenants acknowledge their responsibilities toward the property and other residents.',
+                  'सफा, सुरक्षित, शान्त र सम्मानजनक बसोबास वातावरण कायम राख्न सबै भाडावालहरूले यी नियमहरू पालना गर्नुपर्नेछ। यी नियमहरू स्वीकार गरेर, भाडावालहरूले घरको सम्पत्ति र अन्य बसोबास गर्नेहरूप्रति आफ्नो जिम्मेवारी स्वीकार गर्दछन्।'
+                )}
               </p>
             </div>
 
@@ -1480,7 +1776,12 @@ export default function PublicLanding() {
               {hasAcceptedRules ? (
                 <div className="px-5 py-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>✓ House Rules Acknowledged & Accepted</span>
+                  <span>
+                    {t(
+                      '✓ House Rules Acknowledged & Accepted',
+                      '✓ घरको नियम र निर्देशिका स्वीकार गरिएको छ'
+                    )}
+                  </span>
                 </div>
               ) : (
                 <button
@@ -1492,12 +1793,12 @@ export default function PublicLanding() {
                   {acceptRulesMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Recording Acknowledgment...
+                      {t('Recording Acknowledgment...', 'सहमति दर्ता हुँदैछ...')}
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      I Agree & Accept
+                      {t('I Agree & Accept', 'म सहमत छु र स्वीकार गर्दछु')}
                     </>
                   )}
                 </button>
@@ -1616,14 +1917,16 @@ export default function PublicLanding() {
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
               <div>
                 <h3 className="text-lg font-extrabold text-slate-900">
-                  Book Room {reservingRoom.room_number} (
+                  {t('Book Room', 'कोठा बुक गर्नुहोस्')} {reservingRoom.room_number} (
                   {String(reservingRoom.room_number).startsWith('B')
-                    ? 'First Floor'
-                    : 'Ground Floor'}
+                    ? t('First Floor', 'पहिलो तल्ला')
+                    : t('Ground Floor', 'भुइँ तल्ला')}
                   )
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Base Rent: Rs. {Number(reservingRoom.base_rent).toLocaleString()}/month
+                  {t('Base Rent:', 'मासिक भाडा:')} {t('Rs.', 'रु.')}{' '}
+                  {Number(reservingRoom.base_rent).toLocaleString()}
+                  {t('/month', '/महिना')}
                 </p>
               </div>
               <button
@@ -1649,7 +1952,7 @@ export default function PublicLanding() {
             <form onSubmit={handleReservationSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  REQUEST TYPE
+                  {t('REQUEST TYPE', 'अनुरोधको प्रकार')}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -1661,7 +1964,7 @@ export default function PublicLanding() {
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    Instant Room Reservation
+                    {t('Instant Room Reservation', 'तत्काल कोठा बुकिङ')}
                   </button>
                   <button
                     type="button"
@@ -1672,7 +1975,7 @@ export default function PublicLanding() {
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    Schedule Physical Visit
+                    {t('Schedule Physical Visit', 'प्रत्यक्ष कोठा हेर्ने समय')}
                   </button>
                 </div>
               </div>
@@ -1680,7 +1983,7 @@ export default function PublicLanding() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    EXPECTED MOVE-IN / VISIT DATE (AD)
+                    {t('EXPECTED MOVE-IN / VISIT DATE (AD)', 'सर्ने वा कोठा हेर्ने मिति (AD)')}
                   </label>
                   <input
                     type="date"
@@ -1691,14 +1994,14 @@ export default function PublicLanding() {
                   />
                   {moveInDate && (
                     <p className="text-[11px] font-extrabold text-indigo-600 mt-1">
-                      📅 BS: {formatBSOnly(moveInDate)}
+                      📅 {t('BS:', 'नेपाली मिति:')} {formatBSOnly(moveInDate)}
                     </p>
                   )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    TOTAL OCCUPANTS
+                    {t('TOTAL OCCUPANTS', 'बस्ने व्यक्ति संख्या')}
                   </label>
                   <input
                     type="number"
@@ -1715,27 +2018,27 @@ export default function PublicLanding() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    PHONE NUMBER
+                    {t('PHONE NUMBER', 'मोबाइल नम्बर')}
                   </label>
                   <input
                     type="text"
                     required
                     value={phoneNum}
                     onChange={(e) => setPhoneNum(e.target.value)}
-                    placeholder="e.g. 9848800000"
+                    placeholder="9848800000"
                     className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    OCCUPATION / PROFESSION
+                    {t('OCCUPATION / PROFESSION', 'पेशा / अध्ययन')}
                   </label>
                   <input
                     type="text"
                     value={occupation}
                     onChange={(e) => setOccupation(e.target.value)}
-                    placeholder="e.g. BCA Student / IT Intern"
+                    placeholder={t('e.g. BCA Student / IT Intern', 'जस्तै: विद्यार्थी / कर्मचारी')}
                     className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
                   />
                 </div>
@@ -1743,11 +2046,13 @@ export default function PublicLanding() {
 
               {requestType === 'RESERVE' && (
                 <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100 space-y-3">
-                  <p className="text-xs font-bold text-indigo-900">Token Deposit (Optional)</p>
+                  <p className="text-xs font-bold text-indigo-900">
+                    {t('Token Deposit (Optional)', 'बैना रकम (ऐच्छिक)')}
+                  </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Token Amount (NPR)
+                        {t('Token Amount (NPR)', 'बैना रकम (रु.)')}
                       </label>
                       <input
                         type="number"
@@ -1758,7 +2063,7 @@ export default function PublicLanding() {
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Payment Screenshot Slip
+                        {t('Payment Screenshot Slip', 'भुक्तानी भौचर फोटो')}
                       </label>
                       <input
                         type="file"
@@ -1773,7 +2078,10 @@ export default function PublicLanding() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  CITIZENSHIP / ID CARD PHOTO (FOR KYC ONBOARDING)
+                  {t(
+                    'CITIZENSHIP / ID CARD PHOTO (FOR KYC ONBOARDING)',
+                    'नागरिकता वा परिचयपत्रको फोटो (KYC का लागि)'
+                  )}
                 </label>
                 <input
                   type="file"
@@ -1785,13 +2093,19 @@ export default function PublicLanding() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  ADDITIONAL NOTES / PREFERRED VISIT TIME
+                  {t(
+                    'ADDITIONAL NOTES / PREFERRED VISIT TIME',
+                    'थप जानकारी वा कोठा हेर्न आउने समय'
+                  )}
                 </label>
                 <textarea
                   rows="2"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Any special inquiries or time preferences..."
+                  placeholder={t(
+                    'Any special inquiries or time preferences...',
+                    'कुनै जिज्ञासा वा समय भए उल्लेख गर्नुहोस्...'
+                  )}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600 resize-none"
                 />
               </div>
@@ -1802,14 +2116,16 @@ export default function PublicLanding() {
                   onClick={() => setReservingRoom(null)}
                   className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
                 >
-                  Cancel
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
                 </button>
                 <button
                   type="submit"
                   disabled={reserveMutation.isPending}
                   className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 transition"
                 >
-                  {reserveMutation.isPending ? 'Submitting...' : 'Confirm Request'}
+                  {reserveMutation.isPending
+                    ? t('Submitting...', 'पठाउँदै...')
+                    : t('Confirm Request', 'अनुरोध पक्का गर्नुहोस्')}
                 </button>
               </div>
             </form>
@@ -1820,7 +2136,7 @@ export default function PublicLanding() {
   );
 }
 
-function RoomCard({ room, onAction }) {
+function RoomCard({ room, onAction, t }) {
   const isSmall = room.room_type === 'SMALL';
   const occupied = room.is_occupied;
   const pendingCount = room.pending_reservations_count || 0;
@@ -1837,11 +2153,11 @@ function RoomCard({ room, onAction }) {
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5">
             <h4 className="text-base font-extrabold text-slate-900">
-              Room {room.room_number}
+              {t('Room', 'कोठा')} {room.room_number}
             </h4>
             {isSmall && (
               <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[10px]">
-                Small Room
+                {t('Small Room', 'सानो कोठा')}
               </span>
             )}
           </div>
@@ -1853,12 +2169,12 @@ function RoomCard({ room, onAction }) {
                 : 'bg-emerald-100 text-emerald-700'
             }`}
           >
-            {occupied ? '• Occupied' : '• Available'}
+            {occupied ? t('• Occupied', '• बुक भइसकेको') : t('• Available', '• खाली छ')}
           </span>
         </div>
 
         <p className="text-xs text-slate-500 font-medium mb-4">
-          {room.title} • {room.area_sqft} sq.ft
+          {room.title} • {room.area_sqft} {t('sq.ft', 'वर्ग फिट')}
         </p>
 
         <ul className="space-y-2 mb-5">
@@ -1870,11 +2186,18 @@ function RoomCard({ room, onAction }) {
           ))}
           <li className="flex items-center gap-2 text-xs text-slate-600">
             <Droplets className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>Water: Rs. {Number(room.fixed_water_bill).toFixed(0)}/mo</span>
+            <span>
+              {t('Water: Rs.', 'पानी: रु.')} {Number(room.fixed_water_bill).toFixed(0)}
+              {t('/mo', '/महिना')}
+            </span>
           </li>
           <li className="flex items-center gap-2 text-xs text-slate-600">
             <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>Electricity: Rs. {Number(room.electricity_rate_per_unit).toFixed(0)}/unit</span>
+            <span>
+              {t('Electricity: Rs.', 'बिजुली: रु.')}{' '}
+              {Number(room.electricity_rate_per_unit).toFixed(0)}
+              {t('/unit', '/युनिट')}
+            </span>
           </li>
         </ul>
       </div>
@@ -1882,21 +2205,23 @@ function RoomCard({ room, onAction }) {
       <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
         <div>
           <p className="text-base font-extrabold text-slate-900">
-            Rs. {Number(room.base_rent).toLocaleString()}
+            {t('Rs.', 'रु.')} {Number(room.base_rent).toLocaleString()}
           </p>
-          <p className="text-[10px] text-slate-400 font-medium">/ month base rent</p>
+          <p className="text-[10px] text-slate-400 font-medium">
+            {t('/ month base rent', '/ महिना आधारभूत भाडा')}
+          </p>
         </div>
 
         {occupied ? (
           <span className="px-3 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold">
-            Occupied
+            {t('Occupied', 'खाली छैन')}
           </span>
         ) : (
           <button
             onClick={onAction}
             className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition relative"
           >
-            Reserve / Apply
+            {t('Reserve / Apply', 'बुक गर्नुहोस्')}
             {pendingCount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow">
                 {pendingCount}

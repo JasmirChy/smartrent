@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 
 export default function AuthModal() {
   const {
@@ -24,6 +25,7 @@ export default function AuthModal() {
     setAuthModalMode,
     saveSession,
   } = useAuth();
+  const { t } = useLanguage();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -76,7 +78,7 @@ export default function AuthModal() {
       setError(
         err.response?.data?.non_field_errors?.[0] ||
           err.response?.data?.error ||
-          'Invalid email or password.'
+          t('Invalid email or password.', 'इमेल वा पासवर्ड मिलेन।')
       );
     } finally {
       setSubmitting(false);
@@ -109,7 +111,10 @@ export default function AuthModal() {
         data?.phone_number?.[0] ||
         data?.password?.[0] ||
         data?.error ||
-        'Signup failed. Please check your details.';
+        t(
+          'Signup failed. Please check your details.',
+          'दर्ता सफल भएन। कृपया आफ्नो विवरण जाँच गर्नुहोस्।'
+        );
       setError(firstErr);
     } finally {
       setSubmitting(false);
@@ -126,7 +131,10 @@ export default function AuthModal() {
       setSuccessMsg(res.data.message);
       setResetStep(2);
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not send OTP to this email.');
+      setError(
+        err.response?.data?.error ||
+          t('Could not send OTP to this email.', 'यस इमेलमा ओटिपी पठाउन सकिएन।')
+      );
     } finally {
       setSubmitting(false);
     }
@@ -150,7 +158,10 @@ export default function AuthModal() {
       setShowResetPassword(false);
       setTimeout(() => setAuthModalMode('LOGIN'), 1200);
     } catch (err) {
-      setError(err.response?.data?.error || 'Invalid OTP or password.');
+      setError(
+        err.response?.data?.error ||
+          t('Invalid OTP or password.', 'अमान्य ओटिपी वा पासवर्ड।')
+      );
     } finally {
       setSubmitting(false);
     }
@@ -175,17 +186,30 @@ export default function AuthModal() {
         {/* Brand Header */}
         <div className="mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-semibold mb-2">
-            SmartRent Portal
+            {t('SmartRent Portal', 'स्मार्टरेन्ट पोर्टल')}
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900">
-            {authModalMode === 'LOGIN' && 'Welcome Back'}
-            {authModalMode === 'SIGNUP' && 'Create Tenant Account'}
-            {authModalMode === 'RESET_PASSWORD' && 'Reset / Change Password'}
+            {authModalMode === 'LOGIN' && t('Welcome Back', 'फेरि स्वागत छ')}
+            {authModalMode === 'SIGNUP' && t('Create Tenant Account', 'नयाँ भाडावाल खाता खोल्नुहोस्')}
+            {authModalMode === 'RESET_PASSWORD' &&
+              t('Reset / Change Password', 'पासवर्ड रिसेट / परिवर्तन गर्नुहोस्')}
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            {authModalMode === 'LOGIN' && 'Sign in directly with your email and password.'}
-            {authModalMode === 'SIGNUP' && 'Register with your email, phone number & profile photo.'}
-            {authModalMode === 'RESET_PASSWORD' && 'We will send a 6-digit OTP to your email to change your password.'}
+            {authModalMode === 'LOGIN' &&
+              t(
+                'Sign in directly with your email and password.',
+                'आफ्नो इमेल र पासवर्ड प्रयोग गरी सिधै लगइन गर्नुहोस्।'
+              )}
+            {authModalMode === 'SIGNUP' &&
+              t(
+                'Register with your email, phone number & profile photo.',
+                'आफ्नो इमेल, मोबाइल नम्बर र प्रोफाइल फोटो राखी दर्ता गर्नुहोस्।'
+              )}
+            {authModalMode === 'RESET_PASSWORD' &&
+              t(
+                'We will send a 6-digit OTP to your email to change your password.',
+                'पासवर्ड परिवर्तन गर्न तपाईंको इमेलमा ६-अंकको ओटिपी पठाइनेछ।'
+              )}
           </p>
         </div>
 
@@ -208,7 +232,7 @@ export default function AuthModal() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
-                Email Address
+                {t('Email Address', 'इमेल ठेगाना')}
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -226,7 +250,7 @@ export default function AuthModal() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Password
+                  {t('Password', 'पासवर्ड')}
                 </label>
                 <button
                   type="button"
@@ -236,7 +260,7 @@ export default function AuthModal() {
                   }}
                   className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                 >
-                  Forgot / Change Password?
+                  {t('Forgot / Change Password?', 'पासवर्ड बिर्सनुभयो / परिवर्तन गर्ने?')}
                 </button>
               </div>
               <div className="relative">
@@ -254,7 +278,11 @@ export default function AuthModal() {
                   onClick={() => setShowLoginPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
                   tabIndex={-1}
-                  title={showLoginPassword ? 'Hide password' : 'Show password'}
+                  title={
+                    showLoginPassword
+                      ? t('Hide password', 'पासवर्ड लुकाउनुहोस्')
+                      : t('Show password', 'पासवर्ड हेर्नुहोस्')
+                  }
                 >
                   {showLoginPassword ? (
                     <EyeOff className="w-4 h-4" />
@@ -271,17 +299,17 @@ export default function AuthModal() {
               className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 transition disabled:opacity-60"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              Sign In to SmartRent
+              {t('Sign In to SmartRent', 'स्मार्टरेन्टमा लगइन गर्नुहोस्')}
             </button>
 
             <p className="text-center text-xs text-slate-500 pt-2">
-              New tenant at the house?{' '}
+              {t('New tenant at the house?', 'नयाँ भाडावाल हुनुहुन्छ?')}{' '}
               <button
                 type="button"
                 onClick={() => setAuthModalMode('SIGNUP')}
                 className="font-bold text-indigo-600 hover:underline"
               >
-                Create an account
+                {t('Create an account', 'नयाँ खाता खोल्नुहोस्')}
               </button>
             </p>
           </form>
@@ -302,14 +330,21 @@ export default function AuthModal() {
                 <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
               </label>
               <div>
-                <p className="text-xs font-bold text-slate-800">Profile Picture</p>
-                <p className="text-[11px] text-slate-500">Tap circle to upload your photo (JPG/PNG)</p>
+                <p className="text-xs font-bold text-slate-800">
+                  {t('Profile Picture', 'प्रोफाइल फोटो')}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {t(
+                    'Tap circle to upload your photo (JPG/PNG)',
+                    'आफ्नो फोटो अपलोड गर्न गोलो घेरामा थिच्नुहोस्'
+                  )}
+                </p>
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
-                Full Name
+                {t('Full Name', 'पूरा नाम')}
               </label>
               <div className="relative">
                 <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -318,7 +353,7 @@ export default function AuthModal() {
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Enter your full name"
+                  placeholder={t('Enter your full name', 'आफ्नो पूरा नाम लेख्नुहोस्')}
                   className={inputClass}
                 />
               </div>
@@ -326,7 +361,7 @@ export default function AuthModal() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
-                Email Address
+                {t('Email Address', 'इमेल ठेगाना')}
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -343,7 +378,7 @@ export default function AuthModal() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
-                Mobile Number
+                {t('Mobile Number', 'मोबाइल नम्बर')}
               </label>
               <div className="relative">
                 <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -360,7 +395,7 @@ export default function AuthModal() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
-                Password
+                {t('Password', 'पासवर्ड')}
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -370,7 +405,7 @@ export default function AuthModal() {
                   minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimum 6 characters"
+                  placeholder={t('Minimum 6 characters', 'कम्तीमा ६ अक्षर')}
                   className={passwordInputClass}
                 />
                 <button
@@ -378,7 +413,11 @@ export default function AuthModal() {
                   onClick={() => setShowSignupPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
                   tabIndex={-1}
-                  title={showSignupPassword ? 'Hide password' : 'Show password'}
+                  title={
+                    showSignupPassword
+                      ? t('Hide password', 'पासवर्ड लुकाउनुहोस्')
+                      : t('Show password', 'पासवर्ड हेर्नुहोस्')
+                  }
                 >
                   {showSignupPassword ? (
                     <EyeOff className="w-4 h-4" />
@@ -395,30 +434,30 @@ export default function AuthModal() {
               className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 transition disabled:opacity-60"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              Create Account & Sign In
+              {t('Create Account & Sign In', 'खाता खोल्नुहोस् र लगइन गर्नुहोस्')}
             </button>
 
             <p className="text-center text-xs text-slate-500 pt-1">
-              Already have an account?{' '}
+              {t('Already have an account?', 'पहिले नै खाता छ?')}{' '}
               <button
                 type="button"
                 onClick={() => setAuthModalMode('LOGIN')}
                 className="font-bold text-indigo-600 hover:underline"
               >
-                Sign In
+                {t('Sign In', 'लगइन गर्नुहोस्')}
               </button>
             </p>
           </form>
         )}
 
-        {/* PASSWORD RESET / CHANGE WITH EMAIL OTP (ONLY PLACE WITH OTP) */}
+        {/* PASSWORD RESET / CHANGE WITH EMAIL OTP */}
         {authModalMode === 'RESET_PASSWORD' && (
           <div>
             {resetStep === 1 ? (
               <form onSubmit={handleRequestResetOtp} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
-                    Your Registered Email
+                    {t('Your Registered Email', 'तपाईंको दर्ता गरिएको इमेल')}
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -438,14 +477,14 @@ export default function AuthModal() {
                   className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Send 6-Digit OTP to Email
+                  {t('Send 6-Digit OTP to Email', 'इमेलमा ६-अंकको ओटिपी पठाउनुहोस्')}
                 </button>
               </form>
             ) : (
               <form onSubmit={handleConfirmResetOtp} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
-                    6-Digit Email OTP
+                    {t('6-Digit Email OTP', '६-अंकको इमेल ओटिपी')}
                   </label>
                   <div className="relative">
                     <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -462,7 +501,7 @@ export default function AuthModal() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
-                    New Password
+                    {t('New Password', 'नयाँ पासवर्ड')}
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -472,7 +511,7 @@ export default function AuthModal() {
                       minLength={6}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Enter new password"
+                      placeholder={t('Enter new password', 'नयाँ पासवर्ड लेख्नुहोस्')}
                       className={passwordInputClass}
                     />
                     <button
@@ -480,7 +519,11 @@ export default function AuthModal() {
                       onClick={() => setShowResetPassword((prev) => !prev)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
                       tabIndex={-1}
-                      title={showResetPassword ? 'Hide password' : 'Show password'}
+                      title={
+                        showResetPassword
+                          ? t('Hide password', 'पासवर्ड लुकाउनुहोस्')
+                          : t('Show password', 'पासवर्ड हेर्नुहोस्')
+                      }
                     >
                       {showResetPassword ? (
                         <EyeOff className="w-4 h-4" />
@@ -496,7 +539,7 @@ export default function AuthModal() {
                   className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Verify OTP & Update Password
+                  {t('Verify OTP & Update Password', 'ओटिपी प्रमाणित गरी पासवर्ड अपडेट गर्नुहोस्')}
                 </button>
               </form>
             )}
@@ -505,7 +548,7 @@ export default function AuthModal() {
               onClick={() => setAuthModalMode('LOGIN')}
               className="w-full text-center text-xs font-semibold text-slate-500 hover:text-slate-800 mt-4"
             >
-              ← Back to Sign In
+              {t('← Back to Sign In', '← लगइनमा फर्कनुहोस्')}
             </button>
           </div>
         )}
