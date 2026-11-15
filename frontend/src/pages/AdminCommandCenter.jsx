@@ -151,6 +151,12 @@ export default function AdminCommandCenter() {
   // Edit Room Sub-Meter Modal States
   const [editMeterRoom, setEditMeterRoom] = useState(null);
   const [editMeterValue, setEditMeterValue] = useState('');
+  // Edit Tenant Email, Name, Phone & Starting Date (Entry Date) Modal States
+  const [editTenantModalUser, setEditTenantModalUser] = useState(null);
+  const [editTenantEmail, setEditTenantEmail] = useState('');
+  const [editTenantName, setEditTenantName] = useState('');
+  const [editTenantPhone, setEditTenantPhone] = useState('');
+  const [editTenantEntryDate, setEditTenantEntryDate] = useState('');
 
   // Managed List Filter & Search States
   const [reservationFilter, setReservationFilter] = useState('PENDING'); // PENDING | APPROVED | ALL
@@ -413,6 +419,50 @@ export default function AdminCommandCenter() {
     setEditMeterRoom(roomObj);
     setEditMeterValue(String(roomObj.current_meter_reading ?? 0));
   };
+
+  const openEditTenantDetailsModal = (userObj) => {
+    if (!userObj) return;
+    setEditTenantModalUser(userObj);
+    setEditTenantEmail(userObj.email || '');
+    setEditTenantName(userObj.full_name || '');
+    setEditTenantPhone(userObj.phone_number || '');
+    setEditTenantEntryDate(
+      userObj.room_details?.entry_date || userObj.entry_date || ''
+    );
+  };
+
+  const updateTenantDetailsMutation = useMutation({
+    mutationFn: ({ userId, payload }) =>
+      adminEvictOrManageUser(userId, {
+        action_type: 'UPDATE_DETAILS',
+        ...payload,
+      }),
+    onSuccess: (data) => {
+      setBannerMsg({
+        type: 'success',
+        text:
+          data.message ||
+          t(
+            'Tenant email and starting date updated successfully!',
+            'भाडावालको इमेल र कोठामा सरेको मिति सफलतापूर्वक अपडेट गरियो!'
+          ),
+      });
+      setEditTenantModalUser(null);
+      refreshAllAdminData();
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text:
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          t(
+            'Could not update tenant details.',
+            'भाडावालको विवरण अपडेट गर्न सकिएन।'
+          ),
+      });
+    },
+  });
 
   const openFineModalForUser = (userObj = null, billObj = null) => {
     setFineModalError('');
@@ -1635,6 +1685,15 @@ export default function AdminCommandCenter() {
                         >
                           <Eye className="w-3.5 h-3.5" />{' '}
                           {t('Dossier', 'पूर्ण विवरण')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditTenantDetailsModal(u)}
+                          className="py-2.5 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold transition inline-flex items-center gap-1"
+                          title={t('Edit Email & Move-In Date', 'इमेल र सरेको मिति सच्याउनुहोस्')}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          {t('Edit', 'सच्याउनुहोस्')}
                         </button>
                         <button
                           type="button"
@@ -3188,6 +3247,14 @@ export default function AdminCommandCenter() {
                       >
                         <AlertTriangle className="w-3.5 h-3.5" />{' '}
                         {t('+ Apply Fine', '+ जरिवाना लगाउनुहोस्')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditTenantDetailsModal(u)}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition inline-flex items-center gap-1.5"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />{' '}
+                        {t('Edit Email & Move-In Date', 'इमेल र सरेको मिति सच्याउनुहोस्')}
                       </button>
                       {u.kyc_id && u.kyc_status !== 'VERIFIED' && (
                         <button
@@ -5035,6 +5102,172 @@ export default function AdminCommandCenter() {
           </div>
         </div>
       )}
+
+{/* ========================================================================= */}
+      {/* MODAL 11: EDIT TENANT EMAIL, DETAILS & STARTING / MOVE-IN DATE MODAL      */}
+      {/* ========================================================================= */}
+      {editTenantModalUser && (
+        <div
+          onClick={() => setEditTenantModalUser(null)}
+          className="fixed inset-0 z-[59] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 block">
+                    {t('Admin Override', 'एडमिन संशोधन')}
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    {t(
+                      'Edit Tenant Email & Starting Date',
+                      'भाडावालको इमेल र सरेको मिति सच्याउनुहोस्'
+                    )}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditTenantModalUser(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateTenantDetailsMutation.mutate({
+                  userId: editTenantModalUser.id,
+                  payload: {
+                    email: editTenantEmail,
+                    full_name: editTenantName,
+                    phone_number: editTenantPhone,
+                    entry_date: editTenantEntryDate,
+                  },
+                });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1">
+                  {t('Tenant Email Address *', 'भाडावालको इमेल ठेगाना *')}
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={editTenantEmail}
+                  onChange={(e) => setEditTenantEmail(e.target.value)}
+                  placeholder="tenant@example.com"
+                  className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1">
+                    {t('Full Name', 'पूरा नाम')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editTenantName}
+                    onChange={(e) => setEditTenantName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-700 mb-1">
+                    {t('Phone Number', 'मोबाइल नम्बर')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editTenantPhone}
+                    onChange={(e) => setEditTenantPhone(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider text-indigo-900">
+                    {t(
+                      'Room Starting / Move-In Date (AD)',
+                      'कोठामा बसेको सुरुवाती मिति (AD)'
+                    )}
+                  </label>
+                  <span className="px-2 py-0.5 rounded bg-white text-indigo-700 font-extrabold text-[10px] border border-indigo-200">
+                    {editTenantModalUser.room_number
+                      ? `${t('Room', 'कोठा')} ${editTenantModalUser.room_number}`
+                      : t('No Active Room', 'कोठा तोकिएको छैन')}
+                  </span>
+                </div>
+
+                {editTenantModalUser.room_number ? (
+                  <>
+                    <input
+                      type="date"
+                      value={editTenantEntryDate}
+                      onChange={(e) => setEditTenantEntryDate(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-indigo-200 bg-white focus:border-indigo-600 outline-none"
+                    />
+                    {editTenantEntryDate && (
+                      <p className="text-[11px] font-extrabold text-indigo-700">
+                        📅 {t('Nepali Date (BS):', 'नेपाली मिति (बि.सं.):')}{' '}
+                        {formatBSOnly(editTenantEntryDate)}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    {t(
+                      'Assign a room to this tenant first (you can pick any past Move-In Date during assignment).',
+                      'सुरुवाती मिति राख्न पहिले यो भाडावाललाई कोठा तोक्नुहोस्।'
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditTenantModalUser(null)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateTenantDetailsMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-indigo-600/20 transition inline-flex items-center justify-center gap-1.5"
+                >
+                  {updateTenantDetailsMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('Saving...', 'सुरक्षित हुँदैछ...')}
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      {t('Save Changes', 'परिवर्तन सुरक्षित गर्नुहोस्')}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

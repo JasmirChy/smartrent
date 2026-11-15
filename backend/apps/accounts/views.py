@@ -3,6 +3,7 @@ import json
 import random
 import threading
 import urllib.request
+from datetime import datetime
 from decimal import Decimal
 from django.core.mail import send_mail
 from django.core.files.storage import default_storage
@@ -143,6 +144,7 @@ def build_enriched_user_dossier(request, u):
         rm = active_tenancy.room
         room_details = {
             "id": rm.id,
+            "tenancy_id": active_tenancy.id,
             "room_number": rm.room_number,
             "floor": getattr(rm, 'floor', 'Ground Floor'),
             "base_rent": float(rm.base_rent or 0),
@@ -626,9 +628,10 @@ class AdminUserManagementListView(APIView):
 class AdminEvictOrManageUserView(APIView):
     """
     Allows Admin to:
+    - UPDATE_DETAILS: Edit tenant's email, full_name, phone_number, and active tenancy entry_date (starting date).
     - VACATE: Close active tenancy, mark room vacant, and clear open unpaid bills.
     - BAN: Vacate room and deactivate account.
-    - DELETE: Permanently delete the tenant and all associated data (bills, KYC, tenancies, reservations, chats, tickets, and files).
+    - DELETE: Permanently delete the tenant and all associated data.
     """
     permission_classes = [IsAdminUserRole]
 
@@ -637,13 +640,97 @@ class AdminEvictOrManageUserView(APIView):
         target_user = get_object_or_404(User, id=user_id)
         action_type = (request.data.get('action_type') or 'VACATE').upper()
 
+        # ---------------------------------------------------------------------
+        # 1. UPDATE TENANT EMAIL, NAME, PHONE & STARTING / MOVE-IN DATE
+        # ---------------------------------------------------------------------
+        if action_type == 'UPDATE_DETAILS':
+            new_email = (request.data.get('email') or '').lower().strip()
+            new_full_name = (request.data.get('full_name') or '').strip()
+            new_phone = (request.data.get('phone_number') or '').strip()
+            new_entry_date_str = (request.data.get('entry_date') or '').strip()
+
+            if new_email and new_email != target_user.email.lower():
+                if User.objects.filter(email__iexact=new_email).exclude(id=target_user.id).exists():
+                    return Response(
+                        {"error": f"The email '{new_email}' is already in use by another account."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                old_email = target_user.email
+                target_user.email = new_email
+                target_user.is_email_verified = True
+                EmailOTP.objects.filter(email__iexact=old_email).update(email=new_email)
+
+            if new_full_name:
+                target_user.full_name = new_full_name
+
+            if new_phone and new_phone != target_user.phone_number:
+                conflicting_users = User.objects.filter(phone_number=new_phone).exclude(id=target_user.id)
+                if conflicting_users.exists():
+                    for other_u in conflicting_users:
+                        other_u.phone_number = f"900{random.randint(1000000, 9999999)}"
+                        other_u.save(update_fields=['phone_number'])
+                target_user.phone_number = new_phone
+
+            target_user.save()
+
+            active_tenancy = (
+                Tenancy.objects.filter(tenant=target_user, is_active=True)
+                .select_related('room')
+                .first()
+            )
+            updated_entry_date = None
+
+            if new_entry_date_str:
+                if not active_tenancy:
+                    return Response(
+                        {
+                            "error": (
+                                f"Email/details saved for {target_user.full_name}, but they do not have an "
+                                f"active assigned room yet. Assign a room first to set a Move-In Date."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                try:
+                    parsed_date = datetime.strptime(new_entry_date_str, "%Y-%m-%d").date()
+                except ValueError:
+                    return Response(
+                        {"error": "Invalid date format for Starting Date. Please use YYYY-MM-DD."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                active_tenancy.entry_date = parsed_date
+                active_tenancy.save(update_fields=['entry_date'])
+                updated_entry_date = str(parsed_date)
+
+                # Sync any open UNPAID/REJECTED bill's due_date to match the new cycle
+                if hasattr(active_tenancy, 'get_next_due_date'):
+                    try:
+                        next_due = active_tenancy.get_next_due_date()
+                        if next_due:
+                            MonthlyBill.objects.filter(
+                                tenancy=active_tenancy,
+                                status__in=['UNPAID', 'REJECTED'],
+                            ).update(due_date=next_due)
+                    except Exception:
+                        pass
+
+            date_note = f" & Move-In Date set to {updated_entry_date}" if updated_entry_date else ""
+            return Response(
+                {
+                    "message": f"Successfully updated {target_user.full_name} ({target_user.email}){date_note}!",
+                    "user": build_enriched_user_dossier(request, target_user),
+                },
+                status=status.HTTP_200_OK,
+            )
+
         if target_user.id == request.user.id:
             return Response(
                 {"error": "You cannot vacate or delete your own logged-in Admin account."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 1. Vacate any rooms currently occupied by this user
+        # 2. Vacate any rooms currently occupied by this user
         active_tenancies = Tenancy.objects.filter(tenant=target_user, is_active=True).select_related('room')
         vacated_rooms = []
         for t in active_tenancies:

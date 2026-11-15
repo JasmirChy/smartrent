@@ -41,9 +41,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
 
-const DEFAULT_HERO_IMAGE =
-  'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=85';
-
+const DEFAULT_HERO_IMAGE = '/my-house.jpeg';
 const MAX_BANNER_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const HOUSE_RULES_CATEGORIES = [
