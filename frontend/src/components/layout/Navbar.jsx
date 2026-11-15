@@ -27,7 +27,7 @@ import { formatDualDate } from '../../utils/nepaliDate';
 
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
-  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return null;
 
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   let backendOrigin = 'http://localhost:8000';
@@ -128,6 +128,71 @@ export default function Navbar() {
   useEffect(() => {
     loadNotificationData();
   }, [loadNotificationData, location.pathname]);
+
+  // =========================================================================
+  // 3-MINUTE IDLE AUTO-LOGOUT (PROTECTS RENDER 512MB RAM & NEON COMPUTE)
+  // =========================================================================
+  useEffect(() => {
+    if (!user) return;
+
+    const IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 Minutes (180,000 ms)
+    let idleTimer = null;
+    let lastActivityTime = Date.now();
+
+    const handleUserIdleTimeout = () => {
+      // 1. Cancel any running requests and clear React Query memory cache
+      queryClient.cancelQueries();
+      queryClient.clear();
+
+      // 2. Close open menus and log out user
+      setShowNotifications(false);
+      setMobileSidebarOpen(false);
+      logout();
+      navigate('/');
+
+      // 3. Open the Login modal and notify the user
+      openAuthModal('LOGIN');
+      window.alert(
+        t(
+          'Session closed after 3 minutes of inactivity to save server resources. Please log in again.',
+          '३ मिनेटसम्म निष्क्रिय भएकाले सर्भर सुरक्षित राख्न सेसन बन्द गरियो। कृपया पुनः लगइन गर्नुहोस्।'
+        )
+      );
+    };
+
+    const resetIdleTimer = () => {
+      const now = Date.now();
+      // Throttle timer resets to once per second so mouse movement stays lightweight
+      if (now - lastActivityTime < 1000 && idleTimer) return;
+      lastActivityTime = now;
+
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(handleUserIdleTimeout, IDLE_TIMEOUT_MS);
+    };
+
+    const activityEvents = [
+      'mousemove',
+      'mousedown',
+      'keydown',
+      'touchstart',
+      'scroll',
+      'click',
+    ];
+
+    activityEvents.forEach((event) =>
+      window.addEventListener(event, resetIdleTimer, { passive: true })
+    );
+
+    // Start the initial 3-minute countdown immediately on login
+    idleTimer = setTimeout(handleUserIdleTimeout, IDLE_TIMEOUT_MS);
+
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      activityEvents.forEach((event) =>
+        window.removeEventListener(event, resetIdleTimer)
+      );
+    };
+  }, [user, logout, navigate, openAuthModal, queryClient, t]);
 
   // 1-Click Global Manual Sync Handler
   const handleManualSyncAll = async () => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -7,11 +7,6 @@ import {
   Droplets,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Upload,
-  Trash2,
-  ImagePlus,
   Building,
   Sparkles,
   Moon,
@@ -20,10 +15,7 @@ import {
   Loader2,
   X,
   BellRing,
-  Play,
-  Pause,
   ZoomIn,
-  Layers,
   Wrench,
   Lock,
   Car,
@@ -42,7 +34,6 @@ import { useLanguage } from '../context/LanguageContext';
 import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
 
 const DEFAULT_HERO_IMAGE = '/my-house.jpeg';
-const MAX_BANNER_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const HOUSE_RULES_CATEGORIES = [
   {
@@ -427,55 +418,15 @@ const FINE_GUIDELINES_LIST = [
   },
 ];
 
-function getSafeMediaUrl(rawUrl, cacheBuster = '') {
-  if (!rawUrl || typeof rawUrl !== 'string') return null;
-  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
-
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
-  let backendOrigin = 'http://localhost:8000';
-  try {
-    backendOrigin = new URL(apiBase).origin;
-  } catch {
-    backendOrigin = 'http://localhost:8000';
-  }
-
-  let finalUrl = rawUrl.trim();
-
-  const mediaIndex = finalUrl.indexOf('/media/');
-  if (mediaIndex !== -1) {
-    finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
-  } else if (finalUrl.startsWith('/')) {
-    finalUrl = `${backendOrigin}${finalUrl}`;
-  }
-
-  if (
-    finalUrl.startsWith('http://') &&
-    !finalUrl.includes('localhost') &&
-    !finalUrl.includes('127.0.0.1') &&
-    !finalUrl.includes('192.168.')
-  ) {
-    finalUrl = 'https://' + finalUrl.substring('http://'.length);
-  }
-
-  if (cacheBuster) {
-    const sep = finalUrl.includes('?') ? '&' : '?';
-    return `${finalUrl}${sep}v=${cacheBuster}`;
-  }
-  return finalUrl;
-}
-
 export default function PublicLanding() {
   const { user, isAdmin, openAuthModal, refreshProfile } = useAuth();
   const { isNepali, t, td } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // UI Filter & Slideshow States
+  // UI Filter & Static Image Lightbox States
   const [floorFilter, setFloorFilter] = useState('ALL'); // ALL | GROUND | FIRST
   const [availableOnly, setAvailableOnly] = useState(false);
-  const [activeSlide, setActiveSlide] = useState(0);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const [isHoveringHero, setIsHoveringHero] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
 
   // 13-Category Accordion & Tenant Acknowledgment States
@@ -503,18 +454,7 @@ export default function PublicLanding() {
   const [citizenshipDoc, setCitizenshipDoc] = useState(null);
   const [reservationMsg, setReservationMsg] = useState({ type: '', text: '' });
 
-  // Admin Multi-Image Hero Banner Manager States
-  const [showBannerEditor, setShowBannerEditor] = useState(false);
-  const [bannerTitle, setBannerTitle] = useState('Studio B2 • Balcony Suite');
-  const [bannerSubtitle, setBannerSubtitle] = useState(
-    'Sub-meter #M-202 • Digital Telemetry Active'
-  );
-  const [bannerBadge, setBannerBadge] = useState('Physical Inspection Passed');
-  const [bannerFiles, setBannerFiles] = useState([]);
-  const [bannerPreviews, setBannerPreviews] = useState([]);
-  const [bannerFeedback, setBannerFeedback] = useState({ type: '', text: '' });
-
-  // Fetch live Landing Data
+  // Fetch Landing Data (On-Demand Only — Zero Background Polling)
   const { data, isLoading } = useQuery({
     queryKey: ['publicLandingData'],
     queryFn: async () => {
@@ -522,46 +462,28 @@ export default function PublicLanding() {
       return res.data;
     },
     refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
   });
 
   const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
-  const rawBanners = Array.isArray(data?.banners) ? data.banners : [];
   const notices = Array.isArray(data?.notices) ? data.notices : [];
   const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
 
   const hasAcceptedRules = Boolean(user?.has_accepted_lease || rulesAcceptedLocal);
 
-  const banners = rawBanners.map((b) => ({
-    ...b,
-    resolved_url:
-      getSafeMediaUrl(b.image_path || b.image_url || b.image) || DEFAULT_HERO_IMAGE,
-  }));
-
-  useEffect(() => {
-    if (banners.length > 0 && activeSlide >= banners.length) {
-      setActiveSlide(0);
-    }
-  }, [banners.length, activeSlide]);
-
-  useEffect(() => {
-    if (!isAutoPlaying || isHoveringHero || showLightbox || banners.length <= 1) {
-      return undefined;
-    }
-    const timer = setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % banners.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, [isAutoPlaying, isHoveringHero, showLightbox, banners.length]);
-
-  useEffect(() => {
-    return () => {
-      bannerPreviews.forEach((p) => {
-        if (p.url && p.url.startsWith('blob:')) {
-          URL.revokeObjectURL(p.url);
-        }
-      });
-    };
-  }, [bannerPreviews]);
+  const staticHeroTitle = t(
+    'Smart House Rental • Ground & 1st Floor',
+    'स्मार्ट कोठा भाडा • भुइँ र पहिलो तल्ला'
+  );
+  const staticHeroSubtitle = t(
+    'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
+    'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी (रु. १००/कोठा)'
+  );
+  const staticHeroBadge = t(
+    'Verified Direct-Landlord Listing',
+    'घरधनीद्वारा प्रमाणित आवास'
+  );
 
   const acceptRulesMutation = useMutation({
     mutationFn: acceptDigitalLease,
@@ -621,53 +543,6 @@ export default function PublicLanding() {
     }
   };
 
-  const uploadBannerMutation = useMutation({
-    mutationFn: async (formData) => {
-      const res = await axiosClient.post('/rooms/banners/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      return res.data;
-    },
-    onSuccess: (resData) => {
-      queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
-      setBannerFiles([]);
-      setBannerPreviews([]);
-      setActiveSlide(0);
-      setBannerFeedback({
-        type: 'success',
-        text:
-          resData?.message ||
-          t('Hero slideshow images uploaded successfully!', 'स्लाइडशो फोटोहरू सफलतापूर्वक अपलोड भए!'),
-      });
-    },
-    onError: (err) => {
-      setBannerFeedback({
-        type: 'error',
-        text:
-          err.response?.data?.error ||
-          err.response?.data?.detail ||
-          t(
-            'Failed to upload banner image(s). Make sure each image is under 5 MB.',
-            'फोटो अपलोड हुन सकेन। प्रत्येक फोटो ५ एमबी भन्दा कम हुनुपर्छ।'
-          ),
-      });
-    },
-  });
-
-  const deleteBannerMutation = useMutation({
-    mutationFn: async (bannerId) => {
-      await axiosClient.delete(`/rooms/banners/${bannerId}/`);
-    },
-    onSuccess: () => {
-      setActiveSlide((prev) => Math.max(0, prev - 1));
-      queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
-      setBannerFeedback({
-        type: 'success',
-        text: t('Slide removed from hero slideshow.', 'स्लाइडशोबाट फोटो हटाइयो।'),
-      });
-    },
-  });
-
   const reserveMutation = useMutation({
     mutationFn: async (formData) => {
       return await createReservation(formData);
@@ -697,76 +572,6 @@ export default function PublicLanding() {
     },
   });
 
-  const handleSelectMultipleBannerFiles = (e) => {
-    const selectedList = Array.from(e.target.files || []);
-    if (selectedList.length === 0) return;
-
-    const validFiles = [];
-    const newPreviews = [];
-
-    for (const file of selectedList) {
-      if (file.size > MAX_BANNER_SIZE_BYTES) {
-        setBannerFeedback({
-          type: 'error',
-          text: `"${file.name}" exceeds the 5 MB limit (${(file.size / 1024 / 1024).toFixed(
-            2
-          )} MB).`,
-        });
-        continue;
-      }
-      validFiles.push(file);
-      newPreviews.push({
-        name: file.name,
-        url: URL.createObjectURL(file),
-        sizeMB: (file.size / (1024 * 1024)).toFixed(2),
-      });
-    }
-
-    if (validFiles.length > 0) {
-      setBannerFiles((prev) => [...prev, ...validFiles]);
-      setBannerPreviews((prev) => [...prev, ...newPreviews]);
-      setBannerFeedback({
-        type: 'info',
-        text: t(
-          `${validFiles.length} image(s) queued for slideshow upload. Click "Upload to Slideshow" below.`,
-          `${validFiles.length} फोटो(हरू) अपलोडका लागि तयार छन्। तलको अपलोड बटन थिच्नुहोस्।`
-        ),
-      });
-    }
-    e.target.value = '';
-  };
-
-  const removeQueuedBannerFile = (indexToRemove) => {
-    setBannerFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
-    setBannerPreviews((prev) => {
-      const target = prev[indexToRemove];
-      if (target?.url?.startsWith('blob:')) {
-        URL.revokeObjectURL(target.url);
-      }
-      return prev.filter((_, idx) => idx !== indexToRemove);
-    });
-  };
-
-  const handleBannerUpload = (e) => {
-    e.preventDefault();
-    if (bannerFiles.length === 0) {
-      setBannerFeedback({
-        type: 'error',
-        text: t('Please select one or more images first.', 'कृपया पहिले कम्तीमा एउटा फोटो छान्नुहोस्।'),
-      });
-      return;
-    }
-    const formData = new FormData();
-    formData.append('title', bannerTitle);
-    formData.append('subtitle', bannerSubtitle);
-    formData.append('badge_text', bannerBadge);
-    formData.append('is_active', 'true');
-    bannerFiles.forEach((file) => {
-      formData.append('images', file);
-    });
-    uploadBannerMutation.mutate(formData);
-  };
-
   const handleReservationSubmit = (e) => {
     e.preventDefault();
     if (!reservingRoom) return;
@@ -784,20 +589,6 @@ export default function PublicLanding() {
     if (citizenshipDoc) formData.append('citizenship_document', citizenshipDoc);
 
     reserveMutation.mutate(formData);
-  };
-
-  const currentBanner = banners[activeSlide] || {
-    id: null,
-    title: t(
-      'Smart House Rental • Ground & 1st Floor',
-      'स्मार्ट कोठा भाडा • भुइँ र पहिलो तल्ला'
-    ),
-    subtitle: t(
-      'Sub-metered electricity (Rs. 15/unit) & fixed water (Rs. 100/room)',
-      'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी (रु. १००/कोठा)'
-    ),
-    badge_text: t('Verified Direct-Landlord Listing', 'घरधनीद्वारा प्रमाणित आवास'),
-    resolved_url: DEFAULT_HERO_IMAGE,
   };
 
   const filterRoomList = (floorCode) => {
@@ -846,13 +637,12 @@ export default function PublicLanding() {
       )}
 
       {/* ========================================================================= */}
-      {/* CLEAN, MINIMAL & VISUAL-FIRST HERO SECTION                                */}
+      {/* CLEAN, MINIMAL & STATIC HERO SECTION (ZERO DB BANNER QUERIES)             */}
       {/* ========================================================================= */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-10 lg:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center">
           {/* Left Column: Crisp Headline, Compact Price Chips & Side-by-Side CTAs */}
           <div className="lg:col-span-6 space-y-4 sm:space-y-5">
-            {/* Single Sleek Status Pill */}
             <div className="inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-emerald-700 font-extrabold">
@@ -868,7 +658,6 @@ export default function PublicLanding() {
               </span>
             </div>
 
-            {/* Clean, Balanced Heading */}
             <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-black tracking-tight text-slate-900 leading-[1.18]">
               {t('Smart, Peaceful Living.', 'आधुनिक र शान्त बसोबास।')}
               <span className="text-indigo-600 block mt-1">
@@ -876,7 +665,6 @@ export default function PublicLanding() {
               </span>
             </h1>
 
-            {/* Concise 2-Line Subtitle */}
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-lg">
               {t(
                 'Transparent sub-metered electricity, 24/7 water supply, and instant digital rent receipts for students and professionals.',
@@ -958,131 +746,39 @@ export default function PublicLanding() {
             </div>
           </div>
 
-          {/* Right Column: Sleek 16:10 Interactive Hero Slideshow Card */}
+          {/* Right Column: Static 16:10 Hero Image Card (Loaded from /my-house.jpeg) */}
           <div className="lg:col-span-6">
-            <div
-              onMouseEnter={() => setIsHoveringHero(true)}
-              onMouseLeave={() => setIsHoveringHero(false)}
-              className="relative rounded-3xl bg-white p-2 sm:p-3 shadow-xl shadow-indigo-950/5 border border-slate-200/80"
-            >
-              {/* Main Slideshow Viewport */}
+            <div className="relative rounded-3xl bg-white p-2 sm:p-3 shadow-xl shadow-indigo-950/5 border border-slate-200/80">
               <div className="relative w-full aspect-[16/10] rounded-2xl overflow-hidden bg-slate-900 group">
                 <img
-                  key={currentBanner.id || activeSlide}
-                  src={currentBanner.resolved_url}
-                  alt={currentBanner.title}
+                  src={DEFAULT_HERO_IMAGE}
+                  alt={staticHeroTitle}
                   onClick={() => setShowLightbox(true)}
-                  className="w-full h-full object-cover transition-all duration-700 cursor-pointer group-hover:scale-[1.02]"
+                  className="w-full h-full object-cover transition-all duration-500 cursor-pointer group-hover:scale-[1.02]"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/10 to-slate-950/25 pointer-events-none" />
 
-                {/* Top Left Badge + Slide Counter */}
-                <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
+                {/* Top Left Verified Badge */}
+                <div className="absolute top-3 left-3 flex items-center gap-1.5">
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-[11px] font-extrabold shadow-sm">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="truncate max-w-[160px] sm:max-w-none">
-                      {currentBanner.badge_text || t('Verified Listing', 'प्रमाणित आवास')}
+                    <span className="truncate max-w-[200px] sm:max-w-none">
+                      {staticHeroBadge}
                     </span>
                   </div>
-
-                  {banners.length > 1 && (
-                    <span className="px-2 py-0.5 rounded-full bg-slate-900/75 backdrop-blur-md text-white text-[10px] font-extrabold border border-white/15">
-                      {activeSlide + 1} / {banners.length}
-                    </span>
-                  )}
                 </div>
 
-                {/* Top Right Controls */}
-                <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                  {banners.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setIsAutoPlaying((prev) => !prev)}
-                      className="p-1.5 sm:p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
-                      title={
-                        isAutoPlaying
-                          ? t('Pause Slideshow', 'रोक्नुहोस्')
-                          : t('Play Slideshow', 'चलाउनुहोस्')
-                      }
-                    >
-                      {isAutoPlaying ? (
-                        <Pause className="w-3.5 h-3.5" />
-                      ) : (
-                        <Play className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  )}
-
+                {/* Top Right Fullscreen Zoom Button */}
+                <div className="absolute top-3 right-3">
                   <button
                     type="button"
                     onClick={() => setShowLightbox(true)}
-                    className="p-1.5 sm:p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
+                    className="p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-md transition"
                     title={t('Fullscreen', 'पूरा स्क्रिन')}
                   >
                     <ZoomIn className="w-3.5 h-3.5" />
                   </button>
-
-                  {isAdmin && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setShowBannerEditor(!showBannerEditor)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold shadow-lg transition"
-                      >
-                        <ImagePlus className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">
-                          {showBannerEditor
-                            ? t('Close', 'बन्द')
-                            : t('Manage Slides', 'फोटो व्यवस्थापन')}
-                        </span>
-                      </button>
-                      {currentBanner.id && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                t(
-                                  'Delete this slide from the homepage slideshow?',
-                                  'यो फोटो स्लाइडशोबाट हटाउने हो?'
-                                )
-                              )
-                            ) {
-                              deleteBannerMutation.mutate(currentBanner.id);
-                            }
-                          }}
-                          className="p-1.5 sm:p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </>
-                  )}
                 </div>
-
-                {/* Left / Right Carousel Arrows */}
-                {banners.length > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1))
-                      }
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-md transition"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1))
-                      }
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/85 hover:bg-white text-slate-900 shadow-md transition"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
 
                 {/* Bottom Caption Overlay */}
                 <div className="absolute bottom-3 inset-x-3 rounded-2xl bg-white/95 backdrop-blur-md p-3 sm:p-3.5 shadow-lg flex items-center justify-between gap-2">
@@ -1092,14 +788,10 @@ export default function PublicLanding() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-extrabold text-slate-900 truncate">
-                        {currentBanner.title}
+                        {staticHeroTitle}
                       </p>
                       <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-                        {currentBanner.subtitle ||
-                          t(
-                            'Sub-metered Power & 24/7 Water Supply',
-                            'सब-मिटर बिजुली र २४ सै घण्टा पानी'
-                          )}
+                        {staticHeroSubtitle}
                       </p>
                     </div>
                   </div>
@@ -1108,172 +800,6 @@ export default function PublicLanding() {
                   </span>
                 </div>
               </div>
-
-              {/* Thumbnail Strip */}
-              {banners.length > 1 && (
-                <div className="pt-2.5 px-1 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 overflow-x-auto">
-                    {banners.map((b, idx) => (
-                      <button
-                        key={b.id || idx}
-                        type="button"
-                        onClick={() => setActiveSlide(idx)}
-                        className={`relative w-12 h-8 sm:w-14 sm:h-10 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
-                          idx === activeSlide
-                            ? 'border-indigo-600 scale-105'
-                            : 'border-slate-200 opacity-60 hover:opacity-100'
-                        }`}
-                      >
-                        <img
-                          src={b.resolved_url}
-                          alt={b.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    {banners.map((b, idx) => (
-                      <button
-                        key={b.id || idx}
-                        type="button"
-                        onClick={() => setActiveSlide(idx)}
-                        className={`h-1.5 rounded-full transition-all ${
-                          idx === activeSlide ? 'w-5 bg-indigo-600' : 'w-1.5 bg-slate-300'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ADMIN MULTI-IMAGE SLIDESHOW MANAGER PANEL */}
-              {isAdmin && showBannerEditor && (
-                <div className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-indigo-600" />
-                      <p className="text-xs font-extrabold text-indigo-900 uppercase">
-                        {t(
-                          `Slideshow Manager (${banners.length} Slides)`,
-                          `स्लाइडशो व्यवस्थापन (${banners.length} फोटो)`
-                        )}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowBannerEditor(false)}
-                      className="text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {bannerFeedback.text && (
-                    <div
-                      className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between ${
-                        bannerFeedback.type === 'error'
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                      }`}
-                    >
-                      <span>{bannerFeedback.text}</span>
-                      <button
-                        type="button"
-                        onClick={() => setBannerFeedback({ type: '', text: '' })}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleBannerUpload} className="space-y-2.5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={bannerTitle}
-                        onChange={(e) => setBannerTitle(e.target.value)}
-                        placeholder={t('Slide Title', 'स्लाइड शीर्षक')}
-                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
-                        required
-                      />
-                      <input
-                        type="text"
-                        value={bannerBadge}
-                        onChange={(e) => setBannerBadge(e.target.value)}
-                        placeholder={t('Badge Text', 'ब्याज पाठ')}
-                        className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
-                      />
-                    </div>
-                    <input
-                      type="text"
-                      value={bannerSubtitle}
-                      onChange={(e) => setBannerSubtitle(e.target.value)}
-                      placeholder={t('Subtitle description', 'उप-शीर्षक विवरण')}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white outline-none"
-                    />
-
-                    <label className="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-dashed border-indigo-300 hover:border-indigo-600 bg-white cursor-pointer transition text-center">
-                      <Upload className="w-4 h-4 text-indigo-600 mb-1" />
-                      <span className="text-xs font-extrabold text-slate-800">
-                        {t('Select Banner Images (Up to 5 MB)', 'ब्यानर फोटो छान्नुहोस् (५ MB सम्म)')}
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.avif"
-                        multiple
-                        onChange={handleSelectMultipleBannerFiles}
-                        className="hidden"
-                      />
-                    </label>
-
-                    {bannerPreviews.length > 0 && (
-                      <div className="grid grid-cols-4 gap-2">
-                        {bannerPreviews.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="relative h-14 rounded-xl overflow-hidden border border-indigo-200 bg-white"
-                          >
-                            <img
-                              src={item.url}
-                              alt={item.name}
-                              className="w-full h-full object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeQueuedBannerFile(idx)}
-                              className="absolute top-1 right-1 p-0.5 rounded-full bg-slate-900/75 text-white"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="submit"
-                        disabled={uploadBannerMutation.isPending || bannerFiles.length === 0}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition"
-                      >
-                        {uploadBannerMutation.isPending ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            {t('Uploading...', 'अपलोड हुँदैछ...')}
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-3.5 h-3.5" />
-                            {t('Upload Slides', 'अपलोड गर्नुहोस्')}
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -1683,7 +1209,7 @@ export default function PublicLanding() {
         </div>
       </section>
 
-      {/* FULLSCREEN HERO SLIDESHOW LIGHTBOX MODAL */}
+      {/* FULLSCREEN STATIC HERO IMAGE LIGHTBOX MODAL */}
       {showLightbox && (
         <div
           onClick={() => setShowLightbox(false)}
@@ -1694,81 +1220,26 @@ export default function PublicLanding() {
             className="flex items-center justify-between text-white pb-3 border-b border-white/10"
           >
             <div>
-              <h3 className="text-sm sm:text-base font-extrabold">{currentBanner.title}</h3>
-              <p className="text-xs text-slate-400">{currentBanner.subtitle}</p>
+              <h3 className="text-sm sm:text-base font-extrabold">{staticHeroTitle}</h3>
+              <p className="text-xs text-slate-400">{staticHeroSubtitle}</p>
             </div>
-            <div className="flex items-center gap-2">
-              {banners.length > 1 && (
-                <span className="px-3 py-1 rounded-full bg-white/10 text-xs font-bold">
-                  {activeSlide + 1} / {banners.length}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowLightbox(false)}
-                className="p-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowLightbox(false)}
+              className="p-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           <div className="relative flex-1 flex items-center justify-center my-4 overflow-hidden">
-            {banners.length > 1 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSlide((prev) => (prev === 0 ? banners.length - 1 : prev - 1));
-                }}
-                className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-
             <img
-              src={currentBanner.resolved_url}
-              alt={currentBanner.title}
+              src={DEFAULT_HERO_IMAGE}
+              alt={staticHeroTitle}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl"
+              className="max-h-[80vh] max-w-[92vw] object-contain rounded-2xl shadow-2xl"
             />
-
-            {banners.length > 1 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSlide((prev) => (prev === banners.length - 1 ? 0 : prev + 1));
-                }}
-                className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-white/15 hover:bg-white/30 text-white backdrop-blur-md transition"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
           </div>
-
-          {banners.length > 1 && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center justify-center gap-2 overflow-x-auto py-2"
-            >
-              {banners.map((b, idx) => (
-                <button
-                  key={b.id || idx}
-                  type="button"
-                  onClick={() => setActiveSlide(idx)}
-                  className={`w-16 h-12 rounded-xl overflow-hidden border-2 transition shrink-0 ${
-                    idx === activeSlide
-                      ? 'border-indigo-400 scale-105'
-                      : 'border-white/20 opacity-60 hover:opacity-100'
-                  }`}
-                >
-                  <img src={b.resolved_url} alt={b.title} className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

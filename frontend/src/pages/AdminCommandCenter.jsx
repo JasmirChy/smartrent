@@ -245,7 +245,7 @@ export default function AdminCommandCenter() {
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: ['adminAnalytics'],
     queryFn: async () => (await axiosClient.get('/billing/analytics/')).data,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
@@ -255,48 +255,48 @@ export default function AdminCommandCenter() {
       const res = await axiosClient.get('/billing/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
   const { data: paymentQR } = useQuery({
     queryKey: ['paymentQRConfig'],
     queryFn: fetchPaymentQRConfig,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
   });
 
   const { data: roomsData } = useQuery({
     queryKey: ['roomsMatrix'],
     queryFn: async () => (await axiosClient.get('/rooms/')).data,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
   const { data: adminUsers = [] } = useQuery({
     queryKey: ['adminUsersManagement'],
     queryFn: fetchAdminUsersManagement,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
   const { data: rawReservations = [] } = useQuery({
     queryKey: ['adminReservations'],
     queryFn: fetchReservations,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
   const { data: rawMoveOuts = [] } = useQuery({
     queryKey: ['adminPendingMoveOuts'],
     queryFn: fetchPendingMoveOuts,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
   const { data: rawNotices = [] } = useQuery({
     queryKey: ['adminNotices'],
     queryFn: fetchNotices,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 

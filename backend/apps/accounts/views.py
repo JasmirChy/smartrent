@@ -89,26 +89,22 @@ def get_user_cover_urls(request, user_id):
         return build_https_safe_uri(request, rel_url), rel_url
     return None, None
 
-
 def build_enriched_user_dossier(request, u):
     serializer = UserProfileSerializer(u, context={'request': request})
     base_data = dict(serializer.data)
 
-    active_tenancy = u.tenancies.filter(is_active=True).select_related('room').first()
+    # Use prefetched tenancies in memory instead of spawning a new SQL query per user
+    all_tenancies = list(u.tenancies.all())
+    active_tenancy = next((t for t in all_tenancies if t.is_active), None)
     kyc = getattr(u, 'kyc_profile', None)
     cover_abs_url, cover_rel_path = get_user_cover_urls(request, u.id)
 
-    # Clean up any leftover UNPAID/REJECTED bills belonging to closed tenancies
-    try:
-        MonthlyBill.objects.filter(
-            tenant=u,
-            tenancy__is_active=False,
-            status__in=['UNPAID', 'REJECTED', 'PENDING_VERIFICATION'],
-        ).delete()
-    except Exception:
-        pass
-
-    user_bills = list(u.bills.select_related('room').all().order_by('-due_date', '-created_at'))
+    # Use prefetched bills in memory and sort in Python to avoid N+1 DB hits
+    user_bills = sorted(
+        list(u.bills.all()),
+        key=lambda b: (str(b.due_date or ''), str(b.created_at or '')),
+        reverse=True,
+    )
     pending_bills_qs = [
         b for b in user_bills if b.status in ('UNPAID', 'PENDING_VERIFICATION', 'REJECTED')
     ]
@@ -187,7 +183,6 @@ def build_enriched_user_dossier(request, u):
         "recent_bills": recent_bills_payload,
     })
     return base_data
-
 
 def get_admin_emails():
     """Returns all active Admin email addresses to receive landlord notifications."""

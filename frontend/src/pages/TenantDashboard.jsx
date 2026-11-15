@@ -130,7 +130,7 @@ export default function TenantDashboard() {
   const { data: profileData } = useQuery({
     queryKey: ['tenantMeProfile'],
     queryFn: async () => (await axiosClient.get('/accounts/me/')).data,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
   });
 
   const { data: rawBills = [] } = useQuery({
@@ -139,31 +139,31 @@ export default function TenantDashboard() {
       const res = await axiosClient.get('/billing/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
   });
 
   const { data: paymentQR } = useQuery({
     queryKey: ['paymentQRConfig'],
     queryFn: fetchPaymentQRConfig,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
   });
 
   const { data: rawReservations = [] } = useQuery({
     queryKey: ['tenantReservations'],
     queryFn: fetchReservations,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
   });
 
   const { data: kycProfile } = useQuery({
     queryKey: ['tenantKYC'],
     queryFn: fetchKYCProfile,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
   });
 
   const { data: moveOutStatus } = useQuery({
     queryKey: ['moveOutStatus'],
     queryFn: fetchMoveOutStatus,
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
   });
 
   const bills = Array.isArray(rawBills) ? rawBills : [];

@@ -184,22 +184,11 @@ class PublicLandingDataView(APIView):
 
     def get(self, request):
         rooms = Room.objects.all().prefetch_related('tenancies__tenant', 'reservations')
-        banners = HeroBanner.objects.filter(is_active=True).order_by('-id')
-        rules = HouseRule.objects.filter(is_active=True)
         notices = Notice.objects.filter(is_active=True).order_by('-created_at')[:5]
 
-        total_rooms = rooms.count()
-        occupied_rooms = rooms.filter(is_occupied=True).count()
+        total_rooms = len(rooms)
+        occupied_rooms = sum(1 for r in rooms if r.is_occupied)
         available_rooms = total_rooms - occupied_rooms
-
-        banners_data = HeroBannerSerializer(banners, many=True, context={'request': request}).data
-        for idx, b_obj in enumerate(banners):
-            if b_obj.image and idx < len(banners_data):
-                try:
-                    banners_data[idx]['image_url'] = build_https_safe_uri(request, b_obj.image.url)
-                    banners_data[idx]['image_path'] = b_obj.image.url
-                except Exception:
-                    pass
 
         return Response({
             "stats": {
@@ -207,13 +196,11 @@ class PublicLandingDataView(APIView):
                 "occupied_rooms": occupied_rooms,
                 "available_rooms": available_rooms,
             },
-            "banners": banners_data,
+            "banners": [],
             "rooms": RoomSerializer(rooms, many=True, context={'request': request}).data,
-            "rules": HouseRuleSerializer(rules, many=True).data,
+            "rules": [],
             "notices": NoticeSerializer(notices, many=True, context={'request': request}).data,
         })
-
-
 PublicLandingView = PublicLandingDataView
 
 

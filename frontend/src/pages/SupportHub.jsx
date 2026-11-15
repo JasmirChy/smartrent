@@ -106,7 +106,7 @@ export default function SupportHub() {
       const res = await axiosClient.get('/communication/contacts/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
@@ -117,7 +117,7 @@ export default function SupportHub() {
       const res = await axiosClient.get('/communication/complaints/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: false,
+    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
