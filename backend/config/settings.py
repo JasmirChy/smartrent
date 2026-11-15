@@ -106,8 +106,16 @@ if os.getenv('DATABASE_URL'):
     )
 
 # Allow uploads up to 10 MB in memory/multipart
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+# 1. Stream uploads larger than 512 KB to temporary disk instead of holding 5 MB photos in RAM
+FILE_UPLOAD_MAX_MEMORY_SIZE = 524288  # 512 KB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 6291456  # 6 MB
+
+# 2. Prevent Django from keeping idle PostgreSQL connection buffers in RAM on Render Free Tier
+if ' default' in DATABASES or 'default' in DATABASES:
+    DATABASES['default']['CONN_MAX_AGE'] = 0
+
+# 3. Disable Debug query history logging in production (DEBUG=True stores every SQL query in RAM!)
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # Django REST Framework & JWT
 REST_FRAMEWORK = {

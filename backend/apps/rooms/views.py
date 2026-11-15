@@ -1,6 +1,7 @@
 import os
 import json
 import calendar
+import time
 import threading
 import urllib.request
 from datetime import date, datetime
@@ -35,12 +36,19 @@ ALLOWED_BANNER_EXTENSIONS = {
 }
 
 
+_LAST_ORPHAN_CLEANUP_TS = 0
+
 def cleanup_orphaned_unpaid_bills():
     """
-    Removes any leftover UNPAID / REJECTED / PENDING_VERIFICATION bills
-    belonging to tenancies that have already ended (is_active=False) or rooms that are vacant.
-    Preserves all APPROVED and PAID_CASH historical receipts.
+    Runs at most once every 300 seconds (5 minutes) to prevent memory and DB spikes
+    during 4-second frontend polling.
     """
+    global _LAST_ORPHAN_CLEANUP_TS
+    now = time.time()
+    if now - _LAST_ORPHAN_CLEANUP_TS < 300:
+        return
+    _LAST_ORPHAN_CLEANUP_TS = now
+
     try:
         MonthlyBill.objects.filter(
             Q(tenancy__is_active=False) | Q(room__is_occupied=False),
@@ -48,7 +56,6 @@ def cleanup_orphaned_unpaid_bills():
         ).delete()
     except Exception:
         pass
-
 
 def build_https_safe_uri(request, relative_url):
     """
