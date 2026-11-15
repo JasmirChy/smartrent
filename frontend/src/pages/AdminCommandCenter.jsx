@@ -239,8 +239,8 @@ export default function AdminCommandCenter() {
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: ['adminAnalytics'],
     queryFn: async () => (await axiosClient.get('/billing/analytics/')).data,
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const { data: rawBills = [] } = useQuery({
@@ -249,49 +249,49 @@ export default function AdminCommandCenter() {
       const res = await axiosClient.get('/billing/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const { data: paymentQR } = useQuery({
     queryKey: ['paymentQRConfig'],
     queryFn: fetchPaymentQRConfig,
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const { data: roomsData } = useQuery({
     queryKey: ['roomsMatrix'],
     queryFn: async () => (await axiosClient.get('/rooms/')).data,
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const { data: adminUsers = [] } = useQuery({
     queryKey: ['adminUsersManagement'],
     queryFn: fetchAdminUsersManagement,
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const { data: rawReservations = [] } = useQuery({
     queryKey: ['adminReservations'],
     queryFn: fetchReservations,
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const { data: rawMoveOuts = [] } = useQuery({
     queryKey: ['adminPendingMoveOuts'],
     queryFn: fetchPendingMoveOuts,
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const { data: rawNotices = [] } = useQuery({
     queryKey: ['adminNotices'],
     queryFn: fetchNotices,
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {

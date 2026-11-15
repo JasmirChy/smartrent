@@ -130,7 +130,7 @@ export default function ProfileSettings() {
   const { data: liveProfile, isLoading } = useQuery({
     queryKey: ['meProfileSettings'],
     queryFn: async () => (await axiosClient.get('/accounts/me/')).data,
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const activeUser = liveProfile || user || {};

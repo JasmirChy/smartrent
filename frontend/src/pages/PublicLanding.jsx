@@ -523,7 +523,7 @@ export default function PublicLanding() {
       const res = await axiosClient.get('/rooms/landing/');
       return res.data;
     },
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const rooms = Array.isArray(data?.rooms) ? data.rooms : [];

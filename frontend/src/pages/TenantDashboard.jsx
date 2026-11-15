@@ -130,7 +130,7 @@ export default function TenantDashboard() {
   const { data: profileData } = useQuery({
     queryKey: ['tenantMeProfile'],
     queryFn: async () => (await axiosClient.get('/accounts/me/')).data,
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const { data: rawBills = [] } = useQuery({
@@ -139,31 +139,31 @@ export default function TenantDashboard() {
       const res = await axiosClient.get('/billing/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const { data: paymentQR } = useQuery({
     queryKey: ['paymentQRConfig'],
     queryFn: fetchPaymentQRConfig,
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const { data: rawReservations = [] } = useQuery({
     queryKey: ['tenantReservations'],
     queryFn: fetchReservations,
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const { data: kycProfile } = useQuery({
     queryKey: ['tenantKYC'],
     queryFn: fetchKYCProfile,
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const { data: moveOutStatus } = useQuery({
     queryKey: ['moveOutStatus'],
     queryFn: fetchMoveOutStatus,
-    refetchInterval: 4000,
+    refetchInterval: false,
   });
 
   const bills = Array.isArray(rawBills) ? rawBills : [];

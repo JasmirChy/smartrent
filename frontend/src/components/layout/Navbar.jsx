@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
   Bell,
@@ -17,6 +18,7 @@ import {
   X,
   User,
   LayoutDashboard,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -61,10 +63,11 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 }
 
 export default function Navbar() {
-  const { user, isAdmin, openAuthModal, logout } = useAuth();
+  const { user, isAdmin, openAuthModal, logout, refreshProfile } = useAuth();
   const { lang, setLang, t, td } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -72,6 +75,7 @@ export default function Navbar() {
   const [unreadChatsCount, setUnreadChatsCount] = useState(0);
   const [pendingActionCount, setPendingActionCount] = useState(0);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -82,57 +86,63 @@ export default function Navbar() {
     setMobileSidebarOpen(false);
   }, [location.pathname]);
 
-  useEffect(() => {
+  const loadNotificationData = useCallback(() => {
     if (!user) {
       setNotices([]);
       setUnreadChatsCount(0);
       setPendingActionCount(0);
-      return;
+      return Promise.resolve();
     }
 
-    const loadNotificationData = () => {
-      fetchNotices()
-        .then((data) => {
-          const list = Array.isArray(data) ? data : data?.results || [];
-          setNotices(list);
-        })
-        .catch(() => {});
-
-      axiosClient
-        .get('/communication/contacts/')
-        .then((res) => {
-          const contacts = Array.isArray(res.data) ? res.data : res.data?.results || [];
-          const totalUnread = contacts.reduce(
-            (acc, c) => acc + (Number(c.unread_count) || 0),
-            0
-          );
-          setUnreadChatsCount(totalUnread);
-        })
-        .catch(() => {});
-
-      axiosClient
-        .get('/billing/')
-        .then((res) => {
-          const bills = Array.isArray(res.data) ? res.data : res.data?.results || [];
-          if (isAdmin) {
-            const pendingAudit = bills.filter(
-              (b) => b.status === 'PENDING_VERIFICATION'
-            ).length;
-            setPendingActionCount(pendingAudit);
-          } else {
-            const unpaid = bills.filter(
-              (b) => b.status === 'UNPAID' || b.status === 'REJECTED'
-            ).length;
-            setPendingActionCount(unpaid);
-          }
-        })
-        .catch(() => {});
-    };
-
-    loadNotificationData();
-    const timer = setInterval(loadNotificationData, 10000);
-    return () => clearInterval(timer);
+    return Promise.allSettled([
+      fetchNotices().then((data) => {
+        const list = Array.isArray(data) ? data : data?.results || [];
+        setNotices(list);
+      }),
+      axiosClient.get('/communication/contacts/').then((res) => {
+        const contacts = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        const totalUnread = contacts.reduce(
+          (acc, c) => acc + (Number(c.unread_count) || 0),
+          0
+        );
+        setUnreadChatsCount(totalUnread);
+      }),
+      axiosClient.get('/billing/').then((res) => {
+        const bills = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        if (isAdmin) {
+          const pendingAudit = bills.filter(
+            (b) => b.status === 'PENDING_VERIFICATION'
+          ).length;
+          setPendingActionCount(pendingAudit);
+        } else {
+          const unpaid = bills.filter(
+            (b) => b.status === 'UNPAID' || b.status === 'REJECTED'
+          ).length;
+          setPendingActionCount(unpaid);
+        }
+      }),
+    ]);
   }, [user, isAdmin]);
+
+  // Fetch notifications ONLY on login/route change (No background memory-draining timer!)
+  useEffect(() => {
+    loadNotificationData();
+  }, [loadNotificationData, location.pathname]);
+
+  // 1-Click Global Manual Sync Handler
+  const handleManualSyncAll = async () => {
+    if (isManualSyncing) return;
+    setIsManualSyncing(true);
+    try {
+      await Promise.allSettled([
+        queryClient.invalidateQueries(),
+        loadNotificationData(),
+        typeof refreshProfile === 'function' ? refreshProfile() : Promise.resolve(),
+      ]);
+    } finally {
+      setTimeout(() => setIsManualSyncing(false), 500);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -193,7 +203,7 @@ export default function Navbar() {
   return (
     <>
       <header className="sticky top-0 z-40 h-16 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-5 lg:px-8 flex items-center justify-between gap-2">
-        {/* Left: Mobile Sidebar Hamburger + Clean Untruncated Brand Logo */}
+        {/* Left: Mobile Sidebar Hamburger + Brand Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
@@ -242,8 +252,9 @@ export default function Navbar() {
           })}
         </nav>
 
-        {/* Right: Compact EN | ने Toggle + Notifications + Profile / Auth Buttons */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* Right: EN | ने Toggle + Manual Sync Button + Notifications + Profile */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Language Toggle */}
           <div
             className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/90 shadow-2xs shrink-0"
             title="Switch Language (English / नेपाली)"
@@ -273,11 +284,35 @@ export default function Navbar() {
             </button>
           </div>
 
+          {/* 1-Click Manual Sync / Refresh Button */}
+          <button
+            type="button"
+            onClick={handleManualSyncAll}
+            disabled={isManualSyncing}
+            className="inline-flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-full sm:rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-indigo-50/80 transition border border-slate-200/80 shrink-0 cursor-pointer"
+            title={t('Refresh / Sync Latest Data', 'नयाँ डाटा ताजा (Sync) गर्नुहोस्')}
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${
+                isManualSyncing ? 'animate-spin text-indigo-600' : ''
+              }`}
+            />
+            <span className="hidden md:inline text-[11px] font-extrabold">
+              {isManualSyncing ? t('Syncing...', 'ताजा हुँदै...') : t('Sync', 'ताजा')}
+            </span>
+          </button>
+
           {user ? (
-            <div className="flex items-center gap-1.5 sm:gap-2.5 relative" ref={dropdownRef}>
+            <div className="flex items-center gap-1.5 sm:gap-2 relative" ref={dropdownRef}>
               <button
                 type="button"
-                onClick={() => setShowNotifications((prev) => !prev)}
+                onClick={() => {
+                  const nextState = !showNotifications;
+                  setShowNotifications(nextState);
+                  if (nextState) {
+                    loadNotificationData();
+                  }
+                }}
                 className="relative p-2 rounded-full text-slate-600 hover:bg-slate-100 transition border border-slate-200/80 shrink-0"
                 title={t('Notifications & Alerts', 'सूचना तथा जानकारीहरू')}
               >
@@ -298,9 +333,21 @@ export default function Navbar() {
                       <Bell className="w-3.5 h-3.5 text-indigo-600" />{' '}
                       {t('Notifications Center', 'सूचना केन्द्र')}
                     </h3>
-                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">
-                      {totalNotifications} {t('Active', 'सक्रिय')}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleManualSyncAll}
+                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-indigo-600 transition"
+                        title={t('Refresh Notifications', 'सूचना ताजा गर्नुहोस्')}
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 ${isManualSyncing ? 'animate-spin' : ''}`}
+                        />
+                      </button>
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                        {totalNotifications} {t('Active', 'सक्रिय')}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
@@ -475,7 +522,6 @@ export default function Navbar() {
                 </div>
               </Link>
 
-              {/* Sign Out Button (Hidden on narrow mobile since it's in the ☰ Drawer; visible on sm+) */}
               <button
                 onClick={logout}
                 title={t('Sign Out', 'लगआउट गर्नुहोस्')}
@@ -640,6 +686,18 @@ export default function Navbar() {
             </div>
 
             <div className="pt-4 border-t border-slate-100 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  handleManualSyncAll();
+                  setMobileSidebarOpen(false);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-extrabold flex items-center justify-center gap-2 transition"
+              >
+                <RefreshCw className={`w-4 h-4 ${isManualSyncing ? 'animate-spin' : ''}`} />
+                {t('Sync / Refresh Data', 'डाटा ताजा गर्नुहोस्')}
+              </button>
+
               <div className="flex items-center justify-between bg-slate-100 p-1 rounded-xl">
                 <button
                   type="button"

@@ -106,8 +106,8 @@ export default function SupportHub() {
       const res = await axiosClient.get('/communication/contacts/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   // 4-Second Live Sync for Maintenance Tickets
@@ -117,8 +117,8 @@ export default function SupportHub() {
       const res = await axiosClient.get('/communication/complaints/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const allFetchedContacts = Array.isArray(rawContacts) ? rawContacts : [];
@@ -159,7 +159,7 @@ export default function SupportHub() {
     };
 
     fetchLatestMessages();
-    const syncTimer = setInterval(fetchLatestMessages, 4000);
+    // Manual & WebSocket sync only
 
     const wsBase = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/ws';
     const wsUrl = `${wsBase}/chat/${user.id}/${selectedContact.id}/`;
@@ -182,7 +182,7 @@ export default function SupportHub() {
     };
 
     return () => {
-      clearInterval(syncTimer);
+      
       setWsConnected(false);
       ws.close();
     };
