@@ -190,3 +190,55 @@ USE_X_FORWARDED_HOST = True
 
 # Prevent SMTP from hanging for 60 seconds if blocked by Render
 EMAIL_TIMEOUT = 4
+# 1. Automatically ensure staticfiles & media directories exist so WhiteNoise never warns
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+os.makedirs(STATIC_ROOT, exist_ok=True)
+
+if hasattr(globals(), 'MEDIA_ROOT') and MEDIA_ROOT:
+    os.makedirs(MEDIA_ROOT, exist_ok=True)
+
+# 2. Stream large image uploads to disk instead of holding them in RAM (Fixes Render 512MB limit)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 524288  # 512 KB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 6291456  # 6 MB
+
+# 3. Close DB connections immediately after each request to keep RAM low under 4s polling
+if 'default' in DATABASES:
+    DATABASES['default']['CONN_MAX_AGE'] = 0
+
+# 4. Silence harmless ASGI browser-disconnect / tab-refresh CancelledError noise in terminal
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'ignore_cancelled_error': {
+            '()': 'django.utils.log.CallbackFilter',
+            'callback': lambda record: 'CancelledError' not in record.getMessage()
+            and (
+                not record.exc_info
+                or record.exc_info[0].__name__ != 'CancelledError'
+            ),
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'filters': ['ignore_cancelled_error'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'daphne': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}

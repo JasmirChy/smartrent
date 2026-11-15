@@ -36,19 +36,16 @@ ALLOWED_BANNER_EXTENSIONS = {
 }
 
 
-_LAST_ORPHAN_CLEANUP_TS = 0
+
+_LAST_CLEANUP_TIME = 0
 
 def cleanup_orphaned_unpaid_bills():
-    """
-    Runs at most once every 300 seconds (5 minutes) to prevent memory and DB spikes
-    during 4-second frontend polling.
-    """
-    global _LAST_ORPHAN_CLEANUP_TS
+    """Runs at most once every 10 minutes so GET requests never overload RAM or DB."""
+    global _LAST_CLEANUP_TIME
     now = time.time()
-    if now - _LAST_ORPHAN_CLEANUP_TS < 300:
+    if now - _LAST_CLEANUP_TIME < 600:
         return
-    _LAST_ORPHAN_CLEANUP_TS = now
-
+    _LAST_CLEANUP_TIME = now
     try:
         MonthlyBill.objects.filter(
             Q(tenancy__is_active=False) | Q(room__is_occupied=False),
@@ -183,18 +180,9 @@ def add_one_month(orig_date):
 
 
 class PublicLandingDataView(APIView):
-    """
-    Single fast endpoint for the Homepage (/api/rooms/landing/):
-    Returns Hero Images, Rooms (A1-A4, B1-B5), House Rules, AND Active Notices!
-    """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        cleanup_orphaned_unpaid_bills()
-
-        Room.objects.filter(room_number__istartswith='B').exclude(floor='FIRST').update(floor='FIRST')
-        Room.objects.filter(room_number__istartswith='A').exclude(floor='GROUND').update(floor='GROUND')
-
         rooms = Room.objects.all().prefetch_related('tenancies__tenant', 'reservations')
         banners = HeroBanner.objects.filter(is_active=True).order_by('-id')
         rules = HouseRule.objects.filter(is_active=True)
