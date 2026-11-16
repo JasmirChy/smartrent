@@ -76,6 +76,8 @@ import {
   formatDualMonthLabel,
   formatBSOnly,
 } from '../utils/nepaliDate';
+import { FileSpreadsheet } from 'lucide-react'; // add to lucide-react imports
+import { exportSmartRentFinancialExcel } from '../utils/exportFinancialExcel';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 const MAX_EVIDENCE_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -310,6 +312,17 @@ export default function AdminCommandCenter() {
     refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
+  const { data: rawExpenses = [] } = useQuery({
+    queryKey: ['adminHouseExpenses'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/billing/expenses/');
+      return Array.isArray(res.data) ? res.data : res.data?.results || [];
+    },
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
+  });
+  const expensesList = Array.isArray(rawExpenses) ? rawExpenses : [];
 
   useEffect(() => {
     if (paymentQR) {
@@ -1187,6 +1200,24 @@ export default function AdminCommandCenter() {
 
           {/* Responsive 2x3 / Flex Quick Action Dock */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap items-center gap-2">
+           
+           {/* NEW: Export Excel Button */}
+            <button
+              type="button"
+              onClick={() =>
+                exportSmartRentFinancialExcel({
+                  analytics,
+                  bills,
+                  expenses: expensesList,
+                  tenants: tenantUsers,
+                })
+              }
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{t('Export Excel', 'Excel डाउनलोड')}</span>
+            </button>
+           
             <button
               type="button"
               onClick={() => setShowQRModal(true)}
