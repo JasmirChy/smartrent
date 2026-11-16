@@ -99,12 +99,14 @@ def enrich_bill_with_fine_evidence(request, bill_dict):
     rel_paths = entry.get('paths', [])
     urls = []
     for p in rel_paths:
-        if p and default_storage.exists(p):
-            urls.append(build_https_safe_uri(request, default_storage.url(p)))
+        if p:
+            try:
+                urls.append(build_https_safe_uri(request, default_storage.url(p)))
+            except Exception:
+                pass
     bill_dict['fine_evidence_urls'] = urls
     bill_dict['fine_applied_at'] = entry.get('applied_at')
     return bill_dict
-
 
 def get_admin_emails():
     """Returns all active Admin email addresses to receive billing & proof alerts."""
@@ -224,6 +226,37 @@ class PaymentQRConfigView(APIView):
     CONFIG_DIR = os.path.join(settings.MEDIA_ROOT, 'payment_qr')
     CONFIG_FILE = os.path.join(settings.MEDIA_ROOT, 'payment_qr', 'qr_metadata.json')
 
+    def _recover_latest_cloudinary_qr(self):
+        """If Render wiped local qr_metadata.json on restart, recover the latest QR from Cloudinary."""
+        if not getattr(settings, 'CLOUDINARY_STORAGE', {}).get('CLOUD_NAME'):
+            return None
+        try:
+            import cloudinary.api
+            res = cloudinary.api.resources(
+                type="upload",
+                prefix="media/payment_qr/",
+                max_results=5,
+            )
+            resources = res.get("resources", [])
+            if resources:
+                resources.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                return resources[0].get("secure_url")
+        except Exception:
+            try:
+                import cloudinary.api
+                res = cloudinary.api.resources(
+                    type="upload",
+                    prefix="payment_qr/",
+                    max_results=5,
+                )
+                resources = res.get("resources", [])
+                if resources:
+                    resources.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                    return resources[0].get("secure_url")
+            except Exception:
+                pass
+        return None
+
     def _read_config(self):
         os.makedirs(self.CONFIG_DIR, exist_ok=True)
         if os.path.exists(self.CONFIG_FILE):
@@ -232,8 +265,10 @@ class PaymentQRConfigView(APIView):
                     return json.load(f)
             except Exception:
                 pass
+        recovered_url = self._recover_latest_cloudinary_qr()
         return {
             "qr_path": None,
+            "qr_url": recovered_url,
             "merchant_name": "SmartRent Official eSewa / Fonepay",
             "payment_note": "Scan this QR with eSewa, Khalti, or your Mobile Banking app and upload the payment screenshot below.",
             "updated_at": None,
@@ -245,10 +280,15 @@ class PaymentQRConfigView(APIView):
             json.dump(data, f, indent=2)
 
     def _build_response(self, request, cfg):
-        qr_url = None
+        qr_url = cfg.get("qr_url")
         qr_path = cfg.get("qr_path")
-        if qr_path and default_storage.exists(qr_path):
-            qr_url = build_https_safe_uri(request, default_storage.url(qr_path))
+        if not qr_url and qr_path:
+            try:
+                qr_url = build_https_safe_uri(request, default_storage.url(qr_path))
+            except Exception:
+                qr_url = None
+        if not qr_url:
+            qr_url = self._recover_latest_cloudinary_qr()
         return {
             "qr_image_url": qr_url,
             "merchant_name": cfg.get("merchant_name") or "SmartRent Official QR",
@@ -277,7 +317,7 @@ class PaymentQRConfigView(APIView):
                 return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
 
             old_path = cfg.get("qr_path")
-            if old_path and default_storage.exists(old_path):
+            if old_path:
                 try:
                     default_storage.delete(old_path)
                 except Exception:
@@ -289,6 +329,7 @@ class PaymentQRConfigView(APIView):
                 qr_file,
             )
             cfg["qr_path"] = saved_path
+            cfg["qr_url"] = build_https_safe_uri(request, default_storage.url(saved_path))
 
         if 'merchant_name' in request.data:
             cfg["merchant_name"] = request.data.get('merchant_name', '').strip() or "SmartRent Official QR"
@@ -316,13 +357,14 @@ class PaymentQRConfigView(APIView):
 
         cfg = self._read_config()
         old_path = cfg.get("qr_path")
-        if old_path and default_storage.exists(old_path):
+        if old_path:
             try:
                 default_storage.delete(old_path)
             except Exception:
                 pass
 
         cfg["qr_path"] = None
+        cfg["qr_url"] = None
         cfg["updated_at"] = timezone.now().isoformat()
         self._write_config(cfg)
 
@@ -333,7 +375,6 @@ class PaymentQRConfigView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-
 
 class BillListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
