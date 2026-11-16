@@ -113,6 +113,7 @@ export default function TenantDashboard() {
   });
 
   // Modals & KYC States
+  const [receiptBill, setReceiptBill] = useState(null);
   const [showLeaseModal, setShowLeaseModal] = useState(false);
   const [showMoveOutModal, setShowMoveOutModal] = useState(false);
   const [showPayBillFirstModal, setShowPayBillFirstModal] = useState(false);
@@ -126,11 +127,13 @@ export default function TenantDashboard() {
   const [citFront, setCitFront] = useState(null);
   const [citBack, setCitBack] = useState(null);
 
-  // Queries (4-second live auto-sync)
+  // Queries
   const { data: profileData } = useQuery({
     queryKey: ['tenantMeProfile'],
     queryFn: async () => (await axiosClient.get('/accounts/me/')).data,
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
   });
 
   const { data: rawBills = [] } = useQuery({
@@ -139,31 +142,41 @@ export default function TenantDashboard() {
       const res = await axiosClient.get('/billing/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
   });
 
   const { data: paymentQR } = useQuery({
     queryKey: ['paymentQRConfig'],
     queryFn: fetchPaymentQRConfig,
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
   });
 
   const { data: rawReservations = [] } = useQuery({
     queryKey: ['tenantReservations'],
     queryFn: fetchReservations,
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
   });
 
   const { data: kycProfile } = useQuery({
     queryKey: ['tenantKYC'],
     queryFn: fetchKYCProfile,
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
   });
 
   const { data: moveOutStatus } = useQuery({
     queryKey: ['moveOutStatus'],
     queryFn: fetchMoveOutStatus,
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
   });
 
   const bills = Array.isArray(rawBills) ? rawBills : [];
@@ -421,44 +434,8 @@ export default function TenantDashboard() {
   };
 
   const handlePrintReceipt = (bill) => {
-    const win = window.open('', '_blank', 'width=700,height=700');
-    if (!win) return;
-    const dualCycle = formatDualMonthLabel(bill.billing_month_label);
-    const dualDueDate = formatDualDate(bill.due_date, 'N/A');
-    const dualPaidAt = bill.paid_at
-      ? formatDualDate(bill.paid_at)
-      : t('Verified by Admin', 'एडमिनद्वारा प्रमाणित');
-
-    win.document.write(`
-      <html>
-        <head>
-          <title>${t('SmartRent Receipt - Room', 'स्मार्टरेन्ट रसिद - कोठा')} ${bill.room_number}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 32px; color: #0f172a; }
-            .box { border: 2px solid #4f46e5; border-radius: 12px; padding: 24px; }
-            .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
-            .total { font-size: 20px; font-weight: bold; color: #4f46e5; padding-top: 14px; }
-          </style>
-        </head>
-        <body>
-          <div class="box">
-            <h2>${t('SmartRent Official Payment Receipt', 'स्मार्टरेन्ट आधिकारिक भुक्तानी रसिद')}</h2>
-            <p><strong>${t('Tenant:', 'भाडावाल:')}</strong> ${bill.tenant_name} | <strong>${t('Room:', 'कोठा:')}</strong> ${bill.room_number}</p>
-            <p><strong>${t('Billing Cycle:', 'बिलिङ चक्र:')}</strong> ${dualCycle} | <strong>${t('Due Date:', 'तिर्नुपर्ने मिति:')}</strong> ${dualDueDate}</p>
-            <p><strong>${t('Status:', 'अवस्था:')}</strong> ${td(bill.status_display)}</p>
-            <hr/>
-            <div class="row"><span>${t('Base Room Rent', 'कोठाको आधारभूत भाडा')}</span><span>${t('Rs.', 'रु.')} ${bill.base_rent}</span></div>
-            <div class="row"><span>${t('Fixed Water Supply', 'निश्चित पानी महसुल')}</span><span>${t('Rs.', 'रु.')} ${bill.water_bill}</span></div>
-            <div class="row"><span>${t('Electricity', 'बिजुली महसुल')} (${bill.previous_meter_reading} → ${bill.current_meter_reading} = ${bill.units_consumed} ${t('units', 'युनिट')} × ${t('Rs.', 'रु.')} 15)</span><span>${t('Rs.', 'रु.')} ${bill.electricity_amount}</span></div>
-            <div class="row"><span>${t('Property Damage / Rule Fine', 'क्षति / नियम उल्लंघन जरिवाना')} ${bill.damage_fine_reason ? `(${bill.damage_fine_reason})` : ''}</span><span>${t('Rs.', 'रु.')} ${bill.damage_fine_amount}</span></div>
-            <div class="row total"><span>${t('Total Paid', 'कुल भुक्तानी रकम')}</span><span>${t('Rs.', 'रु.')} ${bill.total_payable}</span></div>
-            <p style="margin-top:20px;font-size:12px;color:#64748b;">Ref: ${bill.transaction_reference || t('Verified', 'प्रमाणित')} • ${t('Paid At:', 'भुक्तानी मिति:')} ${dualPaidAt}</p>
-          </div>
-          <script>window.print();</script>
-        </body>
-      </html>
-    `);
-    win.document.close();
+    if (!bill) return;
+    setReceiptBill(bill);
   };
 
   const rawAvatarUrl = getSafeMediaUrl(
@@ -1979,6 +1956,201 @@ export default function TenantDashboard() {
               >
                 <CreditCard className="w-4 h-4" />{' '}
                 {t('Pay Bill First', 'पहिले बिल तिर्नुहोस्')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 6: OFFICIAL RECEIPT PREVIEW & PRINT MODAL                           */}
+      {/* ========================================================================= */}
+      {receiptBill && (
+        <div
+          onClick={() => setReceiptBill(null)}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm overflow-y-auto"
+        >
+          <style>{`
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #smartrent-printable-receipt,
+              #smartrent-printable-receipt * {
+                visibility: visible !important;
+              }
+              #smartrent-printable-receipt {
+                position: fixed !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 20px !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+              }
+            }
+          `}</style>
+
+          {/* Sticky Top Bar with Back & Cross (X) Buttons — Always Visible on Phone */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="sticky top-0 z-20 flex items-center justify-between bg-white/95 backdrop-blur border-b border-slate-200 px-4 py-3 shadow-sm print:hidden"
+          >
+            <button
+              type="button"
+              onClick={() => setReceiptBill(null)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 px-3.5 py-2 text-xs sm:text-sm font-extrabold text-slate-800 transition"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>{t('Back', 'फिर्ता')}</span>
+            </button>
+
+            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              {t('Official Receipt', 'आधिकारिक रसिद')}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setReceiptBill(null)}
+              aria-label="Close receipt"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-rose-100 hover:bg-rose-200 active:scale-95 text-rose-600 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Printable Receipt Card */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="mx-auto my-5 max-w-xl px-4 pb-8"
+          >
+            <div
+              id="smartrent-printable-receipt"
+              className="rounded-3xl bg-white p-6 sm:p-8 border-2 border-indigo-600 shadow-2xl space-y-5 text-slate-900"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">
+                    SmartRent Portal
+                  </span>
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 mt-0.5">
+                    {t(
+                      'SmartRent Official Payment Receipt',
+                      'स्मार्टरेन्ट आधिकारिक भुक्तानी रसिद'
+                    )}
+                  </h2>
+                </div>
+                <span className="px-3 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-extrabold shrink-0">
+                  {td(receiptBill.status_display)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs sm:text-sm bg-slate-50 p-4 rounded-2xl border border-slate-200/70">
+                <p>
+                  <strong className="text-slate-600">{t('Tenant:', 'भाडावाल:')}</strong>{' '}
+                  <span className="font-bold text-slate-900">{receiptBill.tenant_name}</span>
+                </p>
+                <p>
+                  <strong className="text-slate-600">{t('Room:', 'कोठा:')}</strong>{' '}
+                  <span className="font-bold text-slate-900">{receiptBill.room_number}</span>
+                </p>
+                <p>
+                  <strong className="text-slate-600">
+                    {t('Billing Cycle:', 'बिलिङ चक्र:')}
+                  </strong>{' '}
+                  <span className="font-bold text-slate-900">
+                    {formatDualMonthLabel(receiptBill.billing_month_label)}
+                  </span>
+                </p>
+                <p>
+                  <strong className="text-slate-600">
+                    {t('Due Date:', 'तिर्नुपर्ने मिति:')}
+                  </strong>{' '}
+                  <span className="font-bold text-slate-900">
+                    {formatDualDate(receiptBill.due_date, 'N/A')}
+                  </span>
+                </p>
+              </div>
+
+              <div className="divide-y divide-slate-200 text-sm">
+                <div className="flex justify-between py-3">
+                  <span className="text-slate-600 font-medium">
+                    {t('Base Room Rent', 'कोठाको आधारभूत भाडा')}
+                  </span>
+                  <span className="font-bold text-slate-900">
+                    {t('Rs.', 'रु.')} {Number(receiptBill.base_rent).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between py-3">
+                  <span className="text-slate-600 font-medium">
+                    {t('Fixed Water Supply', 'निश्चित पानी महसुल')}
+                  </span>
+                  <span className="font-bold text-slate-900">
+                    {t('Rs.', 'रु.')} {Number(receiptBill.water_bill).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between gap-4 py-3">
+                  <span className="text-slate-600 font-medium">
+                    {t('Electricity', 'बिजुली महसुल')} ({receiptBill.previous_meter_reading}{' '}
+                    → {receiptBill.current_meter_reading} = {receiptBill.units_consumed}{' '}
+                    {t('units', 'युनिट')} × {t('Rs.', 'रु.')}{' '}
+                    {receiptBill.electricity_rate || elecRate || 15})
+                  </span>
+                  <span className="font-bold text-slate-900 shrink-0">
+                    {t('Rs.', 'रु.')}{' '}
+                    {Number(receiptBill.electricity_amount).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between gap-4 py-3">
+                  <span className="text-slate-600 font-medium">
+                    {t('Property Damage / Rule Fine', 'क्षति / नियम उल्लंघन जरिवाना')}{' '}
+                    {receiptBill.damage_fine_reason
+                      ? `(${receiptBill.damage_fine_reason})`
+                      : ''}
+                  </span>
+                  <span className="font-bold text-slate-900 shrink-0">
+                    {t('Rs.', 'रु.')}{' '}
+                    {Number(receiptBill.damage_fine_amount || 0).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center pt-4 text-base sm:text-lg font-black text-indigo-600">
+                  <span>{t('Total Payable / Paid', 'कुल भुक्तानी रकम')}</span>
+                  <span>
+                    {t('Rs.', 'रु.')} {Number(receiptBill.total_payable).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500 pt-2 border-t border-slate-100">
+                Ref: {receiptBill.transaction_reference || t('Verified', 'प्रमाणित')} •{' '}
+                {t('Paid At:', 'भुक्तानी मिति:')}{' '}
+                {receiptBill.paid_at
+                  ? formatDualDate(receiptBill.paid_at)
+                  : t('Verified by Admin', 'एडमिनद्वारा प्रमाणित')}
+              </p>
+            </div>
+
+            {/* Bottom Action Buttons */}
+            <div className="mt-4 flex items-center gap-3 print:hidden">
+              <button
+                type="button"
+                onClick={() => setReceiptBill(null)}
+                className="flex-1 py-3.5 rounded-2xl bg-white border border-slate-300 text-xs sm:text-sm font-extrabold text-slate-800 hover:bg-slate-50 shadow-sm transition"
+              >
+                {t('Close', 'बन्द गर्नुहोस्')}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-lg inline-flex items-center justify-center gap-2 transition"
+              >
+                <FileText className="w-4 h-4" />
+                <span>{t('Print / Save PDF', 'प्रिन्ट / PDF सुरक्षित गर्नुहोस्')}</span>
               </button>
             </div>
           </div>
