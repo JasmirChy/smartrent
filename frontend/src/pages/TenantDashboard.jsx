@@ -43,14 +43,13 @@ import {
   formatDualMonthLabel,
   formatBSOnly,
 } from '../utils/nepaliDate';
-
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
 
   let finalUrl = rawUrl.trim();
 
-  // If it's already a Cloudinary URL, keep it intact (just ensure https://)
+  // 1. NEVER rewrite Cloudinary URLs (even when '/media/' is in the folder path)
   if (finalUrl.includes('res.cloudinary.com')) {
     if (finalUrl.startsWith('http://')) {
       finalUrl = 'https://' + finalUrl.substring('http://'.length);
@@ -62,6 +61,7 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
     return finalUrl;
   }
 
+  // 2. Fallback for local development / legacy relative paths
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   let backendOrigin = 'http://localhost:8000';
   try {

@@ -24,11 +24,25 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import axiosClient, { fetchNotices } from '../../api/axiosClient';
 import { formatDualDate } from '../../utils/nepaliDate';
-
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
-  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return null;
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
 
+  let finalUrl = rawUrl.trim();
+
+  // 1. NEVER rewrite Cloudinary URLs (even when '/media/' is in the folder path)
+  if (finalUrl.includes('res.cloudinary.com')) {
+    if (finalUrl.startsWith('http://')) {
+      finalUrl = 'https://' + finalUrl.substring('http://'.length);
+    }
+    if (cacheBuster) {
+      const sep = finalUrl.includes('?') ? '&' : '?';
+      return `${finalUrl}${sep}v=${cacheBuster}`;
+    }
+    return finalUrl;
+  }
+
+  // 2. Fallback for local development / legacy relative paths
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   let backendOrigin = 'http://localhost:8000';
   try {
@@ -36,8 +50,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   } catch {
     backendOrigin = 'http://localhost:8000';
   }
-
-  let finalUrl = rawUrl.trim();
 
   const mediaIndex = finalUrl.indexOf('/media/');
   if (mediaIndex !== -1) {
