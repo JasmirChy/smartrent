@@ -57,13 +57,24 @@ def cleanup_orphaned_unpaid_bills():
 
 
 def build_https_safe_uri(request, relative_url):
-    """Builds an absolute URI and upgrades http:// to https:// on production hosts."""
+    """Builds an absolute URI, prevents double Cloudinary prefixes, and forces https://."""
     if not relative_url:
         return None
-    try:
-        full_url = request.build_absolute_uri(relative_url)
-    except Exception:
-        full_url = str(relative_url)
+    raw = str(relative_url).strip()
+
+    # Clean any accidental double Cloudinary URL prefix
+    second_idx = raw.find('res.cloudinary.com/', raw.find('res.cloudinary.com/') + 1)
+    if second_idx != -1:
+        raw = 'https://' + raw[second_idx:]
+
+    if raw.startswith('http://') or raw.startswith('https://'):
+        full_url = raw
+    else:
+        try:
+            full_url = request.build_absolute_uri(raw)
+        except Exception:
+            full_url = raw
+
     if (
         full_url.startswith('http://')
         and 'localhost' not in full_url
@@ -72,7 +83,6 @@ def build_https_safe_uri(request, relative_url):
     ):
         full_url = 'https://' + full_url[len('http://'):]
     return full_url
-
 
 def _read_fine_metadata():
     os.makedirs(FINE_PROOFS_DIR, exist_ok=True)
