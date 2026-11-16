@@ -77,8 +77,10 @@ import {
   formatBSOnly,
 } from '../utils/nepaliDate';
 import { FileSpreadsheet } from 'lucide-react'; // add to lucide-react imports
-import { exportSmartRentFinancialExcel } from '../utils/exportFinancialExcel';
-
+import {
+  exportSmartRentFinancialExcel,
+  computeFinancialSummary,
+} from '../utils/exportFinancialExcel';
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 const MAX_EVIDENCE_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -227,6 +229,9 @@ export default function AdminCommandCenter() {
   const [qrPaymentNote, setQrPaymentNote] = useState('');
   const [qrImageFile, setQrImageFile] = useState(null);
   const [qrImagePreview, setQrImagePreview] = useState(null);
+  const [showLedgerModal, setShowLedgerModal] = useState(false);
+  const [ledgerTab, setLedgerTab] = useState('RECEIPTS');
+  const [selectedAdminReceipt, setSelectedAdminReceipt] = useState(null);
 
   // Add Admin Modal States
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
@@ -312,7 +317,7 @@ export default function AdminCommandCenter() {
     refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
   });
-  const { data: rawExpenses = [] } = useQuery({
+  const { data: rawExpenses = [], refetch: refetchExpenses } = useQuery({
     queryKey: ['adminHouseExpenses'],
     queryFn: async () => {
       const res = await axiosClient.get('/billing/expenses/');
@@ -320,10 +325,9 @@ export default function AdminCommandCenter() {
     },
     refetchInterval: false,
     refetchOnWindowFocus: false,
-    staleTime: 120000,
+    staleTime: 60000,
   });
   const expensesList = Array.isArray(rawExpenses) ? rawExpenses : [];
-
   useEffect(() => {
     if (paymentQR) {
       setQrMerchantName(paymentQR.merchant_name || 'SmartRent Official eSewa / Fonepay');
@@ -1204,20 +1208,17 @@ export default function AdminCommandCenter() {
            {/* NEW: Export Excel Button */}
             <button
               type="button"
-              onClick={() =>
-                exportSmartRentFinancialExcel({
-                  analytics,
-                  bills,
-                  expenses: expensesList,
-                  tenants: tenantUsers,
-                })
-              }
+              onClick={() => {
+                refreshAllAdminData();
+                refetchExpenses();
+                setSelectedAdminReceipt(null);
+                setShowLedgerModal(true);
+              }}
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{t('Export Excel', 'Excel डाउनलोड')}</span>
+              <span className="truncate">{t('Ledger & Excel', 'हिसाब र Excel')}</span>
             </button>
-           
             <button
               type="button"
               onClick={() => setShowQRModal(true)}
@@ -5309,6 +5310,307 @@ export default function AdminCommandCenter() {
           </div>
         </div>
       )}
+      {/* ========================================================================= */}
+{/* MODAL 12: INCOME, EXPENSES & RECEIPTS LEDGER + EXCEL EXPORT MODAL         */}
+{/* ========================================================================= */}
+{showLedgerModal && (() => {
+  const stats = computeFinancialSummary({
+    analytics,
+    bills,
+    expenses: expensesList,
+  });
+
+  return (
+    <div
+      onClick={() => setShowLedgerModal(false)}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-5xl rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col"
+      >
+        {/* Top Header */}
+        <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400 block">
+              {t('Official Property Accounting', 'आधिकारिक घरभाडा आम्दानी तथा खर्च विवरण')}
+            </span>
+            <h3 className="text-lg font-black">
+              {t('Income, Tenant Receipts & House Expenses Ledger', 'आम्दानी, रसिद र खर्च खाता')}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                exportSmartRentFinancialExcel({
+                  analytics,
+                  bills,
+                  expenses: expensesList,
+                  tenants: tenantUsers,
+                })
+              }
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-extrabold shadow-md transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>{t('Download Excel (.xlsx)', 'Excel (.xlsx) डाउनलोड गर्नुहोस्')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowLedgerModal(false)}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Summary Strip Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-5 bg-slate-50 border-b border-slate-200">
+          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200">
+            <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
+              {t('Collected Income', 'जम्मा आम्दानी (भुक्तानी भएको)')}
+            </span>
+            <strong className="text-lg font-black text-slate-900">
+              {t('Rs.', 'रु.')} {stats.totalRevenue.toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-slate-500 block">
+              {stats.settledBills.length} {t('settled receipt(s)', 'चुक्ता रसिद')}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-white border border-amber-200">
+            <span className="text-[10px] font-extrabold uppercase text-amber-700 block">
+              {t('Pending / Unpaid Dues', 'उठ्न बाँकी रकम')}
+            </span>
+            <strong className="text-lg font-black text-amber-700">
+              {t('Rs.', 'रु.')} {stats.totalPending.toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-slate-500 block">
+              {stats.openBills.length} {t('open invoice(s)', 'बाँकी बिल')}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-white border border-rose-200">
+            <span className="text-[10px] font-extrabold uppercase text-rose-700 block">
+              {t('Whole-House Expenses', 'घरको कुल खर्च')}
+            </span>
+            <strong className="text-lg font-black text-rose-600">
+              {t('Rs.', 'रु.')} {stats.totalExpenses.toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-slate-500 block">
+              {expensesList.length} {t('expense entry(s)', 'खर्च विवरण')}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-white border border-indigo-200">
+            <span className="text-[10px] font-extrabold uppercase text-indigo-700 block">
+              {t('Net Profit', 'खुद नाफा')}
+            </span>
+            <strong className="text-lg font-black text-indigo-600">
+              {t('Rs.', 'रु.')} {stats.netProfit.toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-slate-500 block">
+              {t('Income minus Expenses', 'आम्दानी - खर्च')}
+            </span>
+          </div>
+        </div>
+
+        {/* Sub-Tabs: Receipts vs Expenses */}
+        <div className="px-6 pt-4 flex items-center gap-2 border-b border-slate-100 pb-3">
+          <button
+            type="button"
+            onClick={() => {
+              setLedgerTab('RECEIPTS');
+              setSelectedAdminReceipt(null);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition ${
+              ledgerTab === 'RECEIPTS'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {t(`Tenant Payments & Receipts (${bills.length})`, `भाडावाल भुक्तानी र रसिद (${bills.length})`)}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLedgerTab('EXPENSES');
+              setSelectedAdminReceipt(null);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition ${
+              ledgerTab === 'EXPENSES'
+                ? 'bg-rose-600 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {t(`House Expenses (${expensesList.length})`, `घर खर्च विवरण (${expensesList.length})`)}
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+          {selectedAdminReceipt ? (
+            /* RECEIPT PREVIEW CARD INSIDE MODAL */
+            <div className="max-w-xl mx-auto rounded-3xl border-2 border-indigo-600 p-6 bg-white shadow-lg space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase text-indigo-600">
+                    SmartRent Official Receipt
+                  </span>
+                  <h4 className="text-base font-black text-slate-900">
+                    {selectedAdminReceipt.tenant_name} — {t('Room', 'कोठा')} {selectedAdminReceipt.room_number}
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAdminReceipt(null)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-extrabold text-slate-700"
+                >
+                  ← {t('Back to List', 'सूचीमा फर्कनुहोस्')}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3.5 rounded-2xl">
+                <p><strong>{t('Cycle:', 'महिना:')}</strong> {formatDualMonthLabel(selectedAdminReceipt.billing_month_label)}</p>
+                <p><strong>{t('Status:', 'अवस्था:')}</strong> {td(selectedAdminReceipt.status_display)}</p>
+                <p><strong>{t('Method:', 'माध्यम:')}</strong> {selectedAdminReceipt.payment_method || 'N/A'}</p>
+                <p><strong>Ref:</strong> {selectedAdminReceipt.transaction_reference || `BILL-${selectedAdminReceipt.id}`}</p>
+              </div>
+
+              <div className="divide-y divide-slate-100 text-xs">
+                <div className="flex justify-between py-2">
+                  <span>{t('Base Room Rent', 'कोठा भाडा')}</span>
+                  <strong>Rs. {Number(selectedAdminReceipt.base_rent || 0).toLocaleString()}</strong>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span>{t('Water Supply', 'पानी महसुल')}</span>
+                  <strong>Rs. {Number(selectedAdminReceipt.water_bill || 0).toLocaleString()}</strong>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span>
+                    {t('Electricity', 'बिजुली')} ({selectedAdminReceipt.units_consumed} {t('units', 'युनिट')})
+                  </span>
+                  <strong>Rs. {Number(selectedAdminReceipt.electricity_amount || 0).toLocaleString()}</strong>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span>{t('Damage / Violation Fine', 'जरिवाना')}</span>
+                  <strong>Rs. {Number(selectedAdminReceipt.damage_fine_amount || 0).toLocaleString()}</strong>
+                </div>
+                <div className="flex justify-between pt-3 text-base font-black text-indigo-600">
+                  <span>{t('Total Amount', 'कुल रकम')}</span>
+                  <span>Rs. {Number(selectedAdminReceipt.total_payable || 0).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          ) : ledgerTab === 'RECEIPTS' ? (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left text-xs whitespace-nowrap">
+                <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">{t('Tenant & Room', 'भाडावाल र कोठा')}</th>
+                    <th className="py-3 px-4">{t('Cycle (AD / BS)', 'बिलिङ चक्र')}</th>
+                    <th className="py-3 px-4">{t('Breakdown', 'विवरण')}</th>
+                    <th className="py-3 px-4">{t('Amount', 'रकम')}</th>
+                    <th className="py-3 px-4">{t('Status', 'अवस्था')}</th>
+                    <th className="py-3 px-4 text-right">{t('Receipt', 'रसिद')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {bills.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                        {t('No tenant bills or receipts found.', 'कुनै बिल वा रसिद भेटिएन।')}
+                      </td>
+                    </tr>
+                  ) : (
+                    bills.map((b) => (
+                      <tr key={b.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4">
+                          <p className="font-extrabold text-slate-900">{b.tenant_name}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {t('Room', 'कोठा')} {b.room_number} • {b.tenant_phone || b.tenant_email}
+                          </p>
+                        </td>
+                        <td className="py-3 px-4 font-semibold">
+                          {formatDualMonthLabel(b.billing_month_label)}
+                        </td>
+                        <td className="py-3 px-4 text-[11px] text-slate-600">
+                          Rent {b.base_rent} + Water {b.water_bill} + Elec {b.electricity_amount}
+                          {Number(b.damage_fine_amount || 0) > 0 ? ` + Fine ${b.damage_fine_amount}` : ''}
+                        </td>
+                        <td className="py-3 px-4 font-black text-slate-900">
+                          Rs. {Number(b.total_payable || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold ${
+                              ['APPROVED', 'PAID_CASH'].includes(b.status)
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : b.status === 'PENDING_VERIFICATION'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-700'
+                            }`}
+                          >
+                            {td(b.status_display)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAdminReceipt(b)}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px]"
+                          >
+                            {t('View Receipt', 'रसिद हेर्नुहोस्')}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left text-xs whitespace-nowrap">
+                <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">{t('Date (AD / BS)', 'मिति')}</th>
+                    <th className="py-3 px-4">{t('Category', 'विधा')}</th>
+                    <th className="py-3 px-4">{t('Expense Title', 'खर्च शीर्षक')}</th>
+                    <th className="py-3 px-4">{t('Amount', 'रकम')}</th>
+                    <th className="py-3 px-4">{t('Notes', 'कैफियत')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {expensesList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-400">
+                        {t('No whole-house expenses recorded yet.', 'कुनै घर खर्च रेकर्ड गरिएको छैन।')}
+                      </td>
+                    </tr>
+                  ) : (
+                    expensesList.map((exp) => (
+                      <tr key={exp.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-semibold">{formatDualDate(exp.expense_date)}</td>
+                        <td className="py-3 px-4">{td(exp.category_display || exp.category)}</td>
+                        <td className="py-3 px-4 font-extrabold text-slate-900">{exp.title}</td>
+                        <td className="py-3 px-4 font-black text-rose-600">
+                          Rs. {Number(exp.amount || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-slate-500">{exp.notes || '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+})()}
 
     </div>
   );
