@@ -48,6 +48,20 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
 
+  let finalUrl = rawUrl.trim();
+
+  // If it's already a Cloudinary URL, keep it intact (just ensure https://)
+  if (finalUrl.includes('res.cloudinary.com')) {
+    if (finalUrl.startsWith('http://')) {
+      finalUrl = 'https://' + finalUrl.substring('http://'.length);
+    }
+    if (cacheBuster) {
+      const sep = finalUrl.includes('?') ? '&' : '?';
+      return `${finalUrl}${sep}v=${cacheBuster}`;
+    }
+    return finalUrl;
+  }
+
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   let backendOrigin = 'http://localhost:8000';
   try {
@@ -56,10 +70,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
     backendOrigin = 'http://localhost:8000';
   }
 
-  let finalUrl = rawUrl.trim();
-
-  // If the URL contains a /media/ path (even if saved with localhost or http://),
-  // always attach it to the active backendOrigin
   const mediaIndex = finalUrl.indexOf('/media/');
   if (mediaIndex !== -1) {
     finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
@@ -67,7 +77,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
     finalUrl = `${backendOrigin}${finalUrl}`;
   }
 
-  // Upgrade http:// to https:// whenever running on HTTPS (Vercel / Render)
   if (
     finalUrl.startsWith('http://') &&
     !finalUrl.includes('localhost') &&
@@ -83,7 +92,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   }
   return finalUrl;
 }
-
 export default function TenantDashboard() {
   const { user, refreshProfile } = useAuth();
   const { t, td } = useLanguage();
