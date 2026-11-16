@@ -10,7 +10,7 @@ load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-smartrent-fallback-key')
 
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -27,6 +27,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Cloudinary Media Storage
+    'cloudinary_storage',
+    'cloudinary',
 
     # Third-party packages
     'rest_framework',
@@ -97,25 +101,18 @@ DATABASES = {
 }
 
 if os.getenv('DATABASE_URL'):
-    # conn_max_age=60 reuses the connection during active clicks so requests never fail,
-    # and closes it 60 seconds after the user stops so Neon DB still sleeps!
     DATABASES['default'] = dj_database_url.config(
         default=os.getenv('DATABASE_URL'),
-        conn_max_age=60,
+        conn_max_age=0,
         ssl_require=True,
     )
 
-# Allow uploads up to 10 MB in memory/multipart
-# 1. Stream uploads larger than 512 KB to temporary disk instead of holding 5 MB photos in RAM
+# Stream uploads larger than 512 KB to temporary disk instead of holding 5 MB photos in RAM
 FILE_UPLOAD_MAX_MEMORY_SIZE = 524288  # 512 KB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 6291456  # 6 MB
 
-# 2. Prevent Django from keeping idle PostgreSQL connection buffers in RAM on Render Free Tier
-if ' default' in DATABASES or 'default' in DATABASES:
+if 'default' in DATABASES:
     DATABASES['default']['CONN_MAX_AGE'] = 0
-
-# 3. Disable Debug query history logging in production (DEBUG=True stores every SQL query in RAM!)
-DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # Django REST Framework & JWT
 REST_FRAMEWORK = {
@@ -161,11 +158,32 @@ USE_TZ = True
 
 # Static & Media Files
 STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+os.makedirs(STATIC_ROOT, exist_ok=True)
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+os.makedirs(MEDIA_ROOT, exist_ok=True)
+
+# Cloudinary Persistent Media Storage (Active whenever CLOUDINARY_CLOUD_NAME is set)
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME', ''),
+    'API_KEY': os.getenv('CLOUDINARY_API_KEY', ''),
+    'API_SECRET': os.getenv('CLOUDINARY_API_SECRET', ''),
+}
+
+STORAGES = {
+    'default': {
+        'BACKEND': (
+            'cloudinary_storage.storage.MediaCloudinaryStorage'
+            if CLOUDINARY_STORAGE['CLOUD_NAME']
+            else 'django.core.files.storage.FileSystemStorage'
+        ),
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -184,28 +202,15 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@smartrent.com.np')
+
 # Tell Django it is behind Render's HTTPS proxy so image URLs use https://
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
 
 # Prevent SMTP from hanging for 60 seconds if blocked by Render
 EMAIL_TIMEOUT = 4
-# 1. Automatically ensure staticfiles & media directories exist so WhiteNoise never warns
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-os.makedirs(STATIC_ROOT, exist_ok=True)
 
-if hasattr(globals(), 'MEDIA_ROOT') and MEDIA_ROOT:
-    os.makedirs(MEDIA_ROOT, exist_ok=True)
-
-# 2. Stream large image uploads to disk instead of holding them in RAM (Fixes Render 512MB limit)
-FILE_UPLOAD_MAX_MEMORY_SIZE = 524288  # 512 KB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 6291456  # 6 MB
-
-# 3. Close DB connections immediately after each request to keep RAM low under 4s polling
-if 'default' in DATABASES:
-    DATABASES['default']['CONN_MAX_AGE'] = 0
-
-# 4. Silence harmless ASGI browser-disconnect / tab-refresh CancelledError noise in terminal
+# Silence harmless ASGI browser-disconnect / tab-refresh CancelledError noise in terminal
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
