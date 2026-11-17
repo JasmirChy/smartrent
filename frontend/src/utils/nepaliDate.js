@@ -251,3 +251,28 @@ export function formatDualMonthLabel(labelInput) {
   }
   return `${str} (${info.pair} ${bsYear} BS)`;
 }
+export function generateCycleOptions() {
+  const options = [];
+  const bsYears = [2082, 2083, 2084];
+  for (const yr of bsYears) {
+    BS_MONTH_NAMES.forEach((mName, idx) => {
+      options.push({
+        value: `${mName} ${yr} BS`,
+        label: `${mName} ${yr} BS (${BS_MONTH_NAMES_NE[idx]} ${toNepaliDigits(yr)} बि.सं.)`,
+      });
+    });
+  }
+  const adMonths = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  for (const yr of [2026, 2027]) {
+    for (const m of adMonths) {
+      options.push({
+        value: `${m} ${yr}`,
+        label: formatDualMonthLabel(`${m} ${yr}`),
+      });
+    }
+  }
+  return options;
+}

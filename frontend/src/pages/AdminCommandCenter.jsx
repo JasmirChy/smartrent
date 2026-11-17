@@ -75,6 +75,7 @@ import {
   formatDualDate,
   formatDualMonthLabel,
   formatBSOnly,
+  generateCycleOptions,
 } from '../utils/nepaliDate';
 import { FileSpreadsheet } from 'lucide-react'; // add to lucide-react imports
 import {
@@ -265,6 +266,36 @@ export default function AdminCommandCenter() {
     queryFn: async () => (await axiosClient.get('/billing/analytics/')).data,
     refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
     refetchIntervalInBackground: false,
+  });
+
+  const [editCycleBill, setEditCycleBill] = useState(null);
+  const [editCycleLabel, setEditCycleLabel] = useState('');
+  const [editCycleDueDate, setEditCycleDueDate] = useState('');
+
+  const openEditCycleModal = (billObj) => {
+    if (!billObj) return;
+    setEditCycleBill(billObj);
+    setEditCycleLabel(billObj.billing_month_label || '');
+    setEditCycleDueDate(billObj.due_date ? String(billObj.due_date).slice(0, 10) : '');
+  };
+
+  const updateBillCycleMutation = useMutation({
+    mutationFn: async ({ billId, payload }) =>
+      (await axiosClient.patch(`/billing/${billId}/update-cycle/`, payload)).data,
+    onSuccess: (data) => {
+      setBannerMsg({
+        type: 'success',
+        text: data.message || t('Billing cycle updated successfully!', 'बिलिङ चक्र सफलतापूर्वक अपडेट गरियो!'),
+      });
+      setEditCycleBill(null);
+      refreshAllAdminData();
+    },
+    onError: (err) => {
+      setBannerMsg({
+        type: 'error',
+        text: err.response?.data?.error || t('Failed to update billing cycle.', 'बिलिङ चक्र अपडेट गर्न सकिएन।'),
+      });
+    },
   });
 
   const { data: rawBills = [] } = useQuery({
@@ -2277,6 +2308,7 @@ export default function AdminCommandCenter() {
                     </div>
 
                     {activeAuditBill && (
+                      
                       <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
                           <div>
@@ -2284,16 +2316,26 @@ export default function AdminCommandCenter() {
                               {t('Room', 'कोठा')} {activeAuditBill.room_number} —{' '}
                               {activeAuditBill.tenant_name}
                             </h4>
-                            <p className="text-[11px] text-slate-500">
-                              {t('Cycle:', 'बिलिङ चक्र:')}{' '}
-                              {formatDualMonthLabel(activeAuditBill.billing_month_label)}
-                              {activeAuditBill.due_date
-                                ? ` • ${t('Due:', 'तिर्नुपर्ने:')} ${formatDualDate(
-                                    activeAuditBill.due_date
-                                  )}`
-                                : ''}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                              <p className="text-[11px] text-slate-500">
+                                {t('Cycle:', 'बिलिङ चक्र:')}{' '}
+                                <strong className="text-slate-800">
+                                  {formatDualMonthLabel(activeAuditBill.billing_month_label)}
+                                </strong>
+                                {activeAuditBill.due_date
+                                  ? ` • ${t('Due:', 'तिर्नुपर्ने:')} ${formatDualDate(activeAuditBill.due_date)}`
+                                  : ''}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => openEditCycleModal(activeAuditBill)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-extrabold text-[10px] transition cursor-pointer"
+                              >
+                                <Edit3 className="w-3 h-3" /> {t('Edit Cycle', 'महिना सच्याउनुहोस्')}
+                              </button>
+                            </div>
                           </div>
+
                           <div className="text-right">
                             <span className="text-sm font-extrabold text-indigo-600 block">
                               {t('Total: Rs.', 'जम्मा: रु.')}{' '}
@@ -5146,7 +5188,7 @@ export default function AdminCommandCenter() {
         </div>
       )}
 
-{/* ========================================================================= */}
+ {/* ========================================================================= */}
       {/* MODAL 11: EDIT TENANT EMAIL, DETAILS & STARTING / MOVE-IN DATE MODAL      */}
       {/* ========================================================================= */}
       {editTenantModalUser && (
@@ -5310,7 +5352,6 @@ export default function AdminCommandCenter() {
           </div>
         </div>
       )}
-      {/* ========================================================================= */}
 {/* MODAL 12: INCOME, EXPENSES & RECEIPTS LEDGER + EXCEL EXPORT MODAL         */}
 {/* ========================================================================= */}
 {showLedgerModal && (() => {
@@ -5611,6 +5652,109 @@ export default function AdminCommandCenter() {
     </div>
   );
 })()}
+
+        {editCycleBill && (
+        <div
+          onClick={() => setEditCycleBill(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 block">
+                  {t('Billing Schedule Calibration', 'बिलिङ महिना समायोजन')}
+                </span>
+                <h3 className="text-base font-black text-slate-900">
+                  {t('Edit Billing Cycle', 'बिलिङ महिना सच्याउनुहोस्')} — {t('Room', 'कोठा')} {editCycleBill.room_number}
+                </h3>
+                <p className="text-xs text-slate-500">{editCycleBill.tenant_name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditCycleBill(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateBillCycleMutation.mutate({
+                  billId: editCycleBill.id,
+                  payload: {
+                    billing_month_label: editCycleLabel,
+                    due_date: editCycleDueDate,
+                    sync_tenancy: true,
+                  },
+                });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1.5">
+                  {t('Select Correct Month Cycle (BS or AD)', 'सही महिना छान्नुहोस् (बि.सं. वा AD)')}
+                </label>
+                <select
+                  value={editCycleLabel}
+                  onChange={(e) => setEditCycleLabel(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                >
+                  {!generateCycleOptions().some((o) => o.value === editCycleLabel) && editCycleLabel && (
+                    <option value={editCycleLabel}>{formatDualMonthLabel(editCycleLabel)}</option>
+                  )}
+                  {generateCycleOptions().map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1.5">
+                  {t('Due Date (AD)', 'तिर्नुपर्ने मिति (AD)')}
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={editCycleDueDate}
+                  onChange={(e) => setEditCycleDueDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                />
+                {editCycleDueDate && (
+                  <p className="text-[11px] font-extrabold text-indigo-600 mt-1">
+                    📅 {t('Nepali Date (BS):', 'नेपाली मिति (बि.सं.):')} {formatBSOnly(editCycleDueDate)}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditCycleBill(null)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                >
+                  {t('Cancel', 'रद्द गर्नुहोस्')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateBillCycleMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition"
+                >
+                  {updateBillCycleMutation.isPending
+                    ? t('Updating...', 'अपडेट हुँदैछ...')
+                    : t('Save Cycle Change', 'परिवर्तन सुरक्षित गर्नुहोस्')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
