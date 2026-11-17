@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['apple-touch-icon.png', 'my-house.jpeg'],
+      includeAssets: ['logo.png', 'my-house.jpeg'],
       manifest: {
         name: 'SmartRent — House & Tenant Portal',
         short_name: 'SmartRent',
@@ -21,17 +21,17 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/pwa-192x192.png?v=2',
+            src: '/logo.png?v=3',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/pwa-512x512.png?v=2',
+            src: '/logo.png?v=3',
             sizes: '512x512',
             type: 'image/png',
           },
           {
-            src: '/pwa-512x512.png?v=2',
+            src: '/logo.png?v=3',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',
