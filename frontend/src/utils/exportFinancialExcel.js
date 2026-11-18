@@ -4,7 +4,25 @@ import { formatDualDate, formatDualMonthLabel } from './nepaliDate';
 export function computeFinancialSummary({ analytics = {}, bills = [], expenses = [] }) {
   const kpis = analytics?.kpis || {};
   const settledBills = bills.filter((b) => ['APPROVED', 'PAID_CASH'].includes(b.status));
-  const openBills = bills.filter((b) => !['APPROVED', 'PAID_CASH'].includes(b.status));
+
+  // Current date and 10 days ahead window
+  const now = new Date();
+  const futureWindowDays = 10;
+  const futureDate = new Date();
+  futureDate.setDate(now.getDate() + futureWindowDays);
+
+  // Filter open bills: include if overdue OR due within the next 10 days
+  const openBills = bills.filter((b) => {
+    if (['APPROVED', 'PAID_CASH'].includes(b.status)) return false;
+
+    const dueDateStr = b.due_date || b.cycle_start_date || b.created_at;
+    if (!dueDateStr) return true; // Include if no date exists
+
+    const dueDate = new Date(dueDateStr);
+    
+    // Include if due date has already passed OR is within the next 10 days
+    return dueDate <= futureDate;
+  });
 
   const calculatedRevenue = settledBills.reduce((sum, b) => sum + Number(b.total_payable || 0), 0);
   const calculatedPending = openBills.reduce((sum, b) => sum + Number(b.total_payable || 0), 0);
