@@ -38,6 +38,8 @@ import {
   Edit3,
   Layers,
   Wallet,
+  Clock,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   BarChart,
@@ -77,7 +79,6 @@ import {
   formatBSOnly,
   generateCycleOptions,
 } from '../utils/nepaliDate';
-import { FileSpreadsheet } from 'lucide-react'; // add to lucide-react imports
 import {
   exportSmartRentFinancialExcel,
   computeFinancialSummary,
@@ -2305,11 +2306,11 @@ export default function AdminCommandCenter() {
                           </div>
                         );
                       })}
-                    </div>
+                     </div>
 
                     {activeAuditBill && (
-                      
                       <div className="lg:col-span-7 rounded-2xl bg-slate-50 border border-slate-200/80 p-5 space-y-4">
+                        {/* Header: Always visible so Admin can Edit Cycle or Add Fine */}
                         <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
                           <div>
                             <h4 className="text-sm font-extrabold text-slate-900">
@@ -2353,6 +2354,7 @@ export default function AdminCommandCenter() {
                           </div>
                         </div>
 
+                        {/* Applied Fine Banner (if any) */}
                         {Number(activeAuditBill.damage_fine_amount || 0) > 0 && (
                           <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs space-y-2">
                             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2383,151 +2385,144 @@ export default function AdminCommandCenter() {
                               {t('Reason:', 'कारण:')}{' '}
                               {activeAuditBill.damage_fine_reason || 'Rule / damage violation'}
                             </p>
-                            {Array.isArray(activeAuditBill.fine_evidence_urls) &&
-                              activeAuditBill.fine_evidence_urls.length > 0 && (
-                                <div className="flex items-center gap-2 pt-1 overflow-x-auto">
-                                  {activeAuditBill.fine_evidence_urls.map((evUrl, idx) => {
-                                    const safeEv = getSafeMediaUrl(evUrl);
-                                    return (
-                                      <img
-                                        key={idx}
-                                        src={safeEv}
-                                        alt="Fine Evidence"
-                                        onClick={() =>
-                                          openPhotoLightbox(
-                                            activeAuditBill.fine_evidence_urls.map((u, i) => ({
-                                              url: getSafeMediaUrl(u),
-                                              title: `${t('Fine Evidence', 'जरिवाना प्रमाण')} #${
-                                                i + 1
-                                              } — ${t('Room', 'कोठा')} ${activeAuditBill.room_number}`,
-                                              subtitle: activeAuditBill.damage_fine_reason,
-                                            })),
-                                            idx
-                                          )
-                                        }
-                                        className="w-14 h-14 rounded-xl object-cover border border-rose-300 cursor-pointer hover:scale-105 transition"
-                                      />
-                                    );
-                                  })}
-                                </div>
-                              )}
                           </div>
                         )}
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                              {t('Zone 1: Sub-Meter', 'क्षेत्र १: सब-मिटर फोटो')}
-                            </p>
-                            <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
-                              {activeAuditBill.meter_photo_url ? (
-                                <img
-                                  src={getSafeMediaUrl(activeAuditBill.meter_photo_url)}
-                                  alt="Meter"
-                                  onClick={() =>
-                                    openPhotoLightbox([
-                                      {
-                                        url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
-                                        title: `${t('Room', 'कोठा')} ${
-                                          activeAuditBill.room_number
-                                        } — ${t('Meter Photo', 'मिटर फोटो')}`,
-                                        subtitle: formatDualMonthLabel(
-                                          activeAuditBill.billing_month_label
-                                        ),
-                                      },
-                                    ])
-                                  }
-                                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                                  {t('No Meter Photo', 'मिटर फोटो छैन')}
-                                </div>
-                              )}
+                        {/* ONLY SHOW PROOFS & APPROVE/REJECT WHEN TENANT HAS SUBMITTED A PAYMENT REQUEST */}
+                        {activeAuditBill.status === 'UNPAID' ? (
+                          <div className="rounded-2xl bg-white border border-slate-200/90 p-6 text-center space-y-3">
+                            <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                              <Clock className="w-5 h-5" />
                             </div>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
-                              {t('Zone 2: Payment Receipt', 'क्षेत्र २: भुक्तानी भौचर')}
-                            </p>
-                            <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
-                              {activeAuditBill.payment_screenshot_url ? (
-                                <img
-                                  src={getSafeMediaUrl(activeAuditBill.payment_screenshot_url)}
-                                  alt="Payment"
-                                  onClick={() =>
-                                    openPhotoLightbox([
-                                      {
-                                        url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
-                                        title: `${t('Room', 'कोठा')} ${
-                                          activeAuditBill.room_number
-                                        } — ${t('Payment Screenshot', 'भुक्तानी भौचर')}`,
-                                        subtitle: formatDualMonthLabel(
-                                          activeAuditBill.billing_month_label
-                                        ),
-                                      },
-                                    ])
-                                  }
-                                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                                  {t('No Payment Slip', 'भुक्तानी भौचर छैन')}
-                                </div>
-                              )}
+                            <div className="space-y-1">
+                              <h5 className="text-xs font-extrabold text-slate-900">
+                                {t(
+                                  'Awaiting Tenant Meter Reading & Payment Submission',
+                                  'भाडावालबाट मिटर रिडिङ र भुक्तानी प्रमाण पेश हुन बाँकी छ'
+                                )}
+                              </h5>
+                              <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                                {t(
+                                  'Sub-meter photos, payment receipts, and approval controls will appear automatically once the tenant submits their payment.',
+                                  'भाडावालले मिटर फोटो र भुक्तानी रसिद पेश गरेपछि मात्र यहाँ प्रमाण र स्वीकृत गर्ने विकल्प देखिनेछ।'
+                                )}
+                              </p>
                             </div>
-                          </div>
-                        </div>
-
-                        {['APPROVED', 'PAID_CASH'].includes(activeAuditBill.status) ? (
-                          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold flex items-center justify-between">
-                            <span className="flex items-center gap-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                              {t('Payment Verified & Settled', 'भुक्तानी प्रमाणित र चुक्ता भयो')} (
-                              {td(activeAuditBill.status_display)})
-                            </span>
-                            <span className="text-[11px] text-emerald-700 font-semibold">
-                              Ref:{' '}
-                              {activeAuditBill.transaction_reference || t('Verified', 'प्रमाणित')}
-                            </span>
+                            <div className="pt-1 flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-600">
+                              <span>
+                                {t('Base Rent:', 'कोठा भाडा:')} <strong>Rs. {Number(activeAuditBill.base_rent || 0).toLocaleString()}</strong>
+                              </span>
+                              <span>
+                                {t('Water:', 'पानी:')} <strong>Rs. {Number(activeAuditBill.water_bill || 0).toLocaleString()}</strong>
+                              </span>
+                              <span>
+                                {t('Prev Meter:', 'अघिल्लो मिटर:')} <strong>{activeAuditBill.previous_meter_reading}</strong>
+                              </span>
+                            </div>
                           </div>
                         ) : (
                           <>
-                            <input
-                              type="text"
-                              value={adminRemarks}
-                              onChange={(e) => setAdminRemarks(e.target.value)}
-                              placeholder={t('Remarks...', 'कैफियत लेख्नुहोस्...')}
-                              className="w-full px-3 py-2 text-xs rounded-xl bg-white border outline-none"
-                            />
-                            <div className="flex items-center gap-3 pt-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  auditMutation.mutate({
-                                    billId: activeAuditBill.id,
-                                    action: 'REJECT',
-                                    remarks: adminRemarks || 'Please re-upload.',
-                                  })
-                                }
-                                className="flex-1 py-3 bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border"
-                              >
-                                {t('Reject', 'अस्वीकार गर्नुहोस्')}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  auditMutation.mutate({
-                                    billId: activeAuditBill.id,
-                                    action: 'APPROVE',
-                                    remarks: adminRemarks || 'Verified.',
-                                  })
-                                }
-                                className="flex-1 py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl"
-                              >
-                                {t('Approve', 'स्वीकृत गर्नुहोस्')}
-                              </button>
+                            {/* Zone 1 & Zone 2 Photos */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                                  {t('Zone 1: Sub-Meter', 'क्षेत्र १: सब-मिटर फोटो')}
+                                </p>
+                                <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                                  {activeAuditBill.meter_photo_url ? (
+                                    <img
+                                      src={getSafeMediaUrl(activeAuditBill.meter_photo_url)}
+                                      alt="Meter"
+                                      onClick={() =>
+                                        openPhotoLightbox([
+                                          {
+                                            url: getSafeMediaUrl(activeAuditBill.meter_photo_url),
+                                            title: `${t('Room', 'कोठा')} ${activeAuditBill.room_number} — ${t('Meter Photo', 'मिटर फोटो')}`,
+                                            subtitle: formatDualMonthLabel(activeAuditBill.billing_month_label),
+                                          },
+                                        ])
+                                      }
+                                      className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                                      {t('No Meter Photo', 'मिटर फोटो छैन')}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div>
+                                <p className="text-[11px] font-bold uppercase text-slate-500 mb-1">
+                                  {t('Zone 2: Payment Receipt', 'क्षेत्र २: भुक्तानी रसिद')}
+                                </p>
+                                <div className="w-full h-44 rounded-xl bg-slate-900 overflow-hidden border relative group">
+                                  {activeAuditBill.payment_screenshot_url ? (
+                                    <img
+                                      src={getSafeMediaUrl(activeAuditBill.payment_screenshot_url)}
+                                      alt="Payment Receipt"
+                                      onClick={() =>
+                                        openPhotoLightbox([
+                                          {
+                                            url: getSafeMediaUrl(activeAuditBill.payment_screenshot_url),
+                                            title: `${t('Room', 'कोठा')} ${activeAuditBill.room_number} — ${t('Payment Receipt', 'भुक्तानी रसिद')}`,
+                                            subtitle: formatDualMonthLabel(activeAuditBill.billing_month_label),
+                                          },
+                                        ])
+                                      }
+                                      className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                                      {t('No Payment Slip', 'भुक्तानी स्लिप छैन')}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
+
+                            {/* Remarks & Reject/Approve ONLY when status is PENDING_VERIFICATION */}
+                            {activeAuditBill.status === 'PENDING_VERIFICATION' && (
+                              <>
+                                <input
+                                  type="text"
+                                  value={adminRemarks}
+                                  onChange={(e) => setAdminRemarks(e.target.value)}
+                                  placeholder={t('Remarks...', 'कैफियत...')}
+                                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-600"
+                                />
+                                <div className="grid grid-cols-2 gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      auditMutation.mutate({
+                                        billId: activeAuditBill.id,
+                                        action: 'REJECT',
+                                        remarks: adminRemarks,
+                                      })
+                                    }
+                                    disabled={auditMutation.isPending}
+                                    className="py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-xs transition cursor-pointer"
+                                  >
+                                    {t('Reject', 'अस्वीकार गर्नुहोस्')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      auditMutation.mutate({
+                                        billId: activeAuditBill.id,
+                                        action: 'APPROVE',
+                                        remarks: adminRemarks,
+                                      })
+                                    }
+                                    disabled={auditMutation.isPending}
+                                    className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm transition cursor-pointer"
+                                  >
+                                    {t('Approve', 'स्वीकृत गर्नुहोस्')}
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </>
                         )}
                       </div>
