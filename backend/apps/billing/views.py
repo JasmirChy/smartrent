@@ -1213,12 +1213,20 @@ class AdminAnalyticsDashboardView(APIView):
             "monthly_trend_chart": monthly_trend,
         })
 
-
 class TriggerDueRemindersView(APIView):
     permission_classes = [IsAdminUserRole]
 
     def post(self, request):
-        threading.Thread(target=dispatch_due_rent_email_reminders, daemon=True).start()
+        sent_count, tenant_names = dispatch_due_rent_email_reminders(force=True)
+        if sent_count == 0:
+            return Response({
+                "message": "0 reminders sent — no UNPAID bills are due within the next 3 days.",
+                "sent_count": 0,
+            })
+        
+        names_str = ", ".join(tenant_names)
         return Response({
-            "message": "Rental reminder email check started in background!"
+            "message": f"Successfully dispatched {sent_count} rental reminder email(s) to: {names_str}!",
+            "sent_count": sent_count,
+            "tenant_names": tenant_names,
         })

@@ -58,31 +58,37 @@ def create_next_cycle_bill(completed_bill):
         status='UNPAID',
     )
 
+def dispatch_due_rent_email_reminders(force=False):
+    """
+    Finds all unpaid bills whose monthly due date is today or within 3 days,
+    and emails the tenant their reminder via webhook/SMTP.
+    """
+    from .views import send_billing_notification_email, _get_bill_email_breakdown
 
-def dispatch_due_rent_email_reminders():
-    """
-    Finds all unpaid bills whose monthly due date (based on entry_date) is today or within 3 days,
-    and emails the tenant their reminder to submit their new meter reading and payment.
-    """
     today = timezone.localdate()
     upcoming_window = today + timedelta(days=3)
 
-    due_bills = MonthlyBill.objects.filter(
-        status='UNPAID',
-        due_date__lte=upcoming_window,
-        reminder_email_sent=False,
-    ).select_related('tenant', 'room', 'tenancy')
+    filters = {
+        'status': 'UNPAID',
+        'due_date__lte': upcoming_window,
+    }
+    if not force:
+        filters['reminder_email_sent'] = False
+
+    due_bills = MonthlyBill.objects.filter(**filters).select_related('tenant', 'room', 'tenancy')
 
     sent_count = 0
+    tenant_names = []
     for bill in due_bills:
+        rent_total, water_total, rent_note, water_note = _get_bill_email_breakdown(bill)
         subject = f"SmartRent - Monthly Rent & Meter Reading Reminder (Room {bill.room.room_number})"
         message = (
             f"Namaste {bill.tenant.full_name},\n\n"
             f"Your monthly rental cycle for Room {bill.room.room_number} (Entry Date: {bill.tenancy.entry_date}) "
             f"is due on {bill.due_date}.\n\n"
             f"Fixed Breakdown:\n"
-            f"• Base Room Rent: Rs. {bill.base_rent}\n"
-            f"• Fixed Water Bill: Rs. {bill.water_bill}\n"
+            f"• Base Room Rent{rent_note}: Rs. {rent_total}\n"
+            f"• Fixed Water Bill{water_note}: Rs. {water_total}\n"
             f"• Previous Electricity Meter Reading: {bill.previous_meter_reading} units\n"
             f"• Electricity Rate: Rs. {bill.electricity_rate} per unit\n"
             f"• Any Property Damage Fine: Rs. {bill.damage_fine_amount}\n\n"
@@ -90,15 +96,15 @@ def dispatch_due_rent_email_reminders():
             f"and upload your meter photo and payment screenshot (or pay cash directly to Admin).\n\n"
             f"— SmartRent House Management"
         )
-        send_mail(
+        send_billing_notification_email(
+            recipient_email=bill.tenant.email,
             subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[bill.tenant.email],
-            fail_silently=True,
+            message_body=message,
         )
-        bill.reminder_email_sent = True
-        bill.save(update_fields=['reminder_email_sent'])
+        if not bill.reminder_email_sent:
+            bill.reminder_email_sent = True
+            bill.save(update_fields=['reminder_email_sent'])
         sent_count += 1
+        tenant_names.append(bill.tenant.full_name)
 
-    return sent_count
+    return sent_count, tenant_names
