@@ -614,28 +614,7 @@ export default function PublicLanding() {
   const firstRooms = filterRoomList('FIRST');
 
   return (
-    <div className="w-full">
-      {/* COMPACT HOUSE NOTICES BANNER (ONLY SHOWS WHEN ACTIVE NOTICES EXIST) */}
-      {notices.length > 0 && (
-        <div className="bg-slate-900 text-white px-3 sm:px-6 py-2.5 border-b border-slate-800">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
-            <div className="flex items-center gap-2 min-w-0 text-xs">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-200 font-extrabold text-[10px] uppercase shrink-0">
-                <BellRing className="w-3 h-3 text-amber-400 animate-pulse" />
-                {td(notices[0].category_display || notices[0].category)}
-              </span>
-              <span className="font-bold text-white truncate">{notices[0].title}:</span>
-              <span className="text-slate-300 truncate">{notices[0].content}</span>
-            </div>
-            <span className="text-[10px] text-slate-400 shrink-0 hidden sm:inline">
-              {notices[0].created_at
-                ? formatDualDate(new Date(notices[0].created_at).toISOString().split('T')[0])
-                : ''}
-            </span>
-          </div>
-        </div>
-      )}
-
+    <div className="w-full">     
       {/* ========================================================================= */}
       {/* CLEAN, MINIMAL & STATIC HERO SECTION (ZERO DB BANNER QUERIES)             */}
       {/* ========================================================================= */}

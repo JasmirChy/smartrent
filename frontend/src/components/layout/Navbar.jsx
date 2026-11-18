@@ -31,7 +31,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
 
   let finalUrl = rawUrl.trim();
 
-  // 1. NEVER rewrite Cloudinary URLs (even when '/media/' is in the folder path)
   if (finalUrl.includes('res.cloudinary.com')) {
     if (finalUrl.startsWith('http://')) {
       finalUrl = 'https://' + finalUrl.substring('http://'.length);
@@ -43,7 +42,6 @@ function getSafeMediaUrl(rawUrl, cacheBuster = '') {
     return finalUrl;
   }
 
-  // 2. Fallback for local development / legacy relative paths
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   let backendOrigin = 'http://localhost:8000';
   try {
@@ -83,7 +81,7 @@ export default function Navbar() {
   const queryClient = useQueryClient();
 
   const [showNotifications, setShowNotifications] = useState(false);
-  const [selectedNotification, setSelectedNotification] = useState(null); // <-- Added Modal State
+  const [selectedNotification, setSelectedNotification] = useState(null); 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notices, setNotices] = useState([]);
   const [unreadChatsCount, setUnreadChatsCount] = useState(0);
@@ -138,33 +136,24 @@ export default function Navbar() {
     ]);
   }, [user, isAdmin]);
 
-  // Fetch notifications ONLY on login/route change (No background memory-draining timer!)
   useEffect(() => {
     loadNotificationData();
   }, [loadNotificationData, location.pathname]);
 
-  // =========================================================================
-  // 3-MINUTE IDLE AUTO-LOGOUT (PROTECTS RENDER 512MB RAM & NEON COMPUTE)
-  // =========================================================================
   useEffect(() => {
     if (!user) return;
 
-    const IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 Minutes (180,000 ms)
+    const IDLE_TIMEOUT_MS = 3 * 60 * 1000; 
     let idleTimer = null;
     let lastActivityTime = Date.now();
 
     const handleUserIdleTimeout = () => {
-      // 1. Cancel any running requests and clear React Query memory cache
       queryClient.cancelQueries();
       queryClient.clear();
-
-      // 2. Close open menus and log out user
       setShowNotifications(false);
       setMobileSidebarOpen(false);
       logout();
       navigate('/');
-
-      // 3. Open the Login modal and notify the user
       openAuthModal('LOGIN');
       window.alert(
         t(
@@ -176,7 +165,6 @@ export default function Navbar() {
 
     const resetIdleTimer = () => {
       const now = Date.now();
-      // Throttle timer resets to once per second so mouse movement stays lightweight
       if (now - lastActivityTime < 1000 && idleTimer) return;
       lastActivityTime = now;
 
@@ -197,7 +185,6 @@ export default function Navbar() {
       window.addEventListener(event, resetIdleTimer, { passive: true })
     );
 
-    // Start the initial 3-minute countdown immediately on login
     idleTimer = setTimeout(handleUserIdleTimeout, IDLE_TIMEOUT_MS);
 
     return () => {
@@ -208,7 +195,6 @@ export default function Navbar() {
     };
   }, [user, logout, navigate, openAuthModal, queryClient, t]);
 
-  // 1-Click Global Manual Sync Handler
   const handleManualSyncAll = async () => {
     if (isManualSyncing) return;
     setIsManualSyncing(true);
@@ -287,7 +273,7 @@ export default function Navbar() {
           <button
             type="button"
             onClick={() => setMobileSidebarOpen(true)}
-            className="lg:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 border border-slate-200/80 shrink-0 transition"
+            className="lg:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 border border-slate-200/80 shrink-0 transition cursor-pointer"
             title={t('Open Menu', 'मेनु खोल्नुहोस्')}
           >
             <Menu className="w-5 h-5" />
@@ -333,7 +319,6 @@ export default function Navbar() {
 
         {/* Right: EN | ने Toggle + Manual Sync Button + Notifications + Profile */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Language Toggle */}
           <div
             className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/90 shadow-2xs shrink-0"
             title="Switch Language (English / नेपाली)"
@@ -363,7 +348,6 @@ export default function Navbar() {
             </button>
           </div>
 
-          {/* 1-Click Manual Sync / Refresh Button */}
           <button
             type="button"
             onClick={handleManualSyncAll}
@@ -392,7 +376,7 @@ export default function Navbar() {
                     loadNotificationData();
                   }
                 }}
-                className="relative p-2 rounded-full text-slate-600 hover:bg-slate-100 transition border border-slate-200/80 shrink-0"
+                className="relative p-2 rounded-full text-slate-600 hover:bg-slate-100 transition border border-slate-200/80 shrink-0 cursor-pointer"
                 title={t('Notifications & Alerts', 'सूचना तथा जानकारीहरू')}
               >
                 <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -416,7 +400,7 @@ export default function Navbar() {
                       <button
                         type="button"
                         onClick={handleManualSyncAll}
-                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-indigo-600 transition"
+                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-indigo-600 transition cursor-pointer"
                         title={t('Refresh Notifications', 'सूचना ताजा गर्नुहोस्')}
                       >
                         <RefreshCw
@@ -505,7 +489,7 @@ export default function Navbar() {
                         key={n.id}
                         onClick={() => {
                           setShowNotifications(false);
-                          setSelectedNotification(n); // <-- Opens the Modal Instead of Navigating
+                          setSelectedNotification(n);
                         }}
                         className="p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 cursor-pointer transition space-y-1"
                       >
@@ -561,7 +545,6 @@ export default function Navbar() {
                 </div>
               )}
 
-              {/* Profile Avatar Pill */}
               <Link
                 to="/profile"
                 className="flex items-center gap-2 p-0.5 sm:pl-1 sm:pr-2.5 sm:py-1 rounded-full hover:bg-slate-100 transition border border-slate-200/80 shrink-0"
@@ -629,6 +612,53 @@ export default function Navbar() {
           )}
         </div>
       </header>
+
+      {/* =========================================================================
+          ANNOUNCEMENT TICKER (MARQUEE BAR) - RIGHT TO LEFT (Standard)
+          ========================================================================= */}
+      {notices.length > 0 && (
+        <div className="sticky top-16 z-30 bg-[#0f172a] border-b border-slate-800 flex items-center h-[42px] overflow-hidden shadow-md">
+          <style>
+            {`
+              @keyframes marquee-scroll-rtl {
+                0% { transform: translateX(100vw); }
+                100% { transform: translateX(-100%); }
+              }
+              .animate-marquee-rtl {
+                display: inline-flex;
+                flex-wrap: nowrap;
+                white-space: nowrap;
+                animation: marquee-scroll-rtl 35s linear infinite;
+                will-change: transform;
+              }
+              .animate-marquee-rtl:hover {
+                animation-play-state: paused;
+              }
+            `}
+          </style>
+          <div className="animate-marquee-rtl items-center gap-12 px-4">
+            {notices.map((n) => (
+              <div 
+                key={`ticker-${n.id}`} 
+                className="flex items-center gap-3 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => setSelectedNotification(n)}
+                title={t("Click to read full announcement", "पूरा सूचना पढ्न क्लिक गर्नुहोस्")}
+              >
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-600/30 text-indigo-100 font-extrabold text-[10px] sm:text-[11px] tracking-wide uppercase border border-indigo-500/40 shrink-0 shadow-sm">
+                  <Bell className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="whitespace-nowrap">{td(n.category_display || n.category || 'GENERAL ANNOUNCEMENT')}</span>
+                </div>
+                <span className="font-extrabold text-slate-100 text-[13px] sm:text-sm tracking-wide whitespace-nowrap">
+                  {n.title}
+                </span>
+                <span className="text-slate-300 text-[13px] sm:text-sm font-medium opacity-90 whitespace-nowrap">
+                  — {n.content}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* MOBILE & TABLET SLIDE-OUT LEFT SIDEBAR DRAWER */}
       {mobileSidebarOpen && (
