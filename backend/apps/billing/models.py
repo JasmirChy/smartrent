@@ -36,6 +36,9 @@ class MonthlyBill(models.Model):
     water_bill = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('100.00'))
     electricity_rate = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('15.00'))
 
+    months_due = models.IntegerField(default=1, help_text="Admin can increase this if tenant missed previous months")
+    water_discount = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'), help_text="Admin override deduction for water")
+   
     # Electricity Meter Readings
     previous_meter_reading = models.DecimalField(max_digits=10, decimal_places=2)
     current_meter_reading = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -74,10 +77,13 @@ class MonthlyBill(models.Model):
                 )
 
     def calculate_totals(self):
-        """Calculates units consumed, electricity bill (units * 15), and grand total."""
-        base = Decimal(str(self.base_rent or 0))
-        water = Decimal(str(self.water_bill or 100))
-        rate = Decimal(str(self.electricity_rate or 15))
+        """Calculates units consumed, multiplies rent/water by months_due, and applies discount."""
+        base_rate = Decimal(str(self.base_rent or 0))
+        water_rate = Decimal(str(self.water_bill or 100))
+        discount = Decimal(str(self.water_discount or 0))
+        m_due = Decimal(str(self.months_due or 1))
+        
+        elec_rate = Decimal(str(self.electricity_rate or 15))
         fine = Decimal(str(self.damage_fine_amount or 0))
         prev_reading = Decimal(str(self.previous_meter_reading or 0))
 
@@ -88,8 +94,13 @@ class MonthlyBill(models.Model):
             units = Decimal('0.00')
 
         self.units_consumed = units
-        self.electricity_amount = units * rate
-        self.total_payable = base + water + self.electricity_amount + fine
+        self.electricity_amount = units * elec_rate
+        
+        # Multiply fixed costs by missed months, then subtract water discount
+        total_rent = base_rate * m_due
+        total_water = max(Decimal('0.00'), (water_rate * m_due) - discount)
+
+        self.total_payable = total_rent + total_water + self.electricity_amount + fine
 
     def save(self, *args, **kwargs):
         self.calculate_totals()

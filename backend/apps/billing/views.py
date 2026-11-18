@@ -626,25 +626,25 @@ class AdminUpdateBillCycleView(APIView):
             id=bill_id,
         )
 
+        # Handle Label and Date exactly as before...
         new_label = str(request.data.get('billing_month_label') or '').strip()
         raw_due_date = str(request.data.get('due_date') or '').strip()
         sync_tenancy = bool(request.data.get('sync_tenancy', True))
 
-        if not new_label and not raw_due_date:
-            return Response(
-                {"error": "Please provide a billing month label or a new due date."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         if new_label:
             bill.billing_month_label = new_label
+            
+        if 'months_due' in request.data:
+            bill.months_due = max(1, int(request.data.get('months_due')))
+            
+        if 'water_discount' in request.data:
+            bill.water_discount = Decimal(str(request.data.get('water_discount')))
 
         if raw_due_date:
             try:
                 parsed_due = date.fromisoformat(raw_due_date[:10])
                 bill.due_date = parsed_due
                 bill.cycle_end_date = parsed_due
-                # Keep cycle_start_date roughly 1 month prior so next cycle calculates cleanly
                 prev_year = parsed_due.year if parsed_due.month > 1 else parsed_due.year - 1
                 prev_month = parsed_due.month - 1 if parsed_due.month > 1 else 12
                 max_d = calendar.monthrange(prev_year, prev_month)[1]
@@ -659,11 +659,11 @@ class AdminUpdateBillCycleView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        bill.save()
+        bill.save() # calculate_totals runs automatically here
 
         return Response(
             {
-                "message": f"Billing cycle updated to '{bill.billing_month_label}' for Room {bill.room.room_number}!",
+                "message": f"Bill Settings updated for Room {bill.room.room_number}!",
                 "bill": enrich_bill_with_fine_evidence(
                     request, dict(MonthlyBillSerializer(bill, context={'request': request}).data)
                 ),

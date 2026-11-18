@@ -272,12 +272,16 @@ export default function AdminCommandCenter() {
   const [editCycleBill, setEditCycleBill] = useState(null);
   const [editCycleLabel, setEditCycleLabel] = useState('');
   const [editCycleDueDate, setEditCycleDueDate] = useState('');
+  const [editCycleMonthsDue, setEditCycleMonthsDue] = useState(1);      
+  const [editCycleWaterDiscount, setEditCycleWaterDiscount] = useState('0');
 
   const openEditCycleModal = (billObj) => {
     if (!billObj) return;
     setEditCycleBill(billObj);
     setEditCycleLabel(billObj.billing_month_label || '');
     setEditCycleDueDate(billObj.due_date ? String(billObj.due_date).slice(0, 10) : '');
+    setEditCycleMonthsDue(billObj.months_due || 1);                      // NEW
+    setEditCycleWaterDiscount(billObj.water_discount || '0');
   };
 
   const updateBillCycleMutation = useMutation({
@@ -5516,12 +5520,19 @@ export default function AdminCommandCenter() {
 
               <div className="divide-y divide-slate-100 text-xs">
                 <div className="flex justify-between py-2">
-                  <span>{t('Base Room Rent', 'कोठा भाडा')}</span>
-                  <strong>Rs. {Number(selectedAdminReceipt.base_rent || 0).toLocaleString()}</strong>
+                  <span>
+                    {t('Base Room Rent', 'कोठा भाडा')}
+                    {Number(selectedAdminReceipt.months_due || 1) > 1 && ` (x${selectedAdminReceipt.months_due})`}
+                  </span>
+                  <strong>Rs. {(Number(selectedAdminReceipt.base_rent || 0) * Number(selectedAdminReceipt.months_due || 1)).toLocaleString()}</strong>
                 </div>
                 <div className="flex justify-between py-2">
-                  <span>{t('Water Supply', 'पानी महसुल')}</span>
-                  <strong>Rs. {Number(selectedAdminReceipt.water_bill || 0).toLocaleString()}</strong>
+                  <span>
+                    {t('Water Supply', 'पानी महसुल')}
+                    {Number(selectedAdminReceipt.months_due || 1) > 1 && ` (x${selectedAdminReceipt.months_due})`}
+                    {Number(selectedAdminReceipt.water_discount || 0) > 0 && ` (- Rs. ${selectedAdminReceipt.water_discount} discount)`}
+                  </span>
+                  <strong>Rs. {Math.max(0, (Number(selectedAdminReceipt.water_bill || 0) * Number(selectedAdminReceipt.months_due || 1)) - Number(selectedAdminReceipt.water_discount || 0)).toLocaleString()}</strong>
                 </div>
                 <div className="flex justify-between py-2">
                   <span>
@@ -5684,6 +5695,8 @@ export default function AdminCommandCenter() {
                   payload: {
                     billing_month_label: editCycleLabel,
                     due_date: editCycleDueDate,
+                    months_due: editCycleMonthsDue,           // SENT TO BACKEND
+                    water_discount: editCycleWaterDiscount,   // SENT TO BACKEND
                     sync_tenancy: true,
                   },
                 });
@@ -5708,6 +5721,35 @@ export default function AdminCommandCenter() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1.5">
+                    {t('Months Due', 'बाँकी महिना (Multiplier)')}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={editCycleMonthsDue}
+                    onChange={(e) => setEditCycleMonthsDue(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs font-black text-rose-600 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase text-slate-700 mb-1.5">
+                    {t('Water Discount', 'पानी छुट (Rs.)')}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editCycleWaterDiscount}
+                    onChange={(e) => setEditCycleWaterDiscount(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs font-black text-emerald-600 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-600 outline-none"
+                  />
+                </div>
               </div>
 
               <div>
@@ -5743,7 +5785,7 @@ export default function AdminCommandCenter() {
                 >
                   {updateBillCycleMutation.isPending
                     ? t('Updating...', 'अपडेट हुँदैछ...')
-                    : t('Save Cycle Change', 'परिवर्तन सुरक्षित गर्नुहोस्')}
+                    : t('Save Bill Settings', 'परिवर्तन सुरक्षित गर्नुहोस्')}
                 </button>
               </div>
             </form>

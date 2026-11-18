@@ -29,6 +29,8 @@ class MonthlyBillSerializer(serializers.ModelSerializer):
             'cycle_start_date',
             'cycle_end_date',
             'due_date',
+            'months_due',      
+            'water_discount',
             'base_rent',
             'water_bill',
             'electricity_rate',

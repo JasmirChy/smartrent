@@ -241,21 +241,27 @@ export default function TenantDashboard() {
     ? ['UNPAID', 'PENDING_VERIFICATION', 'REJECTED'].includes(activeBill.status)
     : false;
 
+  const monthsDue = activeBill ? Number(activeBill.months_due || 1) : 1;
+  const waterDiscount = Number(activeBill?.water_discount ?? 0);
+
   const prevReading = Number(
     activeBill?.previous_meter_reading ?? assignedRoom?.current_meter_reading ?? 0
   );
-  const baseRent = Number(
+ const baseRent = Number(
     activeBill?.base_rent ?? assignedRoom?.base_rent ?? (assignedRoom ? 3800 : 0)
-  );
+  ) * monthsDue;
+
+  const waterBill = Math.max(0, (Number(
+    activeBill?.water_bill ?? assignedRoom?.fixed_water_bill ?? (assignedRoom ? 100 : 0)
+  ) * monthsDue) - waterDiscount);
+
   const headerBaseRent = assignedRoom
     ? Number(assignedRoom.base_rent ?? 3800)
     : isBillOpen
     ? Number(activeBill?.base_rent ?? 0)
     : 0;
 
-  const waterBill = Number(
-    activeBill?.water_bill ?? assignedRoom?.fixed_water_bill ?? (assignedRoom ? 100 : 0)
-  );
+  
   const elecRate = Number(
     activeBill?.electricity_rate ?? assignedRoom?.electricity_rate_per_unit ?? 15
   );
@@ -678,8 +684,13 @@ export default function TenantDashboard() {
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
                   <div className="flex items-center gap-3">
                     <Home className="w-5 h-5 text-indigo-600" />
-                    <p className="text-sm font-bold text-slate-900">
+                    <p className="text-sm font-bold text-slate-900 flex items-center">
                       {t('Base Room Rent', 'कोठाको आधारभूत भाडा')}
+                      {monthsDue > 1 && (
+                        <span className="ml-2 text-[10px] font-extrabold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-md">
+                          x{monthsDue} {t('Months', 'महिना')}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <span className="text-base font-extrabold text-slate-900">
@@ -689,8 +700,18 @@ export default function TenantDashboard() {
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200/60">
                   <div className="flex items-center gap-3">
                     <Droplets className="w-5 h-5 text-emerald-600" />
-                    <p className="text-sm font-bold text-slate-900">
+                    <p className="text-sm font-bold text-slate-900 flex items-center flex-wrap gap-2">
                       {t('Fixed Water Supply', 'निश्चित पानी महसुल')}
+                      {monthsDue > 1 && (
+                        <span className="text-[10px] font-extrabold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-md">
+                          x{monthsDue} {t('Months', 'महिना')}
+                        </span>
+                      )}
+                      {waterDiscount > 0 && (
+                        <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
+                          -{waterDiscount} {t('Discount', 'छुट')}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <span className="text-base font-extrabold text-slate-900">
@@ -837,14 +858,29 @@ export default function TenantDashboard() {
                   <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400">
                     {t('GRAND TOTAL PAYABLE', 'कुल तिर्नुपर्ने रकम')}
                   </p>
-                  <p className="text-4xl font-black mt-2 text-white">
-                    {t('Rs.', 'रु.')} {liveGrandTotal.toLocaleString()}
-                  </p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <p className="text-4xl font-black text-white">
+                      {t('Rs.', 'रु.')} {liveGrandTotal.toLocaleString()}
+                    </p>
+                    {monthsDue > 1 && isBillOpen && (
+                      <span className="px-2.5 py-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-extrabold animate-pulse">
+                        {monthsDue} {t('Months Due', 'महिना बाँकी')}
+                      </span>
+                    )}
+                  </div>
                   {fineAmount > 0 && isBillOpen && (
                     <p className="text-xs font-bold text-rose-400 mt-1">
                       {t(
-                        `Includes Rs. ${fineAmount.toLocaleString()} violation/damage fine`,
+                        `Includes Rs. ${fineAmount.toLocaleString()} violation fine`,
                         `रु. ${fineAmount.toLocaleString()} जरिवाना समावेश छ`
+                      )}
+                    </p>
+                  )}
+                  {waterDiscount > 0 && isBillOpen && (
+                    <p className="text-xs font-bold text-emerald-400 mt-1">
+                      {t(
+                        `Includes Rs. ${waterDiscount.toLocaleString()} water discount`,
+                        `रु. ${waterDiscount.toLocaleString()} पानी छुट समावेश छ`
                       )}
                     </p>
                   )}
@@ -2085,18 +2121,21 @@ export default function TenantDashboard() {
                 <div className="flex justify-between py-3">
                   <span className="text-slate-600 font-medium">
                     {t('Base Room Rent', 'कोठाको आधारभूत भाडा')}
+                    {Number(receiptBill.months_due || 1) > 1 && ` (x${receiptBill.months_due} ${t('Months', 'महिना')})`}
                   </span>
                   <span className="font-bold text-slate-900">
-                    {t('Rs.', 'रु.')} {Number(receiptBill.base_rent).toLocaleString()}
+                    {t('Rs.', 'रु.')} {(Number(receiptBill.base_rent) * Number(receiptBill.months_due || 1)).toLocaleString()}
                   </span>
                 </div>
 
                 <div className="flex justify-between py-3">
                   <span className="text-slate-600 font-medium">
                     {t('Fixed Water Supply', 'निश्चित पानी महसुल')}
+                    {Number(receiptBill.months_due || 1) > 1 && ` (x${receiptBill.months_due} ${t('Months', 'महिना')})`}
+                    {Number(receiptBill.water_discount || 0) > 0 && ` (- Rs. ${receiptBill.water_discount} ${t('Discount', 'छुट')})`}
                   </span>
                   <span className="font-bold text-slate-900">
-                    {t('Rs.', 'रु.')} {Number(receiptBill.water_bill).toLocaleString()}
+                    {t('Rs.', 'रु.')} {Math.max(0, (Number(receiptBill.water_bill) * Number(receiptBill.months_due || 1)) - Number(receiptBill.water_discount || 0)).toLocaleString()}
                   </span>
                 </div>
 
