@@ -84,6 +84,7 @@ def build_https_safe_uri(request, relative_url):
         full_url = 'https://' + full_url[len('http://'):]
     return full_url
 
+
 def _read_fine_metadata():
     os.makedirs(FINE_PROOFS_DIR, exist_ok=True)
     if os.path.exists(FINE_METADATA_FILE):
@@ -117,6 +118,20 @@ def enrich_bill_with_fine_evidence(request, bill_dict):
     bill_dict['fine_evidence_urls'] = urls
     bill_dict['fine_applied_at'] = entry.get('applied_at')
     return bill_dict
+
+
+def _get_bill_email_breakdown(bill):
+    """Computes multiplied rent, discounted water, and formatted note labels for email receipts."""
+    m_due = bill.months_due or 1
+    w_disc = bill.water_discount or Decimal('0.00')
+    rent_total = bill.base_rent * m_due
+    water_total = max(Decimal('0.00'), (bill.water_bill * m_due) - w_disc)
+    rent_note = f" (x{m_due} Months)" if m_due > 1 else ""
+    water_note = f" (x{m_due} Months)" if m_due > 1 else ""
+    if w_disc > 0:
+        water_note += f" [- Rs. {w_disc} Discount]"
+    return rent_total, water_total, rent_note, water_note
+
 
 def get_admin_emails():
     """Returns all active Admin email addresses to receive billing & proof alerts."""
@@ -386,6 +401,7 @@ class PaymentQRConfigView(APIView):
             status=status.HTTP_200_OK,
         )
 
+
 class BillListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = MonthlyBillSerializer
@@ -484,6 +500,7 @@ class TenantSubmitOnlineBillView(APIView):
                 f"Tenant {bill.tenant.full_name} ({bill.tenant.email}) has submitted their sub-meter reading "
                 f"and online payment receipt for verification:\n\n"
                 f"• Room: Room {bill.room.room_number} ({bill.billing_month_label})\n"
+                f"• Billing Months Covered: {bill.months_due or 1} month(s)\n"
                 f"• Meter Reading: {bill.previous_meter_reading} → {bill.current_meter_reading} ({bill.units_consumed} units)\n"
                 f"• Total Payable Submitted: Rs. {bill.total_payable}\n"
                 f"• Transaction Reference: {bill.transaction_reference or 'Not specified'}\n"
@@ -559,6 +576,8 @@ class AdminAuditBillView(APIView):
             if bill.tenancy and bill.tenancy.is_active:
                 create_next_cycle_bill(bill)
 
+            rent_total, water_total, rent_note, water_note = _get_bill_email_breakdown(bill)
+
             send_billing_notification_email(
                 recipient_email=bill.tenant.email,
                 subject=f"✅ SmartRent - Payment Approved for Room {bill.room.room_number} ({bill.billing_month_label})",
@@ -567,8 +586,8 @@ class AdminAuditBillView(APIView):
                     f"Your payment of Rs. {bill.total_payable} for Room {bill.room.room_number} "
                     f"({bill.billing_month_label}) has been verified and APPROVED!\n\n"
                     f"Official Receipt Breakdown:\n"
-                    f"• Room Rent: Rs. {bill.base_rent}\n"
-                    f"• Water Bill: Rs. {bill.water_bill}\n"
+                    f"• Room Rent{rent_note}: Rs. {rent_total}\n"
+                    f"• Water Bill{water_note}: Rs. {water_total}\n"
                     f"• Electricity: {bill.units_consumed} units × Rs. {bill.electricity_rate} = Rs. {bill.electricity_amount}\n"
                     f"• Damage / Rule Fine: Rs. {bill.damage_fine_amount}\n"
                     f"• Total Paid: Rs. {bill.total_payable}\n"
@@ -616,6 +635,7 @@ class AdminAuditBillView(APIView):
             status=status.HTTP_200_OK,
         )
 
+
 class AdminUpdateBillCycleView(APIView):
     permission_classes = [IsAdminUserRole]
 
@@ -626,19 +646,18 @@ class AdminUpdateBillCycleView(APIView):
             id=bill_id,
         )
 
-        # Handle Label and Date exactly as before...
         new_label = str(request.data.get('billing_month_label') or '').strip()
         raw_due_date = str(request.data.get('due_date') or '').strip()
         sync_tenancy = bool(request.data.get('sync_tenancy', True))
 
         if new_label:
             bill.billing_month_label = new_label
-            
-        if 'months_due' in request.data:
+
+        if 'months_due' in request.data and request.data.get('months_due') not in (None, ''):
             bill.months_due = max(1, int(request.data.get('months_due')))
-            
-        if 'water_discount' in request.data:
-            bill.water_discount = Decimal(str(request.data.get('water_discount')))
+
+        if 'water_discount' in request.data and request.data.get('water_discount') not in (None, ''):
+            bill.water_discount = max(Decimal('0.00'), Decimal(str(request.data.get('water_discount'))))
 
         if raw_due_date:
             try:
@@ -659,7 +678,7 @@ class AdminUpdateBillCycleView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        bill.save() # calculate_totals runs automatically here
+        bill.save()
 
         return Response(
             {
@@ -787,6 +806,10 @@ class AdminCashOverrideView(APIView):
             )
 
         bill.current_meter_reading = new_reading
+        if request.data.get('months_due') not in (None, ''):
+            bill.months_due = max(1, int(request.data.get('months_due')))
+        if request.data.get('water_discount') not in (None, ''):
+            bill.water_discount = max(Decimal('0.00'), Decimal(str(request.data.get('water_discount'))))
         if request.data.get('damage_fine_amount') not in (None, ''):
             bill.damage_fine_amount = Decimal(str(request.data.get('damage_fine_amount')))
         if request.data.get('damage_fine_reason'):
@@ -808,6 +831,8 @@ class AdminCashOverrideView(APIView):
         if bill.tenancy and bill.tenancy.is_active:
             create_next_cycle_bill(bill)
 
+        rent_total, water_total, rent_note, water_note = _get_bill_email_breakdown(bill)
+
         # Send Official Cash Receipt Email to Tenant
         send_billing_notification_email(
             recipient_email=bill.tenant.email,
@@ -818,8 +843,8 @@ class AdminCashOverrideView(APIView):
                 f"({bill.billing_month_label}) has been recorded by the Admin!\n\n"
                 f"Receipt Breakdown:\n"
                 f"• Receipt Reference: {bill.transaction_reference}\n"
-                f"• Room Rent: Rs. {bill.base_rent}\n"
-                f"• Water Bill: Rs. {bill.water_bill}\n"
+                f"• Room Rent{rent_note}: Rs. {rent_total}\n"
+                f"• Water Bill{water_note}: Rs. {water_total}\n"
                 f"• Electricity ({bill.previous_meter_reading} → {bill.current_meter_reading} = {bill.units_consumed} units × Rs. {bill.electricity_rate}): Rs. {bill.electricity_amount}\n"
                 f"• Damage / Rule Fine: Rs. {bill.damage_fine_amount}\n"
                 f"• Total Paid (CASH): Rs. {bill.total_payable}\n\n"
@@ -886,14 +911,15 @@ class BulkGenerateBillsView(APIView):
                     created_count += 1
 
                 if new_bill and tenancy.tenant and tenancy.tenant.email:
+                    rent_total, water_total, rent_note, water_note = _get_bill_email_breakdown(new_bill)
                     send_billing_notification_email(
                         recipient_email=tenancy.tenant.email,
                         subject=f"📄 SmartRent — New Monthly Bill Generated for Room {tenancy.room.room_number} ({new_bill.billing_month_label})",
                         message_body=(
                             f"Namaste {tenancy.tenant.full_name},\n\n"
                             f"Your monthly billing invoice for Room {tenancy.room.room_number} ({new_bill.billing_month_label}) is now open.\n\n"
-                            f"• Base Rent: Rs. {new_bill.base_rent}\n"
-                            f"• Fixed Water Bill: Rs. {new_bill.water_bill}\n"
+                            f"• Base Rent{rent_note}: Rs. {rent_total}\n"
+                            f"• Fixed Water Bill{water_note}: Rs. {water_total}\n"
                             f"• Previous Sub-Meter Reading: {new_bill.previous_meter_reading} units\n"
                             f"• Due Date: {new_bill.due_date}\n\n"
                             f"Please log in to your SmartRent Tenant Dashboard to enter your current sub-meter reading and upload your payment receipt.\n\n"
