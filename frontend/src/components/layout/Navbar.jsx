@@ -24,6 +24,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import axiosClient, { fetchNotices } from '../../api/axiosClient';
 import { formatDualDate } from '../../utils/nepaliDate';
+
 function getSafeMediaUrl(rawUrl, cacheBuster = '') {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
@@ -82,6 +83,7 @@ export default function Navbar() {
   const queryClient = useQueryClient();
 
   const [showNotifications, setShowNotifications] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState(null); // <-- Added Modal State
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notices, setNotices] = useState([]);
   const [unreadChatsCount, setUnreadChatsCount] = useState(0);
@@ -503,7 +505,7 @@ export default function Navbar() {
                         key={n.id}
                         onClick={() => {
                           setShowNotifications(false);
-                          navigate('/');
+                          setSelectedNotification(n); // <-- Opens the Modal Instead of Navigating
                         }}
                         className="p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 cursor-pointer transition space-y-1"
                       >
@@ -544,14 +546,14 @@ export default function Navbar() {
                         setShowNotifications(false);
                         navigate('/support');
                       }}
-                      className="font-bold text-indigo-600 hover:text-indigo-700"
+                      className="font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer"
                     >
                       {t('Open Messenger →', 'म्यासेन्जर खोल्नुहोस् →')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowNotifications(false)}
-                      className="font-semibold text-slate-400 hover:text-slate-600"
+                      className="font-semibold text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
                       {t('Close', 'बन्द गर्नुहोस्')}
                     </button>
@@ -602,7 +604,7 @@ export default function Navbar() {
               <button
                 onClick={logout}
                 title={t('Sign Out', 'लगआउट गर्नुहोस्')}
-                className="hidden sm:inline-flex p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition shrink-0"
+                className="hidden sm:inline-flex p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition shrink-0 cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -611,14 +613,14 @@ export default function Navbar() {
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 onClick={() => openAuthModal('LOGIN')}
-                className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold text-slate-700 hover:bg-slate-100 border border-slate-200 transition whitespace-nowrap"
+                className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold text-slate-700 hover:bg-slate-100 border border-slate-200 transition whitespace-nowrap cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5 hidden sm:inline" />
                 {t('Login', 'लगइन')}
               </button>
               <button
                 onClick={() => openAuthModal('SIGNUP')}
-                className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/20 transition whitespace-nowrap"
+                className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/20 transition whitespace-nowrap cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5 hidden sm:inline" />
                 {t('Sign Up', 'दर्ता')}
@@ -656,7 +658,7 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(false)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -704,7 +706,7 @@ export default function Navbar() {
                       setMobileSidebarOpen(false);
                       openAuthModal('LOGIN');
                     }}
-                    className="py-2.5 px-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5"
+                    className="py-2.5 px-3 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <LogIn className="w-3.5 h-3.5" />
                     {t('Login', 'लगइन')}
@@ -715,7 +717,7 @@ export default function Navbar() {
                       setMobileSidebarOpen(false);
                       openAuthModal('SIGNUP');
                     }}
-                    className="py-2.5 px-3 rounded-xl bg-indigo-600 text-white text-xs font-extrabold hover:bg-indigo-700 flex items-center justify-center gap-1.5 shadow-sm"
+                    className="py-2.5 px-3 rounded-xl bg-indigo-600 text-white text-xs font-extrabold hover:bg-indigo-700 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
                     {t('Sign Up', 'दर्ता')}
@@ -769,7 +771,7 @@ export default function Navbar() {
                   handleManualSyncAll();
                   setMobileSidebarOpen(false);
                 }}
-                className="w-full py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-extrabold flex items-center justify-center gap-2 transition"
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-extrabold flex items-center justify-center gap-2 transition cursor-pointer"
               >
                 <RefreshCw className={`w-4 h-4 ${isManualSyncing ? 'animate-spin' : ''}`} />
                 {t('Sync / Refresh Data', 'डाटा ताजा गर्नुहोस्')}
@@ -779,7 +781,7 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => setLang('en')}
-                  className={`flex-1 py-2 rounded-lg text-xs font-extrabold transition ${
+                  className={`flex-1 py-2 rounded-lg text-xs font-extrabold transition cursor-pointer ${
                     lang === 'en'
                       ? 'bg-white text-indigo-600 shadow-xs'
                       : 'text-slate-600'
@@ -790,7 +792,7 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => setLang('ne')}
-                  className={`flex-1 py-2 rounded-lg text-xs font-extrabold transition ${
+                  className={`flex-1 py-2 rounded-lg text-xs font-extrabold transition cursor-pointer ${
                     lang === 'ne'
                       ? 'bg-white text-indigo-600 shadow-xs'
                       : 'text-slate-600'
@@ -807,13 +809,73 @@ export default function Navbar() {
                     setMobileSidebarOpen(false);
                     logout();
                   }}
-                  className="w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold flex items-center justify-center gap-2 transition"
+                  className="w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold flex items-center justify-center gap-2 transition cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                   {t('Sign Out', 'लगआउट गर्नुहोस्')}
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          FULL NOTIFICATION MODAL OVERLAY
+          ========================================================================= */}
+      {selectedNotification && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+          onClick={() => setSelectedNotification(null)}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2 text-indigo-600">
+                <Megaphone className="w-4 h-4" />
+                <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                  {td(selectedNotification.category_display || selectedNotification.category || 'GENERAL ANNOUNCEMENT')}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedNotification(null)}
+                className="p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <h3 className="text-xl font-black text-slate-900 mb-1 leading-tight">
+                {selectedNotification.title}
+              </h3>
+              <p className="text-xs font-bold text-slate-400 mb-5">
+                {selectedNotification.created_at 
+                  ? formatDualDate(new Date(selectedNotification.created_at).toISOString().split('T')[0]) 
+                  : ''}
+              </p>
+              
+              <div className="text-[13px] font-medium text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50/50 p-4 rounded-2xl border border-slate-100 max-h-[60vh] overflow-y-auto">
+                {selectedNotification.content}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedNotification(null)}
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-extrabold transition shadow-sm cursor-pointer"
+              >
+                {t('Close', 'बन्द गर्नुहोस्')}
+              </button>
+            </div>
+            
           </div>
         </div>
       )}
