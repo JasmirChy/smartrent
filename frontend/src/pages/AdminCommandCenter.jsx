@@ -5486,8 +5486,25 @@ export default function AdminCommandCenter() {
           >
             {t(`House Expenses (${expensesList.length})`, `घर खर्च विवरण (${expensesList.length})`)}
           </button>
+
+          {/* NEW BUTTON ADDED RIGHT BESIDE HOUSE EXPENSES */}
+          <button
+            type="button"
+            onClick={() => {
+              setLedgerTab('OPEN_BILLS');
+              setSelectedAdminReceipt(null);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+              ledgerTab === 'OPEN_BILLS'
+                ? 'bg-amber-600 text-white'
+                : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+            }`}
+          >
+            {t(`⚠️ Open Invoices Tenants (${stats.openBills.length})`, `⚠️ खुला बिल भएका बक्यौतादार (${stats.openBills.length})`)}
+          </button>
         </div>
 
+        {/* Modal Body */}
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-5">
           {selectedAdminReceipt ? (
@@ -5609,6 +5626,63 @@ export default function AdminCommandCenter() {
                             className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px]"
                           >
                             {t('View Receipt', 'रसिद हेर्नुहोस्')}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : ledgerTab === 'OPEN_BILLS' ? (
+            /* NEW OPEN INVOICES TENANTS TABLE VIEW */
+            <div className="overflow-x-auto rounded-2xl border border-amber-200 bg-amber-50/20">
+              <table className="w-full text-left text-xs whitespace-nowrap">
+                <thead className="bg-amber-100/70 text-[10px] font-extrabold uppercase text-amber-900 border-b border-amber-200">
+                  <tr>
+                    <th className="py-3 px-4">{t('Tenant Name & Room', 'भाडावालको नाम र कोठा')}</th>
+                    <th className="py-3 px-4">{t('Billing Cycle', 'बिलिङ महिना')}</th>
+                    <th className="py-3 px-4">{t('Due Date', 'तिर्नुपर्ने मिति')}</th>
+                    <th className="py-3 px-4">{t('Open Due Amount', 'बाँकी रकम')}</th>
+                    <th className="py-3 px-4 text-right">{t('Action', 'कार्य')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-100">
+                  {stats.openBills.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-10 text-center text-slate-500 font-bold">
+                        {t('🎉 No open invoices within the 10-day threshold!', '🎉 १० दिनको समयसीमा भित्र कुनै खुला बिल छैन!')}
+                      </td>
+                    </tr>
+                  ) : (
+                    stats.openBills.map((b) => (
+                      <tr key={b.id} className="hover:bg-amber-50/50">
+                        <td className="py-3 px-4">
+                          <p className="font-extrabold text-slate-900">{b.tenant_name}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {t('Room', 'कोठा')} {b.room_number} • {b.tenant_phone || b.tenant_email}
+                          </p>
+                        </td>
+                        <td className="py-3 px-4 font-semibold">
+                          {formatDualMonthLabel(b.billing_month_label)}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-amber-800">
+                          {formatDualDate(b.due_date)}
+                        </td>
+                        <td className="py-3 px-4 font-black text-amber-700 text-sm">
+                          Rs. {Number(b.total_payable || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowLedgerModal(false);
+                              setSelectedBillForAudit(b);
+                              setActionQueueTab('BILLS');
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] shadow-xs cursor-pointer"
+                          >
+                            {t('Audit Bill →', 'बिल जाँच गर्नुहोस् →')}
                           </button>
                         </td>
                       </tr>
