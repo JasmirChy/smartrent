@@ -1,32 +1,39 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: light !important;
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: #F8FAFC;
+    color: #0F172A;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Light-mode defaults for text inputs, selects, and textareas without breaking Tailwind bg-* utilities or checkboxes */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    background-color: #FFFFFF;
+    color: #0F172A;
+    color-scheme: light;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #94A3B8;
+  }
 }
 
-body {
-  background-color: #F8FAFC !important;
-  color: #0F172A !important;
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
-}
-
-/* Force all inputs, selects, and textareas to pure white background & dark text */
-input,
-select,
-textarea {
-  background-color: #FFFFFF !important;
-  color: #0F172A !important;
-  color-scheme: light !important;
-}
-
-input::placeholder,
-textarea::placeholder {
-  color: #94A3B8 !important;
-}
-
-/* Override Chrome / Edge dark autofill background */
+/* Override Chrome / Edge dark autofill background (must stay !important to beat browser UA styles) */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
@@ -42,13 +49,16 @@ input:-webkit-autofill:active {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #F1F5F9;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #CBD5E1;
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
