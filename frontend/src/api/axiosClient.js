@@ -95,6 +95,12 @@ export const downloadFileFromUrl = async (fileUrl, defaultFileName = 'SmartRent-
   }
 };
 
+// --- ADMIN ROOM DETAILS HELPER ---
+export const updateRoomDetails = async (roomId, payload) => {
+  const res = await axiosClient.patch(`/rooms/${roomId}/`, payload);
+  return res.data;
+};
+
 // --- ROOM RESERVATION API HELPERS ---
 export const fetchReservations = async () => {
   try {

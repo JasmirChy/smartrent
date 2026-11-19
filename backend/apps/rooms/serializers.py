@@ -94,6 +94,32 @@ class RoomSerializer(serializers.ModelSerializer):
             'pending_reservations_count',
         ]
 
+    def validate_title(self, value):
+        cleaned = (value or '').strip()
+        if not cleaned:
+            raise serializers.ValidationError("Room title / tagline cannot be empty.")
+        return cleaned
+
+    def validate_area_sqft(self, value):
+        if value is None or value <= 0:
+            raise serializers.ValidationError("Room area must be greater than 0 sq.ft.")
+        return value
+
+    def validate_base_rent(self, value):
+        if value is None or value < 0:
+            raise serializers.ValidationError("Base rent cannot be negative.")
+        return value
+
+    def validate_fixed_water_bill(self, value):
+        if value is None or value < 0:
+            raise serializers.ValidationError("Water bill cannot be negative.")
+        return value
+
+    def validate_electricity_rate_per_unit(self, value):
+        if value is None or value < 0:
+            raise serializers.ValidationError("Electricity rate cannot be negative.")
+        return value
+
     def get_active_tenancy(self, obj):
         tenancy = obj.tenancies.filter(is_active=True).select_related('tenant').first()
         if tenancy:

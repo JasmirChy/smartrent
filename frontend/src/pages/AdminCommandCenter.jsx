@@ -83,6 +83,7 @@ import {
   exportSmartRentFinancialExcel,
   computeFinancialSummary,
 } from '../utils/exportFinancialExcel';
+import EditRoomModal from '../components/admin/EditRoomModal';
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 const MAX_EVIDENCE_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -168,6 +169,7 @@ export default function AdminCommandCenter() {
   // Edit Room Sub-Meter Modal States
   const [editMeterRoom, setEditMeterRoom] = useState(null);
   const [editMeterValue, setEditMeterValue] = useState('');
+  const [editingRoom, setEditingRoom] = useState(null);
   // Edit Tenant Email, Name, Phone & Starting Date (Entry Date) Modal States
   const [editTenantModalUser, setEditTenantModalUser] = useState(null);
   const [editTenantEmail, setEditTenantEmail] = useState('');
@@ -2053,6 +2055,30 @@ export default function AdminCommandCenter() {
                             ? tenant.full_name
                             : t('Ready for Assignment', 'भाडाका लागि खाली')}
                         </p>
+                        {/* Room Tagline, Area (sq.ft) & Quick Edit Bar */}
+                        <div className="flex items-center justify-between gap-2 bg-indigo-50/70 border border-indigo-100 px-3 py-2 rounded-xl mb-2.5">
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-extrabold text-slate-800 truncate">
+                              {room.title || t('Untitled Room', 'शीर्षक छैन')}
+                            </p>
+                            <p className="text-[10px] font-bold text-indigo-600">
+                              {room.area_sqft ?? 0} {t('sq.ft', 'वर्ग फिट')}
+                              {room.room_type === 'SMALL' ? ` • ${t('Small', 'सानो')}` : ''}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditingRoom(room)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 font-extrabold text-[10px] shadow-2xs transition shrink-0 cursor-pointer"
+                            title={t(
+                              'Edit room tagline, area & rates',
+                              'कोठाको शीर्षक, क्षेत्रफल र दर सच्याउनुहोस्'
+                            )}
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>{t('Edit Room', 'सच्याउनुहोस्')}</span>
+                          </button>
+                        </div>
 
                         {/* Digital Sub-Meter Readout Bar */}
                         <div className="flex items-center justify-between bg-slate-900 text-white px-3 py-2 rounded-xl mb-2.5">
@@ -5866,6 +5892,23 @@ export default function AdminCommandCenter() {
           </div>
         </div>
       )}
+      {/* ========================================================================= */}
+      {/* MODAL 13: EDIT ROOM TAGLINE, AREA (SQ.FT) & RATES MODAL                   */}
+      {/* ========================================================================= */}
+      <EditRoomModal
+        room={editingRoom}
+        onClose={() => setEditingRoom(null)}
+        onSaved={(updated) => {
+          setBannerMsg({
+            type: 'success',
+            text: t(
+              `Room ${updated.room_number} updated: ${updated.title} • ${updated.area_sqft} sq.ft`,
+              `कोठा ${updated.room_number} अपडेट गरियो: ${updated.title} • ${updated.area_sqft} वर्ग फिट`
+            ),
+          });
+          refreshAllAdminData();
+        }}
+      />
 
     </div>
   );

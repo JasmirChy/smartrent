@@ -36,8 +36,8 @@ ALLOWED_BANNER_EXTENSIONS = {
 }
 
 
-
 _LAST_CLEANUP_TIME = 0
+
 
 def cleanup_orphaned_unpaid_bills():
     """Runs at most once every 10 minutes so GET requests never overload RAM or DB."""
@@ -53,6 +53,7 @@ def cleanup_orphaned_unpaid_bills():
         ).delete()
     except Exception:
         pass
+
 
 def build_https_safe_uri(request, relative_url):
     """
@@ -201,6 +202,8 @@ class PublicLandingDataView(APIView):
             "rules": [],
             "notices": NoticeSerializer(notices, many=True, context={'request': request}).data,
         })
+
+
 PublicLandingView = PublicLandingDataView
 
 
@@ -215,9 +218,9 @@ class RoomListUpdateView(generics.ListAPIView):
 
 class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
     """
-    Allows Admin to edit a room's initial/current sub-meter reading (and optional room rates)
-    via PATCH or PUT /api/rooms/<pk>/.
-    Automatically syncs:
+    Allows Admin to edit a room's tagline (title), area (area_sqft), room_type,
+    initial/current sub-meter reading, and utility/rent rates via PATCH or PUT /api/rooms/<pk>/.
+    When sub-meter reading is provided, automatically syncs:
       1) Room.current_meter_reading
       2) Active Tenancy.starting_meter_reading (if occupied)
       3) Any open MonthlyBill.previous_meter_reading (recalculating bill totals immediately)
@@ -234,7 +237,9 @@ class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
             raw_meter = request.data.get('starting_meter_reading')
 
         updated_fields = ['updated_at']
+        meter_updated = False
 
+        # 1. Sub-meter calibration (optional)
         if raw_meter not in (None, ''):
             try:
                 new_meter = Decimal(str(raw_meter))
@@ -252,6 +257,7 @@ class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
 
             room.current_meter_reading = new_meter
             updated_fields.append('current_meter_reading')
+            meter_updated = True
 
             # Sync active tenancy starting meter reading if room is occupied
             active_tenancy = Tenancy.objects.filter(room=room, is_active=True).first()
@@ -270,37 +276,117 @@ class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
                     bill.current_meter_reading = new_meter
                 bill.save()
 
-        # Optional room rate overrides if provided
+        # 2. Room tagline / title, area (sq.ft), room_type, and features
+        if 'title' in request.data:
+            clean_title = str(request.data.get('title') or '').strip()
+            if not clean_title:
+                return Response(
+                    {"title": ["Room title / tagline cannot be empty."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            room.title = clean_title
+            updated_fields.append('title')
+
+        if 'area_sqft' in request.data and request.data.get('area_sqft') not in (None, ''):
+            try:
+                new_area = int(float(str(request.data.get('area_sqft'))))
+            except (ValueError, TypeError):
+                return Response(
+                    {"area_sqft": ["Please enter a valid whole number for room area (sq.ft)."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if new_area <= 0:
+                return Response(
+                    {"area_sqft": ["Room area must be greater than 0 sq.ft."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            room.area_sqft = new_area
+            updated_fields.append('area_sqft')
+
+        if 'room_type' in request.data and request.data.get('room_type') not in (None, ''):
+            new_type = str(request.data.get('room_type')).strip().upper()
+            room_type_field = Room._meta.get_field('room_type')
+            valid_choices = {c[0] for c in room_type_field.choices} if room_type_field.choices else None
+            if valid_choices and new_type not in valid_choices:
+                return Response(
+                    {"room_type": [f"Invalid room type '{new_type}'."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            room.room_type = new_type
+            updated_fields.append('room_type')
+
+        if 'features' in request.data and request.data.get('features') is not None:
+            room.features = request.data.get('features')
+            updated_fields.append('features')
+
+        # 3. Optional room rate overrides if provided
         if request.data.get('base_rent') not in (None, ''):
             try:
-                room.base_rent = Decimal(str(request.data.get('base_rent')))
+                new_rent = Decimal(str(request.data.get('base_rent')))
+                if new_rent < Decimal('0.00'):
+                    return Response(
+                        {"base_rent": ["Base rent cannot be negative."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                room.base_rent = new_rent
                 updated_fields.append('base_rent')
             except (InvalidOperation, ValueError):
-                pass
+                return Response(
+                    {"base_rent": ["Please enter a valid numeric base rent."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         if request.data.get('fixed_water_bill') not in (None, ''):
             try:
-                room.fixed_water_bill = Decimal(str(request.data.get('fixed_water_bill')))
+                new_water = Decimal(str(request.data.get('fixed_water_bill')))
+                if new_water < Decimal('0.00'):
+                    return Response(
+                        {"fixed_water_bill": ["Water bill cannot be negative."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                room.fixed_water_bill = new_water
                 updated_fields.append('fixed_water_bill')
             except (InvalidOperation, ValueError):
-                pass
+                return Response(
+                    {"fixed_water_bill": ["Please enter a valid numeric water bill."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         if request.data.get('electricity_rate_per_unit') not in (None, ''):
             try:
-                room.electricity_rate_per_unit = Decimal(str(request.data.get('electricity_rate_per_unit')))
+                new_elec = Decimal(str(request.data.get('electricity_rate_per_unit')))
+                if new_elec < Decimal('0.00'):
+                    return Response(
+                        {"electricity_rate_per_unit": ["Electricity rate cannot be negative."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                room.electricity_rate_per_unit = new_elec
                 updated_fields.append('electricity_rate_per_unit')
             except (InvalidOperation, ValueError):
-                pass
+                return Response(
+                    {"electricity_rate_per_unit": ["Please enter a valid numeric electricity rate."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         room.save(update_fields=list(dict.fromkeys(updated_fields)))
+        serialized_room = RoomSerializer(room, context={'request': request}).data
+
+        if meter_updated:
+            msg = (
+                f"Room {room.room_number} sub-meter reading updated to "
+                f"{room.current_meter_reading} units and synced across active bills!"
+            )
+        else:
+            msg = (
+                f"Room {room.room_number} details updated "
+                f"({room.title} • {room.area_sqft} sq.ft)!"
+            )
 
         return Response(
             {
-                "message": (
-                    f"Room {room.room_number} sub-meter reading updated to "
-                    f"{room.current_meter_reading} units and synced across active bills!"
-                ),
-                "room": RoomSerializer(room, context={'request': request}).data,
+                **serialized_room,
+                "message": msg,
+                "room": serialized_room,
             },
             status=status.HTTP_200_OK,
         )
