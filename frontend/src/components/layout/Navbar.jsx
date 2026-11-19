@@ -19,59 +19,16 @@ import {
   User,
   LayoutDashboard,
   RefreshCw,
+  Clock,
+  CheckCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import axiosClient, { fetchNotices } from '../../api/axiosClient';
 import { formatDualDate } from '../../utils/nepaliDate';
+import { getSafeMediaUrl } from '../../utils/mediaUrl';
 
-function getSafeMediaUrl(rawUrl, cacheBuster = '') {
-  if (!rawUrl || typeof rawUrl !== 'string') return null;
-  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
-
-  let finalUrl = rawUrl.trim();
-
-  if (finalUrl.includes('res.cloudinary.com')) {
-    if (finalUrl.startsWith('http://')) {
-      finalUrl = 'https://' + finalUrl.substring('http://'.length);
-    }
-    if (cacheBuster) {
-      const sep = finalUrl.includes('?') ? '&' : '?';
-      return `${finalUrl}${sep}v=${cacheBuster}`;
-    }
-    return finalUrl;
-  }
-
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
-  let backendOrigin = 'http://localhost:8000';
-  try {
-    backendOrigin = new URL(apiBase).origin;
-  } catch {
-    backendOrigin = 'http://localhost:8000';
-  }
-
-  const mediaIndex = finalUrl.indexOf('/media/');
-  if (mediaIndex !== -1) {
-    finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
-  } else if (finalUrl.startsWith('/')) {
-    finalUrl = `${backendOrigin}${finalUrl}`;
-  }
-
-  if (
-    finalUrl.startsWith('http://') &&
-    !finalUrl.includes('localhost') &&
-    !finalUrl.includes('127.0.0.1') &&
-    !finalUrl.includes('192.168.')
-  ) {
-    finalUrl = 'https://' + finalUrl.substring('http://'.length);
-  }
-
-  if (cacheBuster) {
-    const sep = finalUrl.includes('?') ? '&' : '?';
-    return `${finalUrl}${sep}v=${cacheBuster}`;
-  }
-  return finalUrl;
-}
+const READ_NOTICES_STORAGE_KEY = 'smartrent_read_notices';
 
 export default function Navbar() {
   const { user, isAdmin, openAuthModal, logout, refreshProfile } = useAuth();
@@ -81,14 +38,51 @@ export default function Navbar() {
   const queryClient = useQueryClient();
 
   const [showNotifications, setShowNotifications] = useState(false);
-  const [selectedNotification, setSelectedNotification] = useState(null); 
+  const [selectedNotification, setSelectedNotification] = useState(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notices, setNotices] = useState([]);
+  const [readNoticeIds, setReadNoticeIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem(READ_NOTICES_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [unreadChatsCount, setUnreadChatsCount] = useState(0);
   const [pendingActionCount, setPendingActionCount] = useState(0);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [isManualSyncing, setIsManualSyncing] = useState(false);
+
+  // Friendly 30-second idle countdown modal state
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState(null);
+  const [idleResetKey, setIdleResetKey] = useState(0);
   const dropdownRef = useRef(null);
+
+  const markNoticeAsRead = useCallback((noticeId) => {
+    setReadNoticeIds((prev) => {
+      if (prev.includes(noticeId)) return prev;
+      const updated = [...prev, noticeId];
+      try {
+        localStorage.setItem(READ_NOTICES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore storage errors
+      }
+      return updated;
+    });
+  }, []);
+
+  const markAllNoticesAsRead = useCallback(() => {
+    setReadNoticeIds((prev) => {
+      const updated = Array.from(new Set([...prev, ...notices.map((n) => n.id)]));
+      try {
+        localStorage.setItem(READ_NOTICES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore storage errors
+      }
+      return updated;
+    });
+  }, [notices]);
 
   useEffect(() => {
     setAvatarLoadFailed(false);
@@ -103,6 +97,7 @@ export default function Navbar() {
       setNotices([]);
       setUnreadChatsCount(0);
       setPendingActionCount(0);
+      setSelectedNotification(null);
       return Promise.resolve();
     }
 
@@ -140,27 +135,33 @@ export default function Navbar() {
     loadNotificationData();
   }, [loadNotificationData, location.pathname]);
 
-  useEffect(() => {
-    if (!user) return;
+  const performIdleLogout = useCallback(() => {
+    queryClient.cancelQueries();
+    queryClient.clear();
+    setIdleWarningSeconds(null);
+    setShowNotifications(false);
+    setMobileSidebarOpen(false);
+    logout();
+    navigate('/');
+    openAuthModal('LOGIN');
+  }, [queryClient, logout, navigate, openAuthModal]);
 
-    const IDLE_TIMEOUT_MS = 3 * 60 * 1000; 
+  // =========================================================================
+  // 3-MINUTE IDLE AUTO-LOGOUT WITH 30-SECOND WARNING COUNTDOWN MODAL
+  // =========================================================================
+  useEffect(() => {
+    if (!user) {
+      setIdleWarningSeconds(null);
+      return;
+    }
+
+    // Show 30s countdown after 2m 30s of inactivity (total = 3m)
+    const WARNING_DELAY_MS = 2.5 * 60 * 1000;
     let idleTimer = null;
     let lastActivityTime = Date.now();
 
-    const handleUserIdleTimeout = () => {
-      queryClient.cancelQueries();
-      queryClient.clear();
-      setShowNotifications(false);
-      setMobileSidebarOpen(false);
-      logout();
-      navigate('/');
-      openAuthModal('LOGIN');
-      window.alert(
-        t(
-          'Session closed after 3 minutes of inactivity to save server resources. Please log in again.',
-          '३ मिनेटसम्म निष्क्रिय भएकाले सर्भर सुरक्षित राख्न सेसन बन्द गरियो। कृपया पुनः लगइन गर्नुहोस्।'
-        )
-      );
+    const triggerWarning = () => {
+      setIdleWarningSeconds((prev) => (prev === null ? 30 : prev));
     };
 
     const resetIdleTimer = () => {
@@ -169,7 +170,7 @@ export default function Navbar() {
       lastActivityTime = now;
 
       if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(handleUserIdleTimeout, IDLE_TIMEOUT_MS);
+      idleTimer = setTimeout(triggerWarning, WARNING_DELAY_MS);
     };
 
     const activityEvents = [
@@ -185,7 +186,7 @@ export default function Navbar() {
       window.addEventListener(event, resetIdleTimer, { passive: true })
     );
 
-    idleTimer = setTimeout(handleUserIdleTimeout, IDLE_TIMEOUT_MS);
+    idleTimer = setTimeout(triggerWarning, WARNING_DELAY_MS);
 
     return () => {
       if (idleTimer) clearTimeout(idleTimer);
@@ -193,7 +194,27 @@ export default function Navbar() {
         window.removeEventListener(event, resetIdleTimer)
       );
     };
-  }, [user, logout, navigate, openAuthModal, queryClient, t]);
+  }, [user, idleResetKey]);
+
+  // Tick down the 30-second warning modal
+  useEffect(() => {
+    if (idleWarningSeconds === null) return;
+    if (idleWarningSeconds <= 0) {
+      performIdleLogout();
+      return;
+    }
+
+    const countdownId = setTimeout(() => {
+      setIdleWarningSeconds((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearTimeout(countdownId);
+  }, [idleWarningSeconds, performIdleLogout]);
+
+  const handleStayLoggedIn = () => {
+    setIdleWarningSeconds(null);
+    setIdleResetKey((k) => k + 1);
+  };
 
   const handleManualSyncAll = async () => {
     if (isManualSyncing) return;
@@ -252,7 +273,9 @@ export default function Navbar() {
       : []),
   ];
 
-  const totalNotifications = notices.length + unreadChatsCount + pendingActionCount;
+  const unreadNoticesCount = notices.filter((n) => !readNoticeIds.includes(n.id)).length;
+  const totalNotifications = unreadNoticesCount + unreadChatsCount + pendingActionCount;
+
   const navAvatarUrl = !avatarLoadFailed
     ? getSafeMediaUrl(
         user?.profile_picture_path || user?.profile_picture_url || user?.profile_picture
@@ -396,7 +419,18 @@ export default function Navbar() {
                       <Bell className="w-3.5 h-3.5 text-indigo-600" />{' '}
                       {t('Notifications Center', 'सूचना केन्द्र')}
                     </h3>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {unreadNoticesCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={markAllNoticesAsRead}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 text-[10px] font-bold transition cursor-pointer"
+                          title={t('Mark all notices read', 'सबै सूचना पढेको चिन्ह लगाउनुहोस्')}
+                        >
+                          <CheckCheck className="w-3 h-3" />
+                          {t('Read all', 'सबै पढेँ')}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={handleManualSyncAll}
@@ -408,7 +442,7 @@ export default function Navbar() {
                         />
                       </button>
                       <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">
-                        {totalNotifications} {t('Active', 'सक्रिय')}
+                        {totalNotifications} {t('Unread', 'नयाँ')}
                       </span>
                     </div>
                   </div>
@@ -484,36 +518,47 @@ export default function Navbar() {
                       </div>
                     )}
 
-                    {notices.map((n) => (
-                      <div
-                        key={n.id}
-                        onClick={() => {
-                          setShowNotifications(false);
-                          setSelectedNotification(n);
-                        }}
-                        className="p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 cursor-pointer transition space-y-1"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-extrabold text-indigo-600 uppercase flex items-center gap-1 shrink-0">
-                            <Megaphone className="w-3 h-3" />{' '}
-                            {td(n.category_display || n.category)}
-                          </span>
-                          <span className="text-[10px] text-slate-400 truncate">
-                            {n.created_at
-                              ? formatDualDate(
-                                  new Date(n.created_at).toISOString().split('T')[0]
-                                )
-                              : ''}
-                          </span>
+                    {notices.map((n) => {
+                      const isRead = readNoticeIds.includes(n.id);
+                      return (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            markNoticeAsRead(n.id);
+                            setShowNotifications(false);
+                            setSelectedNotification(n);
+                          }}
+                          className={`p-3 rounded-2xl border cursor-pointer transition space-y-1 ${
+                            isRead
+                              ? 'bg-white hover:bg-slate-50 border-slate-200/70 opacity-75'
+                              : 'bg-indigo-50/40 hover:bg-indigo-50/80 border-indigo-200/80'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-extrabold text-indigo-600 uppercase flex items-center gap-1.5 shrink-0">
+                              {!isRead && (
+                                <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+                              )}
+                              <Megaphone className="w-3 h-3" />{' '}
+                              {td(n.category_display || n.category)}
+                            </span>
+                            <span className="text-[10px] text-slate-400 truncate">
+                              {n.created_at
+                                ? formatDualDate(
+                                    new Date(n.created_at).toISOString().split('T')[0]
+                                  )
+                                : ''}
+                            </span>
+                          </div>
+                          <p className="text-xs font-extrabold text-slate-900 line-clamp-1">
+                            {n.title}
+                          </p>
+                          <p className="text-[11px] text-slate-600 line-clamp-2">{n.content}</p>
                         </div>
-                        <p className="text-xs font-extrabold text-slate-900 line-clamp-1">
-                          {n.title}
-                        </p>
-                        <p className="text-[11px] text-slate-600 line-clamp-2">{n.content}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
 
-                    {totalNotifications === 0 && (
+                    {notices.length === 0 && unreadChatsCount === 0 && pendingActionCount === 0 && (
                       <div className="py-8 text-center text-xs text-slate-400">
                         {t(
                           'All caught up! No new notifications right now.',
@@ -613,11 +658,9 @@ export default function Navbar() {
         </div>
       </header>
 
-      {/* =========================================================================
-          ANNOUNCEMENT TICKER (MARQUEE BAR) - RIGHT TO LEFT (Standard)
-          ========================================================================= */}
-      {notices.length > 0 && (
-        <div className="sticky top-16 z-30 bg-[#0f172a] border-b border-slate-800 flex items-center h-[42px] overflow-hidden shadow-md">
+      {/* ANNOUNCEMENT TICKER — ONLY VISIBLE WHEN LOGGED IN */}
+      {user && notices.length > 0 && (
+        <div className="relative z-30 bg-[#0f172a] border-b border-slate-800 flex items-center h-[42px] overflow-hidden shadow-md">
           <style>
             {`
               @keyframes marquee-scroll-rtl {
@@ -638,15 +681,20 @@ export default function Navbar() {
           </style>
           <div className="animate-marquee-rtl items-center gap-12 px-4">
             {notices.map((n) => (
-              <div 
-                key={`ticker-${n.id}`} 
+              <div
+                key={`ticker-${n.id}`}
                 className="flex items-center gap-3 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => setSelectedNotification(n)}
-                title={t("Click to read full announcement", "पूरा सूचना पढ्न क्लिक गर्नुहोस्")}
+                onClick={() => {
+                  markNoticeAsRead(n.id);
+                  setSelectedNotification(n);
+                }}
+                title={t('Click to read full announcement', 'पूरा सूचना पढ्न क्लिक गर्नुहोस्')}
               >
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-600/30 text-indigo-100 font-extrabold text-[10px] sm:text-[11px] tracking-wide uppercase border border-indigo-500/40 shrink-0 shadow-sm">
                   <Bell className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="whitespace-nowrap">{td(n.category_display || n.category || 'GENERAL ANNOUNCEMENT')}</span>
+                  <span className="whitespace-nowrap">
+                    {td(n.category_display || n.category || 'GENERAL ANNOUNCEMENT')}
+                  </span>
                 </div>
                 <span className="font-extrabold text-slate-100 text-[13px] sm:text-sm tracking-wide whitespace-nowrap">
                   {n.title}
@@ -850,24 +898,25 @@ export default function Navbar() {
         </div>
       )}
 
-      {/* =========================================================================
-          FULL NOTIFICATION MODAL OVERLAY
-          ========================================================================= */}
+      {/* FULL NOTIFICATION MODAL OVERLAY */}
       {selectedNotification && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
           onClick={() => setSelectedNotification(null)}
         >
-          <div 
+          <div
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
           >
-            {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
               <div className="flex items-center gap-2 text-indigo-600">
                 <Megaphone className="w-4 h-4" />
                 <span className="text-[11px] font-extrabold uppercase tracking-wider">
-                  {td(selectedNotification.category_display || selectedNotification.category || 'GENERAL ANNOUNCEMENT')}
+                  {td(
+                    selectedNotification.category_display ||
+                      selectedNotification.category ||
+                      'GENERAL ANNOUNCEMENT'
+                  )}
                 </span>
               </div>
               <button
@@ -879,23 +928,23 @@ export default function Navbar() {
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-6">
               <h3 className="text-xl font-black text-slate-900 mb-1 leading-tight">
                 {selectedNotification.title}
               </h3>
               <p className="text-xs font-bold text-slate-400 mb-5">
-                {selectedNotification.created_at 
-                  ? formatDualDate(new Date(selectedNotification.created_at).toISOString().split('T')[0]) 
+                {selectedNotification.created_at
+                  ? formatDualDate(
+                      new Date(selectedNotification.created_at).toISOString().split('T')[0]
+                    )
                   : ''}
               </p>
-              
+
               <div className="text-[13px] font-medium text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50/50 p-4 rounded-2xl border border-slate-100 max-h-[60vh] overflow-y-auto">
                 {selectedNotification.content}
               </div>
             </div>
 
-            {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
               <button
                 type="button"
@@ -905,7 +954,44 @@ export default function Navbar() {
                 {t('Close', 'बन्द गर्नुहोस्')}
               </button>
             </div>
-            
+          </div>
+        </div>
+      )}
+
+      {/* NON-BLOCKING IDLE LOGOUT WARNING MODAL */}
+      {idleWarningSeconds !== null && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 p-6 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-base font-black text-slate-900">
+                {t('Still there?', 'तपाईं अझै सक्रिय हुनुहुन्छ?')}
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {t(
+                  `For security and server efficiency, you will be signed out in ${idleWarningSeconds}s due to inactivity.`,
+                  `सुरक्षा र सर्भर बचतका लागि निष्क्रियताको कारण तपाईं ${idleWarningSeconds} सेकेन्डमा लगआउट हुनुहुनेछ।`
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={performIdleLogout}
+                className="flex-1 py-2.5 px-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+              >
+                {t('Sign Out', 'लगआउट')}
+              </button>
+              <button
+                type="button"
+                onClick={handleStayLoggedIn}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+              >
+                {t('Stay Logged In', 'लगइन नै रहनुहोस्')}
+              </button>
+            </div>
           </div>
         </div>
       )}

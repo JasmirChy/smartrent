@@ -14,7 +14,6 @@ import {
   ArrowRight,
   Loader2,
   X,
-  BellRing,
   ZoomIn,
   Wrench,
   Lock,
@@ -31,7 +30,7 @@ import {
 import axiosClient, { createReservation, acceptDigitalLease } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
+import { formatBSOnly } from '../utils/nepaliDate';
 
 const DEFAULT_HERO_IMAGE = '/my-house.jpeg';
 
@@ -420,7 +419,7 @@ const FINE_GUIDELINES_LIST = [
 
 export default function PublicLanding() {
   const { user, isAdmin, openAuthModal, refreshProfile } = useAuth();
-  const { isNepali, t, td } = useLanguage();
+  const { isNepali, t } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -467,7 +466,6 @@ export default function PublicLanding() {
   });
 
   const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
-  const notices = Array.isArray(data?.notices) ? data.notices : [];
   const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
 
   const hasAcceptedRules = Boolean(user?.has_accepted_lease || rulesAcceptedLocal);

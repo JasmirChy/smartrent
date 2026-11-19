@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Home,
   LayoutGrid,
@@ -11,11 +12,25 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import axiosClient from '../../api/axiosClient';
 
 export default function MobileBottomNav() {
   const { user, isAdmin, openAuthModal } = useAuth();
   const { t } = useLanguage();
   const location = useLocation();
+
+  const { data: unreadChatsCount = 0 } = useQuery({
+    queryKey: ['mobileUnreadChats', user?.id],
+    enabled: Boolean(user),
+    queryFn: async () => {
+      const res = await axiosClient.get('/communication/contacts/');
+      const contacts = Array.isArray(res.data) ? res.data : res.data?.results || [];
+      return contacts.reduce((acc, c) => acc + (Number(c.unread_count) || 0), 0);
+    },
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 60000,
+  });
 
   if (!user) {
     return (
@@ -75,6 +90,7 @@ export default function MobileBottomNav() {
       label: t('Chat', 'च्याट'),
       path: '/support',
       icon: MessageSquare,
+      badge: unreadChatsCount > 0 ? unreadChatsCount : null,
     },
     {
       label: t('Profile', 'प्रोफाइल'),
@@ -92,11 +108,18 @@ export default function MobileBottomNav() {
           <Link
             key={item.path}
             to={item.path}
-            className={`flex flex-col items-center justify-center gap-1 px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition ${
+            className={`relative flex flex-col items-center justify-center gap-1 px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition ${
               active ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            <IconComponent className={`w-5 h-5 ${active ? 'stroke-[2.5]' : ''}`} />
+            <div className="relative">
+              <IconComponent className={`w-5 h-5 ${active ? 'stroke-[2.5]' : ''}`} />
+              {item.badge && (
+                <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
+                  {item.badge}
+                </span>
+              )}
+            </div>
             <span className="truncate max-w-[64px]">{item.label}</span>
           </Link>
         );

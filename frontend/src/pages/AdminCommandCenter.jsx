@@ -5568,8 +5568,8 @@ export default function AdminCommandCenter() {
               </div>
             </div>
           ) : ledgerTab === 'RECEIPTS' ? (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="w-full text-left text-xs whitespace-nowrap">
+            <div className="w-full overflow-x-auto rounded-2xl border border-slate-200">
+             <table className="w-full min-w-[820px] text-left text-xs whitespace-nowrap">
                 <thead className="bg-slate-50 text-[10px] font-extrabold uppercase text-slate-500 border-b border-slate-200">
                   <tr>
                     <th className="py-3 px-4">{t('Tenant & Room', 'भाडावाल र कोठा')}</th>
@@ -5608,7 +5608,7 @@ export default function AdminCommandCenter() {
                         </td>
                         <td className="py-3 px-4">
                           <span
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold ${
+                            className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-extrabold whitespace-nowrap ${
                               ['APPROVED', 'PAID_CASH'].includes(b.status)
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : b.status === 'PENDING_VERIFICATION'

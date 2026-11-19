@@ -128,15 +128,27 @@ export function exportSmartRentFinancialExcel({
   XLSX.utils.book_append_sheet(wb, wsExpenses, 'House Expenses');
 
   // SHEET 4: TENANT SUMMARY
-  const tenantRows = tenants.map((u, idx) => ({
-    'S.N.': idx + 1,
-    'Tenant Name': u.full_name || '',
-    'Email': u.email || '',
-    'Phone': u.phone_number || '',
-    'Room': u.room_number ? `Room ${u.room_number}` : 'Unassigned',
-    'Total Paid (Rs.)': Number(u.total_paid_amount || 0),
-    'Pending Dues (Rs.)': Number(u.total_pending_amount || 0),
-  }));
+  // SHEET 4: TENANT SUMMARY (Synced with 10-day openBills & settledBills)
+  const tenantRows = tenants.map((u, idx) => {
+    const tenantOpenPending = stats.openBills
+      .filter(
+        (b) =>
+          (b.tenant && u.id && b.tenant === u.id) ||
+          (b.tenant_email && u.email && b.tenant_email === u.email)
+      )
+      .reduce((sum, b) => sum + Number(b.total_payable || 0), 0);
+
+    return {
+      'S.N.': idx + 1,
+      'Tenant Name': u.full_name || '',
+      'Email': u.email || '',
+      'Phone': u.phone_number || '',
+      'Room': u.room_number ? `Room ${u.room_number}` : 'Unassigned',
+      'Total Paid (Rs.)': Number(u.total_paid_amount || 0),
+      'Pending Dues (10-Day Window, Rs.)': tenantOpenPending,
+    };
+  });
+  
   const wsTenants = XLSX.utils.json_to_sheet(
     tenantRows.length > 0 ? tenantRows : [{ Info: 'No registered tenants.' }]
   );
