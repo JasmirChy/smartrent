@@ -23,55 +23,7 @@ import axiosClient, { deleteEntireChat } from '../api/axiosClient';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { formatDualDate, formatBSOnly } from '../utils/nepaliDate';
-function getSafeMediaUrl(rawUrl, cacheBuster = '') {
-  if (!rawUrl || typeof rawUrl !== 'string') return null;
-  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;
-
-  let finalUrl = rawUrl.trim();
-
-  // 1. NEVER rewrite Cloudinary URLs (even when '/media/' is in the folder path)
-  if (finalUrl.includes('res.cloudinary.com')) {
-    if (finalUrl.startsWith('http://')) {
-      finalUrl = 'https://' + finalUrl.substring('http://'.length);
-    }
-    if (cacheBuster) {
-      const sep = finalUrl.includes('?') ? '&' : '?';
-      return `${finalUrl}${sep}v=${cacheBuster}`;
-    }
-    return finalUrl;
-  }
-
-  // 2. Fallback for local development / legacy relative paths
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
-  let backendOrigin = 'http://localhost:8000';
-  try {
-    backendOrigin = new URL(apiBase).origin;
-  } catch {
-    backendOrigin = 'http://localhost:8000';
-  }
-
-  const mediaIndex = finalUrl.indexOf('/media/');
-  if (mediaIndex !== -1) {
-    finalUrl = `${backendOrigin}${finalUrl.substring(mediaIndex)}`;
-  } else if (finalUrl.startsWith('/')) {
-    finalUrl = `${backendOrigin}${finalUrl}`;
-  }
-
-  if (
-    finalUrl.startsWith('http://') &&
-    !finalUrl.includes('localhost') &&
-    !finalUrl.includes('127.0.0.1') &&
-    !finalUrl.includes('192.168.')
-  ) {
-    finalUrl = 'https://' + finalUrl.substring('http://'.length);
-  }
-
-  if (cacheBuster) {
-    const sep = finalUrl.includes('?') ? '&' : '?';
-    return `${finalUrl}${sep}v=${cacheBuster}`;
-  }
-  return finalUrl;
-}
+import { getSafeMediaUrl } from '../utils/mediaUrl';
 
 export default function SupportHub() {
   const { user, isAdmin } = useAuth();
@@ -111,25 +63,29 @@ export default function SupportHub() {
   // Admin Complaint Reply State
   const [replyTexts, setReplyTexts] = useState({});
 
-  // 4-Second Live Sync for Contacts
+  // Contacts Query (On-Demand / Manual Sync)
   const { data: rawContacts = [] } = useQuery({
     queryKey: ['chatContacts', user?.id, isAdmin],
     queryFn: async () => {
       const res = await axiosClient.get('/communication/contacts/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
-  // 4-Second Live Sync for Maintenance Tickets
+  // Maintenance Tickets Query
   const { data: rawComplaints = [] } = useQuery({
     queryKey: ['complaintTickets'],
     queryFn: async () => {
       const res = await axiosClient.get('/communication/complaints/');
       return Array.isArray(res.data) ? res.data : res.data?.results || [];
     },
-    refetchInterval: false, refetchOnWindowFocus: false, staleTime: 120000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 120000,
     refetchIntervalInBackground: false,
   });
 
@@ -156,7 +112,7 @@ export default function SupportHub() {
     }
   }, [contacts, selectedContact]);
 
-  // 4-Second Live Sync + WebSocket for Active Chat Conversation
+  // Active Chat Conversation + WebSocket
   useEffect(() => {
     if (!selectedContact || !user) return;
 
@@ -166,12 +122,13 @@ export default function SupportHub() {
         .then((res) => {
           const msgs = Array.isArray(res.data) ? res.data : res.data?.results || [];
           setChatMessages(msgs);
+          queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
+          queryClient.invalidateQueries({ queryKey: ['mobileUnreadChats'] });
         })
         .catch(() => {});
     };
 
     fetchLatestMessages();
-    // Manual & WebSocket sync only
 
     const wsBase = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/ws';
     const wsUrl = `${wsBase}/chat/${user.id}/${selectedContact.id}/`;
@@ -191,10 +148,10 @@ export default function SupportHub() {
         return [...prev, data];
       });
       queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
+      queryClient.invalidateQueries({ queryKey: ['mobileUnreadChats'] });
     };
 
     return () => {
-      
       setWsConnected(false);
       ws.close();
     };
@@ -229,6 +186,7 @@ export default function SupportHub() {
           t('Chat history cleared successfully.', 'च्याट इतिहास सफलतापूर्वक हटाइयो।'),
       });
       queryClient.invalidateQueries({ queryKey: ['chatContacts'] });
+      queryClient.invalidateQueries({ queryKey: ['mobileUnreadChats'] });
     },
   });
 
@@ -396,7 +354,7 @@ export default function SupportHub() {
                 />
                 {wsConnected
                   ? t('REALTIME LIVE', 'लाइभ रियल-टाइम')
-                  : t('4S AUTO-SYNC', '४-सेकेन्ड अटो-सिंक')}
+                  : t('MANUAL SYNC', 'म्यानुअल सिंक')}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -465,14 +423,14 @@ export default function SupportHub() {
 
       {/* TAB 1: WHATSAPP / MESSENGER STYLE REAL-TIME CHAT */}
       {activeTab === 'CHAT' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl border border-slate-200/80 shadow-md overflow-hidden h-[72vh] min-h-[540px] max-h-[760px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 grid-rows-1 bg-white rounded-3xl border border-slate-200/80 shadow-md overflow-hidden h-[72vh] min-h-[540px] max-h-[760px]">
           {/* LEFT SIDEBAR: CONTACTS LIST */}
           <div
-            className={`lg:col-span-4 border-r border-slate-200/80 flex flex-col bg-white h-full ${
+            className={`lg:col-span-4 border-r border-slate-200/80 flex flex-col bg-white h-full min-h-0 overflow-hidden ${
               mobileShowChat ? 'hidden lg:flex' : 'flex'
             }`}
           >
-            <div className="p-4 border-b border-slate-100 space-y-3">
+            <div className="p-4 border-b border-slate-100 space-y-3 shrink-0">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
                   {isAdmin
@@ -505,7 +463,7 @@ export default function SupportHub() {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100/80">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-slate-100/80 pb-4">
               {filteredContacts.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">
                   {isAdmin
@@ -602,13 +560,13 @@ export default function SupportHub() {
 
           {/* RIGHT PANE: ACTIVE WHATSAPP / MESSENGER CONVERSATION */}
           <div
-            className={`lg:col-span-8 flex flex-col justify-between h-full bg-[#F8FAFC] ${
+            className={`lg:col-span-8 flex flex-col justify-between h-full min-h-0 overflow-hidden bg-[#F8FAFC] ${
               !mobileShowChat ? 'hidden lg:flex' : 'flex'
             }`}
           >
             {selectedContact ? (
               <>
-                <div className="px-4 py-3.5 bg-white border-b border-slate-200/80 flex items-center justify-between shadow-2xs z-10">
+                <div className="px-4 py-3.5 bg-white border-b border-slate-200/80 flex items-center justify-between shadow-2xs z-10 shrink-0">
                   <div className="flex items-center gap-3 min-w-0">
                     <button
                       type="button"
@@ -698,7 +656,7 @@ export default function SupportHub() {
 
                 {/* Chat Messages Scroll Container */}
                 <div
-                  className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-3"
+                  className="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-3"
                   style={{
                     backgroundImage:
                       'radial-gradient(#cbd5e1 0.75px, transparent 0.75px)',
@@ -814,7 +772,7 @@ export default function SupportHub() {
                 {/* Chat Composer Bar + Live Image Preview */}
                 <form
                   onSubmit={handleSendMessage}
-                  className="p-3 sm:p-4 bg-white border-t border-slate-200/80 space-y-2.5"
+                  className="p-3 sm:p-4 bg-white border-t border-slate-200/80 space-y-2.5 shrink-0"
                 >
                   {chatImage && (
                     <div className="flex items-center justify-between p-2.5 rounded-2xl bg-indigo-50/90 border border-indigo-200">
