@@ -3,30 +3,53 @@ from datetime import date, timedelta
 from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
+import nepali_datetime
 from .models import MonthlyBill
 
 
-def add_one_month(orig_date):
-    year = orig_date.year
-    month = orig_date.month + 1
-    if month > 12:
-        month = 1
-        year += 1
-    max_day = calendar.monthrange(year, month)[1]
-    return date(year, month, min(orig_date.day, max_day))
+def add_one_month(orig_date, anchor_bs_day=None):
+    """
+    Advances by 1 Bikram Sambat (BS) month while keeping the due day locked
+    to `anchor_bs_day` (clamping only if the target BS month has fewer days),
+    then returns the corresponding Gregorian (AD) date.
+    """
+    bs_curr = nepali_datetime.date.from_datetime_date(orig_date)
+    target_day = anchor_bs_day if anchor_bs_day is not None else bs_curr.day
+
+    next_year = bs_curr.year
+    next_month = bs_curr.month + 1
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+
+    # Find the last valid day in the target BS month (BS months can have 29-32 days)
+    clamped_day = min(target_day, 32)
+    while clamped_day >= 28:
+        try:
+            next_bs = nepali_datetime.date(next_year, next_month, clamped_day)
+            return next_bs.to_datetime_date()
+        except ValueError:
+            clamped_day -= 1
+
+    return nepali_datetime.date(next_year, next_month, 1).to_datetime_date()
 
 
 def create_next_cycle_bill(completed_bill):
     """
     Automatically creates the next month's bill cycle after a bill is paid/approved,
-    locking the approved current_meter_reading as next month's previous_meter_reading.
+    locking the approved current_meter_reading as next month's previous_meter_reading
+    and keeping the BS due day anchored.
     """
     tenancy = completed_bill.tenancy
     if not tenancy.is_active:
         return None
 
+    anchor_bs_day = None
+    if tenancy.entry_date:
+        anchor_bs_day = nepali_datetime.date.from_datetime_date(tenancy.entry_date).day
+
     next_start = completed_bill.cycle_end_date
-    next_end = add_one_month(next_start)
+    next_end = add_one_month(next_start, anchor_bs_day=anchor_bs_day)
     next_label = next_end.strftime("%B %Y")
 
     # Prevent duplicate creation if next cycle already exists
@@ -57,6 +80,7 @@ def create_next_cycle_bill(completed_bill):
         previous_meter_reading=new_prev_reading,
         status='UNPAID',
     )
+
 
 def dispatch_due_rent_email_reminders(force=False):
     """

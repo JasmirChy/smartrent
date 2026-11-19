@@ -22,6 +22,7 @@ hyperlink==21.0.0
 idna==3.20
 Incremental==24.11.0
 msgpack==1.2.4
+nepali-datetime==1.0.8.5
 packaging==26.3
 pillow==13.0.0
 psycopg==3.3.7

@@ -1,8 +1,18 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-import calendar
-from datetime import date
+import nepali_datetime
+
+
+def _build_bs_date_clamped(bs_year, bs_month, desired_day):
+    """Creates a nepali_datetime.date clamped to the last valid day of that BS month."""
+    clamped_day = min(desired_day, 32)
+    while clamped_day >= 28:
+        try:
+            return nepali_datetime.date(bs_year, bs_month, clamped_day)
+        except ValueError:
+            clamped_day -= 1
+    return nepali_datetime.date(bs_year, bs_month, 1)
 
 
 class Room(models.Model):
@@ -72,27 +82,25 @@ class Tenancy(models.Model):
 
     @property
     def billing_day(self):
-        return self.entry_date.day
+        return nepali_datetime.date.from_datetime_date(self.entry_date).day
 
     def get_next_due_date(self):
-        """Calculates the exact upcoming monthly billing date based on entry_date."""
-        today = timezone.localdate()
-        year, month = today.year, today.month
-        max_day_this_month = calendar.monthrange(year, month)[1]
-        due_day_this_month = min(self.entry_date.day, max_day_this_month)
-        candidate_date = date(year, month, due_day_this_month)
+        """Calculates the exact upcoming monthly billing date anchored to the BS day of entry_date."""
+        today_ad = timezone.localdate()
+        today_bs = nepali_datetime.date.from_datetime_date(today_ad)
+        anchor_bs_day = nepali_datetime.date.from_datetime_date(self.entry_date).day
 
-        if candidate_date < today:
-            if month == 12:
-                year += 1
-                month = 1
-            else:
-                month += 1
-            max_day_next_month = calendar.monthrange(year, month)[1]
-            due_day_next_month = min(self.entry_date.day, max_day_next_month)
-            candidate_date = date(year, month, due_day_next_month)
+        bs_year, bs_month = today_bs.year, today_bs.month
+        candidate_bs = _build_bs_date_clamped(bs_year, bs_month, anchor_bs_day)
 
-        return candidate_date
+        if candidate_bs < today_bs:
+            bs_month += 1
+            if bs_month > 12:
+                bs_month = 1
+                bs_year += 1
+            candidate_bs = _build_bs_date_clamped(bs_year, bs_month, anchor_bs_day)
+
+        return candidate_bs.to_datetime_date()
 
     def __str__(self):
         return f"{self.tenant.full_name} -> Room {self.room.room_number} (Entry: {self.entry_date})"
