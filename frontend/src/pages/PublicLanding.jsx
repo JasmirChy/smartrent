@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -423,6 +423,15 @@ export default function PublicLanding() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Only show and allow charter acknowledgment for signed-in non-admin tenants
+  const isTenantUser =
+    Boolean(user) &&
+    !isAdmin &&
+    (!user.role || String(user.role).toUpperCase() !== 'ADMIN');
+
+  const userAckStorageKey =
+    isTenantUser && user?.id ? `smartrent_rules_accepted_${user.id}` : null;
+
   // UI Filter & Static Image Lightbox States
   const [floorFilter, setFloorFilter] = useState('ALL'); // ALL | GROUND | FIRST
   const [availableOnly, setAvailableOnly] = useState(false);
@@ -431,14 +440,21 @@ export default function PublicLanding() {
   // 13-Category Accordion & Tenant Acknowledgment States
   const [openRuleIndex, setOpenRuleIndex] = useState(0);
   const [expandAllRules, setExpandAllRules] = useState(false);
-  const [rulesAcceptedLocal, setRulesAcceptedLocal] = useState(() => {
-    try {
-      return localStorage.getItem('smartrent_rules_accepted') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [rulesAcceptedLocal, setRulesAcceptedLocal] = useState(false);
   const [rulesAckMsg, setRulesAckMsg] = useState('');
+
+  useEffect(() => {
+    setRulesAckMsg('');
+    if (!userAckStorageKey) {
+      setRulesAcceptedLocal(false);
+      return;
+    }
+    try {
+      setRulesAcceptedLocal(localStorage.getItem(userAckStorageKey) === 'true');
+    } catch {
+      setRulesAcceptedLocal(false);
+    }
+  }, [userAckStorageKey]);
 
   // Reservation Modal States
   const [reservingRoom, setReservingRoom] = useState(null);
@@ -468,7 +484,10 @@ export default function PublicLanding() {
   const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
   const stats = data?.stats || { total_rooms: 9, occupied_rooms: 0, available_rooms: 9 };
 
-  const hasAcceptedRules = Boolean(user?.has_accepted_lease || rulesAcceptedLocal);
+  const hasAcceptedRules = Boolean(
+    isTenantUser &&
+      (user?.has_accepted_lease || user?.lease_accepted || rulesAcceptedLocal)
+  );
 
   const staticHeroTitle = t(
     'Smart House Rental • Ground & 1st Floor',
@@ -486,10 +505,12 @@ export default function PublicLanding() {
   const acceptRulesMutation = useMutation({
     mutationFn: acceptDigitalLease,
     onSuccess: async (resData) => {
-      try {
-        localStorage.setItem('smartrent_rules_accepted', 'true');
-      } catch {
-        // Ignore
+      if (userAckStorageKey) {
+        try {
+          localStorage.setItem(userAckStorageKey, 'true');
+        } catch {
+          // Ignore storage errors
+        }
       }
       setRulesAcceptedLocal(true);
       setRulesAckMsg(
@@ -507,10 +528,12 @@ export default function PublicLanding() {
       queryClient.invalidateQueries({ queryKey: ['meProfileSettings'] });
     },
     onError: () => {
-      try {
-        localStorage.setItem('smartrent_rules_accepted', 'true');
-      } catch {
-        // Ignore
+      if (userAckStorageKey) {
+        try {
+          localStorage.setItem(userAckStorageKey, 'true');
+        } catch {
+          // Ignore storage errors
+        }
       }
       setRulesAcceptedLocal(true);
       setRulesAckMsg(
@@ -523,22 +546,8 @@ export default function PublicLanding() {
   });
 
   const handleAcceptHouseRules = () => {
-    if (user) {
-      acceptRulesMutation.mutate();
-    } else {
-      try {
-        localStorage.setItem('smartrent_rules_accepted', 'true');
-      } catch {
-        // Ignore
-      }
-      setRulesAcceptedLocal(true);
-      setRulesAckMsg(
-        t(
-          'You have accepted the House Rules & Guidelines! Sign in anytime to link this acknowledgment to your tenant profile.',
-          'तपाईंले घरको नियम तथा निर्देशिका स्वीकार गर्नुभएको छ! यसलाई आफ्नो प्रोफाइलमा जोड्न लगइन गर्नुहोस्।'
-        )
-      );
-    }
+    if (!isTenantUser) return;
+    acceptRulesMutation.mutate();
   };
 
   const reserveMutation = useMutation({
@@ -612,7 +621,7 @@ export default function PublicLanding() {
   const firstRooms = filterRoomList('FIRST');
 
   return (
-    <div className="w-full">     
+    <div className="w-full">
       {/* ========================================================================= */}
       {/* CLEAN, MINIMAL & STATIC HERO SECTION (ZERO DB BANNER QUERIES)             */}
       {/* ========================================================================= */}
@@ -1118,72 +1127,74 @@ export default function PublicLanding() {
           </div>
         </div>
 
-        {/* IMPORTANT NOTICE & "I AGREE & ACCEPT" TENANT ACKNOWLEDGMENT CARD */}
-        <div className="rounded-3xl bg-slate-900 text-white p-5 sm:p-7 shadow-lg space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1.5 max-w-2xl">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-extrabold uppercase border border-indigo-400/30">
-                <FileCheck2 className="w-3 h-3" />{' '}
-                {t('Important Notice', 'महत्त्वपूर्ण सूचना')}
+        {/* IMPORTANT NOTICE & "I AGREE & ACCEPT" TENANT ACKNOWLEDGMENT CARD (LOGGED-IN TENANTS ONLY) */}
+        {isTenantUser && (
+          <div className="rounded-3xl bg-slate-900 text-white p-5 sm:p-7 shadow-lg space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5 max-w-2xl">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-extrabold uppercase border border-indigo-400/30">
+                  <FileCheck2 className="w-3 h-3" />{' '}
+                  {t('Important Notice', 'महत्त्वपूर्ण सूचना')}
+                </div>
+                <h3 className="text-base sm:text-lg font-extrabold text-white">
+                  {t(
+                    'Tenant Acknowledgment & Responsibility Charter',
+                    'भाडावालको सहमति र जिम्मेवारी प्रतिबद्धता'
+                  )}
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {t(
+                    'By accepting these rules, tenants acknowledge their responsibilities toward maintaining a clean, safe, and peaceful living environment.',
+                    'यी नियमहरू स्वीकार गरेर, भाडावालहरूले सफा, सुरक्षित र शान्त वातावरण कायम राख्ने आफ्नो जिम्मेवारी स्वीकार गर्दछन्।'
+                  )}
+                </p>
               </div>
-              <h3 className="text-base sm:text-lg font-extrabold text-white">
-                {t(
-                  'Tenant Acknowledgment & Responsibility Charter',
-                  'भाडावालको सहमति र जिम्मेवारी प्रतिबद्धता'
+
+              <div className="shrink-0">
+                {hasAcceptedRules ? (
+                  <div className="px-4 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      {t('✓ Rules Acknowledged', '✓ नियमहरू स्वीकार गरियो')}
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleAcceptHouseRules}
+                    disabled={acceptRulesMutation.isPending}
+                    className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {acceptRulesMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {t('Saving...', 'सुरक्षित हुँदैछ...')}
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        {t('I Agree & Accept', 'म सहमत छु र स्वीकार गर्दछु')}
+                      </>
+                    )}
+                  </button>
                 )}
-              </h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {t(
-                  'By accepting these rules, tenants acknowledge their responsibilities toward maintaining a clean, safe, and peaceful living environment.',
-                  'यी नियमहरू स्वीकार गरेर, भाडावालहरूले सफा, सुरक्षित र शान्त वातावरण कायम राख्ने आफ्नो जिम्मेवारी स्वीकार गर्दछन्।'
-                )}
-              </p>
+              </div>
             </div>
 
-            <div className="shrink-0">
-              {hasAcceptedRules ? (
-                <div className="px-4 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>
-                    {t('✓ Rules Acknowledged', '✓ नियमहरू स्वीकार गरियो')}
-                  </span>
-                </div>
-              ) : (
+            {rulesAckMsg && (
+              <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2">
+                <span>{rulesAckMsg}</span>
                 <button
                   type="button"
-                  onClick={handleAcceptHouseRules}
-                  disabled={acceptRulesMutation.isPending}
-                  className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={() => setRulesAckMsg('')}
+                  className="text-emerald-300 hover:text-white"
                 >
-                  {acceptRulesMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {t('Saving...', 'सुरक्षित हुँदैछ...')}
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      {t('I Agree & Accept', 'म सहमत छु र स्वीकार गर्दछु')}
-                    </>
-                  )}
+                  <X className="w-4 h-4" />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-
-          {rulesAckMsg && (
-            <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2">
-              <span>{rulesAckMsg}</span>
-              <button
-                type="button"
-                onClick={() => setRulesAckMsg('')}
-                className="text-emerald-300 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
+        )}
       </section>
 
       {/* FULLSCREEN STATIC HERO IMAGE LIGHTBOX MODAL */}
