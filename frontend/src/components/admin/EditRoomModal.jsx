@@ -11,8 +11,14 @@ import {
   Zap,
   Banknote,
   Sparkles,
+  ImagePlus,
+  Trash2,
 } from 'lucide-react';
-import { updateRoomDetails } from '../../api/axiosClient';
+import {
+  updateRoomDetails,
+  uploadRoomImage,
+  deleteRoomImage,
+} from '../../api/axiosClient';
 import { useLanguage } from '../../context/LanguageContext';
 
 const TITLE_PRESETS = [
@@ -23,6 +29,9 @@ const TITLE_PRESETS = [
   'Bright First-Floor Studio',
   'Balcony Corner Suite',
 ];
+
+const MAX_ROOM_IMAGE_BYTES = 200 * 1024; // 200 KB
+const MAX_ROOM_IMAGES = 2;
 
 export default function EditRoomModal({ room, onClose, onSaved }) {
   const { t } = useLanguage();
@@ -36,6 +45,12 @@ export default function EditRoomModal({ room, onClose, onSaved }) {
   const [elecRate, setElecRate] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Room Photo Manager States (Max 2 images, < 200 KB each)
+  const [roomImages, setRoomImages] = useState([]);
+  const [imgUploading, setImgUploading] = useState(false);
+  const [imgError, setImgError] = useState('');
+  const [imgSuccess, setImgSuccess] = useState('');
+
   useEffect(() => {
     if (!room) return;
     setTitle(room.title || '');
@@ -46,18 +61,24 @@ export default function EditRoomModal({ room, onClose, onSaved }) {
     setElecRate(
       room.electricity_rate_per_unit != null ? String(room.electricity_rate_per_unit) : ''
     );
+    setRoomImages(Array.isArray(room.images) ? room.images : []);
     setErrorMsg('');
+    setImgError('');
+    setImgSuccess('');
   }, [room]);
+
+  const invalidateRoomQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
+    queryClient.invalidateQueries({ queryKey: ['adminRooms'] });
+    queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    queryClient.invalidateQueries({ queryKey: ['adminDashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['roomsMatrix'] });
+  };
 
   const mutation = useMutation({
     mutationFn: (payload) => updateRoomDetails(room.id, payload),
     onSuccess: (updatedRoom) => {
-      // Refresh both the Public Landing cards and all Admin dashboard room queries
-      queryClient.invalidateQueries({ queryKey: ['publicLandingData'] });
-      queryClient.invalidateQueries({ queryKey: ['adminRooms'] });
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
-      queryClient.invalidateQueries({ queryKey: ['adminDashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['roomsMatrix'] });
+      invalidateRoomQueries();
       if (typeof onSaved === 'function') onSaved(updatedRoom);
       onClose();
     },
@@ -74,6 +95,94 @@ export default function EditRoomModal({ room, onClose, onSaved }) {
   });
 
   if (!room) return null;
+
+  const handleRoomPhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setImgError('');
+    setImgSuccess('');
+
+    if (roomImages.length >= MAX_ROOM_IMAGES) {
+      setImgError(
+        t(
+          'Maximum 2 photos allowed per room. Delete one first to replace it.',
+          'प्रत्येक कोठामा अधिकतम २ वटा मात्र फोटो राख्न पाइन्छ। पहिले एउटा हटाउनुहोस्।'
+        )
+      );
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setImgError(
+        t(
+          'Please select a valid image file (JPG, PNG, WEBP).',
+          'कृपया मान्य फोटो फाइल (JPG, PNG, WEBP) छान्नुहोस्।'
+        )
+      );
+      return;
+    }
+
+    if (file.size > MAX_ROOM_IMAGE_BYTES) {
+      const kb = (file.size / 1024).toFixed(1);
+      setImgError(
+        t(
+          `Image is ${kb} KB — must be under 200 KB.`,
+          `फोटोको साइज ${kb} KB छ — २०० KB भन्दा कम हुनुपर्छ।`
+        )
+      );
+      return;
+    }
+
+    try {
+      setImgUploading(true);
+      const fd = new FormData();
+      fd.append('image', file);
+      const resData = await uploadRoomImage(room.id, fd);
+      const updatedRoom = resData?.room;
+      setRoomImages(Array.isArray(updatedRoom?.images) ? updatedRoom.images : []);
+      setImgSuccess(
+        t('Room photo uploaded!', 'कोठाको फोटो अपलोड भयो!')
+      );
+      invalidateRoomQueries();
+      if (updatedRoom && typeof onSaved === 'function') {
+        onSaved(updatedRoom);
+      }
+    } catch (err) {
+      setImgError(
+        err.response?.data?.error ||
+          t('Failed to upload room photo.', 'कोठाको फोटो अपलोड गर्न सकिएन।')
+      );
+    } finally {
+      setImgUploading(false);
+    }
+  };
+
+  const handleRoomPhotoDelete = async (imageId) => {
+    setImgError('');
+    setImgSuccess('');
+    try {
+      setImgUploading(true);
+      const resData = await deleteRoomImage(room.id, imageId);
+      const updatedRoom = resData?.room;
+      setRoomImages(Array.isArray(updatedRoom?.images) ? updatedRoom.images : []);
+      setImgSuccess(
+        t('Photo removed.', 'फोटो हटाइयो।')
+      );
+      invalidateRoomQueries();
+      if (updatedRoom && typeof onSaved === 'function') {
+        onSaved(updatedRoom);
+      }
+    } catch (err) {
+      setImgError(
+        err.response?.data?.error ||
+          t('Failed to remove photo.', 'फोटो हटाउन सकिएन।')
+      );
+    } finally {
+      setImgUploading(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -131,7 +240,10 @@ export default function EditRoomModal({ room, onClose, onSaved }) {
                 {t('Edit Room', 'कोठा सम्पादन')} {room.room_number}
               </h3>
               <p className="text-[11px] text-slate-500 truncate">
-                {t('Update tagline, area, and utility rates', 'शीर्षक, क्षेत्रफल र भाडा दर अपडेट गर्नुहोस्')}
+                {t(
+                  'Update photos, tagline, area, and utility rates',
+                  'फोटो, शीर्षक, क्षेत्रफल र भाडा दर अपडेट गर्नुहोस्'
+                )}
               </p>
             </div>
           </div>
@@ -172,6 +284,86 @@ export default function EditRoomModal({ room, onClose, onSaved }) {
                 {areaSqft || '0'} {t('sq.ft', 'वर्ग फिट')}
               </span>
             </p>
+          </div>
+
+          {/* Room Photos Manager (Max 2 • Under 200 KB each) */}
+          <div className="p-3.5 rounded-2xl bg-indigo-50/40 border border-indigo-100 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                <ImagePlus className="w-3.5 h-3.5 text-indigo-600" />
+                {t(
+                  `Room Photos (${roomImages.length}/${MAX_ROOM_IMAGES})`,
+                  `कोठाका फोटोहरू (${roomImages.length}/${MAX_ROOM_IMAGES})`
+                )}
+              </span>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white border border-indigo-200 text-indigo-700">
+                {t('Max 200 KB / image', 'अधिकतम २०० KB / फोटो')}
+              </span>
+            </div>
+
+            {imgError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold">
+                {imgError}
+              </div>
+            )}
+
+            {imgSuccess && (
+              <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                {imgSuccess}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2.5">
+              {roomImages.map((img, idx) => (
+                <div
+                  key={img.id}
+                  className="relative aspect-[16/10] rounded-xl overflow-hidden border border-slate-200 bg-slate-900 group"
+                >
+                  <img
+                    src={img.image_url}
+                    alt={`Room ${room.room_number} #${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-slate-950/75 text-white text-[10px] font-extrabold">
+                    #{idx + 1}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={imgUploading}
+                    onClick={() => handleRoomPhotoDelete(img.id)}
+                    className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white shadow transition cursor-pointer"
+                    title={t('Remove photo', 'फोटो हटाउनुहोस्')}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+
+              {roomImages.length < MAX_ROOM_IMAGES && (
+                <label className="aspect-[16/10] rounded-xl border-2 border-dashed border-indigo-200 hover:border-indigo-500 bg-white hover:bg-indigo-50/50 flex flex-col items-center justify-center text-center p-2 cursor-pointer transition">
+                  {imgUploading ? (
+                    <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                  ) : (
+                    <>
+                      <ImagePlus className="w-4 h-4 text-indigo-600 mb-1" />
+                      <span className="text-[11px] font-extrabold text-indigo-700">
+                        {t('+ Add Photo', '+ फोटो थप्नुहोस्')}
+                      </span>
+                      <span className="text-[10px] text-slate-400 mt-0.5">
+                        {t('Under 200 KB', '२०० KB भन्दा कम')}
+                      </span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={imgUploading}
+                    onChange={handleRoomPhotoUpload}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
           </div>
 
           {errorMsg && (
@@ -327,7 +519,7 @@ export default function EditRoomModal({ room, onClose, onSaved }) {
           <button
             type="submit"
             form="edit-room-form"
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || imgUploading}
             className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-md shadow-indigo-600/20 transition inline-flex items-center justify-center gap-1.5"
           >
             {mutation.isPending ? (

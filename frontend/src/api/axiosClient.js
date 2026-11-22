@@ -95,9 +95,21 @@ export const downloadFileFromUrl = async (fileUrl, defaultFileName = 'SmartRent-
   }
 };
 
-// --- ADMIN ROOM DETAILS HELPER ---
+// --- ADMIN ROOM DETAILS & PHOTO HELPERS ---
 export const updateRoomDetails = async (roomId, payload) => {
   const res = await axiosClient.patch(`/rooms/${roomId}/`, payload);
+  return res.data;
+};
+
+export const uploadRoomImage = async (roomId, formData) => {
+  const res = await axiosClient.post(`/rooms/${roomId}/images/`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+};
+
+export const deleteRoomImage = async (roomId, imageId) => {
+  const res = await axiosClient.delete(`/rooms/${roomId}/images/${imageId}/`);
   return res.data;
 };
 

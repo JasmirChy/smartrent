@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Room, Tenancy, HeroBanner, HouseRule, RoomReservation
+from .models import Room, RoomImage, Tenancy, HeroBanner, HouseRule, RoomReservation
 
 
 class HeroBannerSerializer(serializers.ModelSerializer):
@@ -69,10 +69,31 @@ class ActiveTenantBriefSerializer(serializers.ModelSerializer):
         return obj.get_next_due_date()
 
 
+class RoomImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoomImage
+        fields = ['id', 'image_url', 'caption', 'uploaded_at']
+
+    def get_image_url(self, obj):
+        if not obj.image:
+            return None
+        request = self.context.get('request')
+        try:
+            url = request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        except Exception:
+            url = str(obj.image.url)
+        if url.startswith('http://') and 'localhost' not in url and '127.0.0.1' not in url:
+            url = 'https://' + url[len('http://'):]
+        return url
+
+
 class RoomSerializer(serializers.ModelSerializer):
     floor_display = serializers.CharField(source='get_floor_display', read_only=True)
     active_tenancy = serializers.SerializerMethodField()
     pending_reservations_count = serializers.SerializerMethodField()
+    images = RoomImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Room
@@ -92,6 +113,7 @@ class RoomSerializer(serializers.ModelSerializer):
             'is_occupied',
             'active_tenancy',
             'pending_reservations_count',
+            'images',
         ]
 
     def validate_title(self, value):

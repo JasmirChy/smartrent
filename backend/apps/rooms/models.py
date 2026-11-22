@@ -60,6 +60,19 @@ class Room(models.Model):
         return f"Room {self.room_number} ({self.get_floor_display()}) - Rs. {self.base_rent} [{status}]"
 
 
+class RoomImage(models.Model):
+    """Stores up to 2 photos per room (max 200 KB each) uploaded by Admin."""
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='room_photos/')
+    caption = models.CharField(max_length=100, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"Room {self.room.room_number} Photo #{self.id}"
+
 class Tenancy(models.Model):
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='tenancies')
     tenant = models.ForeignKey(

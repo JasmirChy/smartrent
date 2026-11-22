@@ -432,10 +432,11 @@ export default function PublicLanding() {
   const userAckStorageKey =
     isTenantUser && user?.id ? `smartrent_rules_accepted_${user.id}` : null;
 
-  // UI Filter & Static Image Lightbox States
+  // UI Filter, Lightbox & Room Photo Gallery States
   const [floorFilter, setFloorFilter] = useState('ALL'); // ALL | GROUND | FIRST
   const [availableOnly, setAvailableOnly] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
+  const [galleryPreview, setGalleryPreview] = useState(null); // { room, index }
 
   // 13-Category Accordion & Tenant Acknowledgment States
   const [openRuleIndex, setOpenRuleIndex] = useState(0);
@@ -598,6 +599,14 @@ export default function PublicLanding() {
     reserveMutation.mutate(formData);
   };
 
+  const handleRoomAction = (room) => {
+    if (!user) {
+      openAuthModal('SIGNUP');
+    } else {
+      setReservingRoom(room);
+    }
+  };
+
   const filterRoomList = (floorCode) => {
     return rooms.filter((r) => {
       const roomNo = String(r.room_number || '').trim().toUpperCase();
@@ -619,6 +628,15 @@ export default function PublicLanding() {
 
   const groundRooms = filterRoomList('GROUND');
   const firstRooms = filterRoomList('FIRST');
+
+  const previewImages = Array.isArray(galleryPreview?.room?.images)
+    ? galleryPreview.room.images
+    : [];
+  const previewIndex = Math.min(
+    Math.max(galleryPreview?.index || 0, 0),
+    Math.max(previewImages.length - 1, 0)
+  );
+  const currentPreviewImg = previewImages[previewIndex];
 
   return (
     <div className="w-full">
@@ -794,7 +812,7 @@ export default function PublicLanding() {
       {/* REAL-TIME INVENTORY: ROOMS A1-A4 & B1-B5 */}
       <section
         id="rooms-inventory"
-        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 border-t border-slate-200/70"
+        className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-10 border-t border-slate-200/70"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-7">
           <div>
@@ -872,19 +890,16 @@ export default function PublicLanding() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                   {groundRooms.map((room) => (
                     <RoomCard
                       key={room.id}
                       room={room}
                       t={t}
-                      onAction={() => {
-                        if (!user) {
-                          openAuthModal('SIGNUP');
-                        } else {
-                          setReservingRoom(room);
-                        }
-                      }}
+                      onAction={() => handleRoomAction(room)}
+                      onPreviewImages={(targetRoom, idx) =>
+                        setGalleryPreview({ room: targetRoom, index: idx })
+                      }
                     />
                   ))}
                 </div>
@@ -906,19 +921,16 @@ export default function PublicLanding() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-4">
                   {firstRooms.map((room) => (
                     <RoomCard
                       key={room.id}
                       room={room}
                       t={t}
-                      onAction={() => {
-                        if (!user) {
-                          openAuthModal('SIGNUP');
-                        } else {
-                          setReservingRoom(room);
-                        }
-                      }}
+                      onAction={() => handleRoomAction(room)}
+                      onPreviewImages={(targetRoom, idx) =>
+                        setGalleryPreview({ room: targetRoom, index: idx })
+                      }
                     />
                   ))}
                 </div>
@@ -1231,6 +1243,90 @@ export default function PublicLanding() {
         </div>
       )}
 
+      {/* FULLSCREEN ROOM PHOTO GALLERY LIGHTBOX MODAL */}
+      {galleryPreview && currentPreviewImg && (
+        <div
+          onClick={() => setGalleryPreview(null)}
+          className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 select-none"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center justify-between gap-3 text-white pb-3 border-b border-white/10"
+          >
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-extrabold truncate">
+                {t('Room', 'कोठा')} {galleryPreview.room.room_number} •{' '}
+                {galleryPreview.room.title}
+              </h3>
+              <p className="text-xs text-slate-400 truncate">
+                {t('Photo', 'फोटो')} {previewIndex + 1} {t('of', 'मध्ये')} {previewImages.length}
+                {currentPreviewImg.caption ? ` — ${currentPreviewImg.caption}` : ''}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {!galleryPreview.room.is_occupied && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetRoom = galleryPreview.room;
+                    setGalleryPreview(null);
+                    handleRoomAction(targetRoom);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition cursor-pointer"
+                >
+                  {t('Reserve Room', 'कोठा बुक गर्नुहोस्')}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setGalleryPreview(null)}
+                className="p-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="relative flex-1 flex items-center justify-center my-4 overflow-hidden">
+            <img
+              src={currentPreviewImg.image_url}
+              alt={`Room ${galleryPreview.room.room_number} #${previewIndex + 1}`}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[72vh] max-w-[92vw] object-contain rounded-2xl shadow-2xl"
+            />
+          </div>
+
+          {previewImages.length > 1 && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-center gap-3 pt-2"
+            >
+              {previewImages.map((img, idx) => (
+                <button
+                  key={img.id || idx}
+                  type="button"
+                  onClick={() =>
+                    setGalleryPreview((prev) => (prev ? { ...prev, index: idx } : null))
+                  }
+                  className={`w-20 h-14 rounded-xl overflow-hidden border-2 transition cursor-pointer ${
+                    previewIndex === idx
+                      ? 'border-indigo-500 scale-105'
+                      : 'border-white/20 opacity-60 hover:opacity-100'
+                  }`}
+                >
+                  <img
+                    src={img.image_url}
+                    alt={`Thumbnail ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ROOM RESERVATION & VISIT BOOKING MODAL */}
       {reservingRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
@@ -1457,81 +1553,150 @@ export default function PublicLanding() {
   );
 }
 
-function RoomCard({ room, onAction, t }) {
+function RoomCard({ room, onAction, onPreviewImages, t }) {
   const isSmall = room.room_type === 'SMALL';
   const occupied = room.is_occupied;
   const pendingCount = room.pending_reservations_count || 0;
+  const images = Array.isArray(room.images) ? room.images : [];
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  useEffect(() => {
+    if (activeIdx >= images.length) {
+      setActiveIdx(0);
+    }
+  }, [images.length, activeIdx]);
+
+  const currentImg = images[activeIdx]?.image_url;
 
   return (
     <div
-      className={`rounded-2xl bg-white p-4 sm:p-5 border transition flex flex-col justify-between ${
+      className={`rounded-2xl bg-white overflow-hidden border transition flex flex-col justify-between ${
         occupied
           ? 'border-slate-200/70 opacity-90'
           : 'border-indigo-200/80 shadow-sm hover:shadow-md hover:border-indigo-500'
       }`}
     >
       <div>
-        <div className="flex items-center justify-between gap-2 mb-1.5">
-          <div className="flex items-center gap-1.5">
-            <h4 className="text-base font-extrabold text-slate-900">
+        {/* Room Photo Showcase Header */}
+        <div className="relative w-full aspect-[16/10] bg-slate-100 overflow-hidden group">
+          {currentImg ? (
+            <>
+              <img
+                src={currentImg}
+                alt={`Room ${room.room_number}`}
+                onClick={() => onPreviewImages(room, activeIdx)}
+                className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform duration-500"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent pointer-events-none" />
+
+              <button
+                type="button"
+                onClick={() => onPreviewImages(room, activeIdx)}
+                className="absolute bottom-1.5 right-1.5 sm:bottom-2 sm:right-2 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-lg bg-slate-900/75 hover:bg-slate-900 text-white text-[10px] font-bold backdrop-blur-md flex items-center gap-1 transition cursor-pointer"
+                title={t('View full photo', 'पूरा फोटो हेर्नुहोस्')}
+              >
+                <ZoomIn className="w-3 h-3" />
+                <span>
+                  {activeIdx + 1}/{images.length}
+                </span>
+              </button>
+
+              {images.length > 1 && (
+                <div className="absolute bottom-2 left-2 sm:bottom-2.5 sm:left-2.5 flex items-center gap-1">
+                  {images.map((_, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveIdx(idx);
+                      }}
+                      className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                        activeIdx === idx ? 'w-3.5 bg-white' : 'w-1.5 bg-white/60 hover:bg-white/90'
+                      }`}
+                      aria-label={`Photo ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-slate-100 via-indigo-50/50 to-slate-100 flex flex-col items-center justify-center text-slate-400 p-2">
+              <Building className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-300 mb-1" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">
+                {t('Room', 'कोठा')} {room.room_number}
+              </span>
+            </div>
+          )}
+
+          <span
+            className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide shadow-xs backdrop-blur-md ${
+              occupied
+                ? 'bg-slate-900/80 text-white'
+                : 'bg-emerald-500/95 text-white'
+            }`}
+          >
+            {occupied ? t('• Booked', '• बुक छ') : t('• Vacant', '• खाली')}
+          </span>
+        </div>
+
+        {/* Card Details Body */}
+        <div className="p-2.5 sm:p-4.5 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+            <h4 className="text-xs sm:text-base font-extrabold text-slate-900">
               {t('Room', 'कोठा')} {room.room_number}
             </h4>
             {isSmall && (
-              <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[10px]">
+              <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[9px] sm:text-[10px]">
                 {t('Small', 'सानो')}
               </span>
             )}
           </div>
 
-          <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-              occupied
-                ? 'bg-slate-100 text-slate-600'
-                : 'bg-emerald-100 text-emerald-700'
-            }`}
-          >
-            {occupied ? t('• Occupied', '• बुक छ') : t('• Available', '• खाली छ')}
-          </span>
-        </div>
+          <p className="text-[11px] sm:text-xs text-slate-500 font-medium mb-2.5 line-clamp-1">
+            {room.title} • {room.area_sqft} {t('sq.ft', 'वर्ग फिट')}
+          </p>
 
-        <p className="text-xs text-slate-500 font-medium mb-3">
-          {room.title} • {room.area_sqft} {t('sq.ft', 'वर्ग फिट')}
-        </p>
-
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[11px] font-semibold text-slate-700">
-            <Droplets className="w-3 h-3 text-emerald-600" />
-            {t('Water Rs.', 'पानी रु.')} {Number(room.fixed_water_bill).toFixed(0)}
-          </span>
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[11px] font-semibold text-slate-700">
-            <Zap className="w-3 h-3 text-amber-500" />
-            {t('Elec Rs.', 'बिजुली रु.')} {Number(room.electricity_rate_per_unit).toFixed(0)}/u
-          </span>
+          <div className="flex flex-wrap gap-1 sm:gap-1.5 mb-2.5">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[10px] sm:text-[11px] font-semibold text-slate-700">
+              <Droplets className="w-3 h-3 text-emerald-600 shrink-0" />
+              <span>
+                {t('W:', 'पा.')} {Number(room.fixed_water_bill).toFixed(0)}
+              </span>
+            </span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-[10px] sm:text-[11px] font-semibold text-slate-700">
+              <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+              <span>
+                {t('E:', 'बि.')} {Number(room.electricity_rate_per_unit).toFixed(0)}/u
+              </span>
+            </span>
+          </div>
         </div>
       </div>
 
-      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-        <div>
-          <p className="text-base font-extrabold text-slate-900">
+      {/* Footer Price + Reserve CTA */}
+      <div className="px-2.5 sm:px-4.5 pb-3 sm:pb-4 pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5">
+        <div className="min-w-0">
+          <p className="text-xs sm:text-base font-extrabold text-slate-900 truncate">
             {t('Rs.', 'रु.')} {Number(room.base_rent).toLocaleString()}
           </p>
-          <p className="text-[10px] text-slate-400 font-medium">
-            {t('/ month', '/ महिना')}
+          <p className="text-[9px] sm:text-[10px] text-slate-400 font-medium">
+            {t('/ mo', '/ महिना')}
           </p>
         </div>
 
         {occupied ? (
-          <span className="px-3 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold">
-            {t('Occupied', 'बुक भइसकेको')}
+          <span className="px-2 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-slate-100 text-slate-500 text-[10px] sm:text-xs font-semibold shrink-0">
+            {t('Booked', 'बुक')}
           </span>
         ) : (
           <button
             onClick={onAction}
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition relative"
+            className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] sm:text-xs font-bold shadow-xs transition relative cursor-pointer shrink-0"
           >
-            {t('Reserve', 'बुक गर्नुहोस्')}
+            {t('Reserve', 'बुक')}
             {pendingCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow">
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-500 text-white text-[9px] sm:text-[10px] font-extrabold flex items-center justify-center shadow">
                 {pendingCount}
               </span>
             )}

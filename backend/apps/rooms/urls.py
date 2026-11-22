@@ -3,6 +3,8 @@ from .views import (
     PublicLandingDataView,
     RoomListUpdateView,
     AdminRoomDetailUpdateView,
+    AdminRoomImageUploadView,
+    AdminRoomImageDeleteView,
     AdminAssignTenantToRoomView,
     AdminVacateRoomView,
     RoomReservationListCreateView,
@@ -24,6 +26,8 @@ urlpatterns = [
     # 2. Rooms Matrix & Admin Room Actions
     path('', RoomListUpdateView.as_view(), name='rooms_list'),
     path('<int:pk>/', AdminRoomDetailUpdateView.as_view(), name='admin_room_detail'),
+    path('<int:room_id>/images/', AdminRoomImageUploadView.as_view(), name='admin_room_image_upload'),
+    path('<int:room_id>/images/<int:image_id>/', AdminRoomImageDeleteView.as_view(), name='admin_room_image_delete'),
     path('<int:room_id>/assign-tenant/', AdminAssignTenantToRoomView.as_view(), name='assign_tenant_to_room'),
     path('<int:room_id>/vacate/', AdminVacateRoomView.as_view(), name='vacate_room'),
 

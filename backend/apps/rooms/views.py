@@ -21,7 +21,7 @@ from apps.communication.models import Notice
 from apps.communication.serializers import NoticeSerializer
 from apps.accounts.models import User
 from apps.billing.models import MonthlyBill
-from .models import Room, Tenancy, HeroBanner, HouseRule, RoomReservation, MoveOutRequest
+from .models import Room, RoomImage, Tenancy, HeroBanner, HouseRule, RoomReservation, MoveOutRequest
 from .serializers import (
     RoomSerializer,
     HeroBannerSerializer,
@@ -31,6 +31,8 @@ from .serializers import (
 )
 
 MAX_BANNER_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_ROOM_IMAGE_SIZE = 200 * 1024  # 200 KB per room image
+MAX_ROOM_IMAGES = 2  # Max 2 images per room
 ALLOWED_BANNER_EXTENSIONS = {
     '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg', '.heic', '.heif', '.avif', '.jfif'
 }
@@ -184,7 +186,7 @@ class PublicLandingDataView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        rooms = Room.objects.all().prefetch_related('tenancies__tenant', 'reservations')
+        rooms = Room.objects.all().prefetch_related('tenancies__tenant', 'reservations', 'images')
         notices = Notice.objects.filter(is_active=True).order_by('-created_at')[:5]
 
         total_rooms = len(rooms)
@@ -213,7 +215,7 @@ class RoomListUpdateView(generics.ListAPIView):
 
     def get_queryset(self):
         cleanup_orphaned_unpaid_bills()
-        return Room.objects.all().prefetch_related('tenancies__tenant', 'reservations')
+        return Room.objects.all().prefetch_related('tenancies__tenant', 'reservations', 'images')
 
 
 class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
@@ -227,7 +229,7 @@ class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
     """
     permission_classes = [IsAdminUserRole]
     serializer_class = RoomSerializer
-    queryset = Room.objects.all()
+    queryset = Room.objects.all().prefetch_related('images')
 
     @transaction.atomic
     def _update_room_and_meter(self, request, *args, **kwargs):
@@ -396,6 +398,118 @@ class AdminRoomDetailUpdateView(generics.RetrieveUpdateAPIView):
 
     def put(self, request, *args, **kwargs):
         return self._update_room_and_meter(request, *args, **kwargs)
+
+
+class AdminRoomImageUploadView(APIView):
+    """
+    Allows Admin to upload up to 2 photos per room (max 200 KB each).
+    POST /api/rooms/<room_id>/images/
+    """
+    permission_classes = [IsAdminUserRole]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @transaction.atomic
+    def post(self, request, room_id):
+        room = get_object_or_404(Room.objects.select_for_update(), id=room_id)
+        existing_count = room.images.count()
+
+        if existing_count >= MAX_ROOM_IMAGES:
+            return Response(
+                {
+                    "error": (
+                        f"Room {room.room_number} already has the maximum of {MAX_ROOM_IMAGES} photos. "
+                        f"Delete one first to upload another."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        uploaded_files = request.FILES.getlist('images') or request.FILES.getlist('image')
+        if not uploaded_files and 'image' in request.FILES:
+            uploaded_files = [request.FILES['image']]
+
+        if not uploaded_files:
+            return Response(
+                {"error": "Please select an image to upload."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        remaining_slots = MAX_ROOM_IMAGES - existing_count
+        if len(uploaded_files) > remaining_slots:
+            return Response(
+                {
+                    "error": (
+                        f"Room {room.room_number} only has {remaining_slots} photo slot(s) remaining "
+                        f"(maximum {MAX_ROOM_IMAGES} total)."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        caption = (request.data.get('caption') or '').strip()[:100]
+
+        for img_file in uploaded_files:
+            if hasattr(img_file, 'size') and img_file.size > MAX_ROOM_IMAGE_SIZE:
+                size_kb = round(img_file.size / 1024, 1)
+                return Response(
+                    {"error": f"'{img_file.name}' is {size_kb} KB. Each room photo must be under 200 KB."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            ext = os.path.splitext(getattr(img_file, 'name', '') or '')[1].lower()
+            content_type = (getattr(img_file, 'content_type', '') or '').lower()
+            if ext not in ALLOWED_BANNER_EXTENSIONS and not content_type.startswith('image/'):
+                return Response(
+                    {"error": f"'{img_file.name}' is not a valid image file."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            RoomImage.objects.create(room=room, image=img_file, caption=caption)
+
+        room.refresh_from_db()
+        serialized_room = RoomSerializer(room, context={'request': request}).data
+        return Response(
+            {
+                "message": (
+                    f"Photo uploaded for Room {room.room_number} "
+                    f"({room.images.count()}/{MAX_ROOM_IMAGES} slots used)."
+                ),
+                "room": serialized_room,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminRoomImageDeleteView(APIView):
+    """
+    Allows Admin to delete a specific room photo.
+    DELETE /api/rooms/<room_id>/images/<image_id>/
+    """
+    permission_classes = [IsAdminUserRole]
+
+    @transaction.atomic
+    def delete(self, request, room_id, image_id):
+        room = get_object_or_404(Room, id=room_id)
+        img_obj = get_object_or_404(RoomImage, id=image_id, room=room)
+        try:
+            if img_obj.image:
+                img_obj.image.delete(save=False)
+        except Exception:
+            pass
+        img_obj.delete()
+
+        room.refresh_from_db()
+        serialized_room = RoomSerializer(room, context={'request': request}).data
+        return Response(
+            {
+                "message": (
+                    f"Photo removed from Room {room.room_number} "
+                    f"({room.images.count()}/{MAX_ROOM_IMAGES} slots used)."
+                ),
+                "room": serialized_room,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminAssignTenantToRoomView(APIView):
