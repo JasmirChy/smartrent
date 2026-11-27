@@ -499,8 +499,8 @@ export default function PublicLanding() {
     'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी (रु. १००/कोठा)'
   );
   const staticHeroBadge = t(
-    'Verified Direct-Landlord Listing',
-    'घरधनीद्वारा प्रमाणित आवास'
+    'Meet Admin',
+    'घरधनीसँग भेट्नुहोस्'
   );
 
   const acceptRulesMutation = useMutation({
@@ -764,12 +764,17 @@ export default function PublicLanding() {
 
                 {/* Top Left Verified Badge */}
                 <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-[11px] font-extrabold shadow-sm">
+                  <a
+                    href="https://www.jasmirchaudhary.com.np/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-slate-900 text-[11px] font-extrabold shadow-sm hover:bg-white hover:shadow-md transition cursor-pointer"
+                  >
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                     <span className="truncate max-w-[200px] sm:max-w-none">
                       {staticHeroBadge}
                     </span>
-                  </div>
+                  </a>
                 </div>
 
                 {/* Top Right Fullscreen Zoom Button */}
