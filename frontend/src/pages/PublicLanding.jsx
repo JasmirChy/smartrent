@@ -499,8 +499,8 @@ export default function PublicLanding() {
     'सब-मिटर बिजुली (रु. १५/युनिट) र निश्चित पानी (रु. १००/कोठा)'
   );
   const staticHeroBadge = t(
-    'Meet Admin',
-    'घरधनीसँग भेट्नुहोस्'
+    'Meet Developer',
+    'विकासकर्मीसँग भेट्नुहोस्'
   );
 
   const acceptRulesMutation = useMutation({
